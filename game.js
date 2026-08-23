@@ -1,5 +1,5 @@
 (() => {
-  const BUILD_VERSION="0.20";
+  const BUILD_VERSION="0.21";
   const canvas = document.getElementById("renderCanvas");
   const engine = new BABYLON.Engine(canvas, true, { stencil:true });
   const scene = new BABYLON.Scene(engine);
@@ -44,6 +44,9 @@
   const officeProps = [];
   const fxBodies = [];
   const bloodSplats = [];
+  const sprinklerHeads=[];
+  let sprinklersActive=false;
+  let sprinklerTimer=0;
 
   const PERF={
     maxFx:210,
@@ -1083,6 +1086,78 @@
   createKeyboard("rearKeyboardB",3.45,-5.38,0);
   createChair("rearChairB",3.45,-5.88,0);
 
+
+  // ------------------------------------------------------------
+  // Extra destructible building detail
+  // ------------------------------------------------------------
+  function createBreakableCeilingLight(name,x,z){
+    const root=new BABYLON.TransformNode(name,scene);
+    root.position.set(x,2.88,z);
+
+    const frame=childBox(
+      name+"Frame",root,new BABYLON.Vector3(),
+      new BABYLON.Vector3(.80,.055,.34),
+      darkTrimMat,false
+    );
+    const lens=childBox(
+      name+"Lens",root,new BABYLON.Vector3(0,-.034,0),
+      new BABYLON.Vector3(.71,.018,.27),
+      lightPanelMat,false
+    );
+
+    return registerProp(root,[frame,lens],{
+      type:"light",mass:.8,radius:.43,minY:.10,breakThreshold:3.4,hp:8
+    });
+  }
+
+  for(const [x,z] of [
+    [-2.7,-4.8],[0,-4.8],[2.7,-4.8],
+    [-2.7,-7.4],[0,-7.4],[2.7,-7.4]
+  ]){
+    createBreakableCeilingLight("breakLight"+x+"_"+z,x,z);
+  }
+
+  // Fire alarm: destroying it activates the sprinklers.
+  const alarmRoot=new BABYLON.TransformNode("fireAlarmRoot",scene);
+  alarmRoot.position.set(-4.82,1.42,-5.9);
+  const alarmBox=childBox(
+    "fireAlarmBox",alarmRoot,new BABYLON.Vector3(),
+    new BABYLON.Vector3(.08,.28,.22),
+    redMat,false
+  );
+  const alarmButton=childBox(
+    "fireAlarmButton",alarmRoot,new BABYLON.Vector3(-.045,0,0),
+    new BABYLON.Vector3(.018,.10,.10),
+    paperMat,false
+  );
+  registerProp(alarmRoot,[alarmBox,alarmButton],{
+    type:"alarm",mass:.4,radius:.18,minY:1.10,breakThreshold:4.2,hp:9
+  });
+
+  // Sprinkler heads throughout both office sections.
+  for(const x of [-3,0,3]){
+    for(const z of [-1.5,-5.2,-7.7]){
+      const root=new BABYLON.TransformNode("sprinkler"+x+"_"+z,scene);
+      root.position.set(x,2.89,z);
+
+      const stem=BABYLON.MeshBuilder.CreateCylinder("sprinklerStem",{
+        height:.10,diameter:.035,tessellation:10
+      },scene);
+      stem.parent=root;
+      stem.position.y=-.04;
+      stem.material=deskMetalMat;
+
+      const head=BABYLON.MeshBuilder.CreateCylinder("sprinklerHead",{
+        height:.025,diameter:.095,tessellation:12
+      },scene);
+      head.parent=root;
+      head.position.y=-.10;
+      head.material=deskMetalMat;
+
+      sprinklerHeads.push(root);
+    }
+  }
+
   function surfaceSphereHit(surface,center,radius){
     if(!surface || surface.isDisposed?.() || !surface.isEnabled()) return null;
 
@@ -1354,6 +1429,21 @@
       if(prop.type==="printer") spawnGlassBurst(hitPos,d.scale(3),8);
     }else if(prop.type==="whiteboard"){
       for(let i=0;i<7;i++) chunk(new BABYLON.Vector3((Math.random()-.5)*.8,(Math.random()-.5)*.4,0),new BABYLON.Vector3(.28,.22,.025),i%3?boardMat:darkTrimMat,2.2);
+    }else if(prop.type==="light"){
+      spawnGlassBurst(hitPos,d.scale(2.8),16);
+      for(let i=0;i<7;i++) chunk(
+        new BABYLON.Vector3((Math.random()-.5)*.30,0,(Math.random()-.5)*.18),
+        new BABYLON.Vector3(.08,.025,.06),darkTrimMat,2.8
+      );
+      playImpactSound("glass",1);
+    }else if(prop.type==="alarm"){
+      sprinklersActive=true;
+      sprinklerTimer=0;
+      for(let i=0;i<4;i++) chunk(
+        new BABYLON.Vector3(0,(Math.random()-.5)*.12,(Math.random()-.5)*.08),
+        new BABYLON.Vector3(.05,.08,.05),i%2?redMat:paperMat,2
+      );
+      playImpactSound("metal",.9);
     }else{
       chunk(new BABYLON.Vector3(),new BABYLON.Vector3(.20,.14,.18),darkTrimMat,2.5);
       chunk(new BABYLON.Vector3(.08,.06,.03),new BABYLON.Vector3(.14,.10,.12),trimMat,2.7);
@@ -1373,7 +1463,15 @@
     let dir=swingVel.clone(); if(dir.lengthSquared()<.001) dir.set(0,1,0); dir.normalize();
 
     const power=Math.min(5,(speed*1.8)/Math.max(.55,prop.mass));
-    prop.vel.addInPlace(dir.scale(power));
+
+    if(prop.type==="door" && speed<prop.breakThreshold*1.5){
+      const swingSign=dir.z>=0 ? 1 : -1;
+      prop.root.rotation.y+=swingSign*Math.min(.42,.06+speed*.035);
+      prop.loose=false;
+    }else{
+      prop.vel.addInPlace(dir.scale(power));
+    }
+
     prop.vel.y+=Math.min(1.15,speed*.07);
     prop.ang.addInPlace(new BABYLON.Vector3(
       (Math.random()-.5)*power*1.7,(Math.random()-.5)*power*1.4,(Math.random()-.5)*power*1.7
@@ -1450,6 +1548,42 @@
       }else p.sleepTimer=0;
     }
 
+    if(sprinklersActive && sprinklerHeads.length){
+      sprinklerTimer-=dt;
+
+      if(sprinklerTimer<=0){
+        sprinklerTimer=.055;
+
+        // Small bounded water effect for Quest performance.
+        for(let n=0;n<2;n++){
+          const h=sprinklerHeads[Math.floor(Math.random()*sprinklerHeads.length)];
+          const drop=BABYLON.MeshBuilder.CreateSphere("waterDrop",{
+            diameter:.022,segments:5
+          },scene);
+
+          drop.position=h.getAbsolutePosition().add(new BABYLON.Vector3(
+            (Math.random()-.5)*.20,
+            -.13,
+            (Math.random()-.5)*.20
+          ));
+          drop.material=bottleMat;
+
+          fxBodies.push({
+            mesh:drop,
+            kind:"water",
+            radius:.012,
+            vel:new BABYLON.Vector3(
+              (Math.random()-.5)*.8,
+              -1.2-Math.random()*1.4,
+              (Math.random()-.5)*.8
+            ),
+            spin:new BABYLON.Vector3(),
+            life:1.6
+          });
+        }
+      }
+    }
+
     trimFxBodies();
 
     for(let i=fxBodies.length-1;i>=0;i--){
@@ -1462,6 +1596,9 @@
       if(hit){
         if(f.kind==="blood"){
           createBloodSplat(hit,.7+Math.random()*.75);
+          f.mesh.dispose();fxBodies.splice(i,1);continue;
+        }
+        if(f.kind==="water"){
           f.mesh.dispose();fxBodies.splice(i,1);continue;
         }
         f.mesh.position.addInPlace(hit.correction);
@@ -2379,82 +2516,105 @@
   // Uses the best native browser/system voice the Quest exposes.
   // ------------------------------------------------------------
   let selectedVoice=null;
+  let currentNpcUtterance=null;
+
+  function voiceScore(v){
+    const name=(v.name||"").toLowerCase();
+    const lang=(v.lang||"").toLowerCase();
+    let s=0;
+
+    if(lang.startsWith("en-us")) s+=22;
+    else if(lang.startsWith("en-gb")) s+=18;
+    else if(lang.startsWith("en")) s+=12;
+
+    const preferred=[
+      ["natural",40],["neural",40],["premium",34],["enhanced",32],
+      ["siri",30],["samantha",26],["daniel",24],["alex",22],
+      ["google",20],["microsoft",20],["ava",18],["allison",16]
+    ];
+    for(const [key,value] of preferred){
+      if(name.includes(key)) s+=value;
+    }
+
+    const avoid=[
+      "compact","novelty","whisper","bells","bad news","good news",
+      "cellos","zarvox","trinoids","boing","organ","bubbles","robot"
+    ];
+    for(const key of avoid){
+      if(name.includes(key)) s-=70;
+    }
+
+    if(v.localService) s+=4;
+    return s;
+  }
+
   function chooseVoice() {
     if (!("speechSynthesis" in window)) return;
     const voices=speechSynthesis.getVoices();
     if (!voices.length) return;
 
-    const english=voices.filter(v=>/^en[-_]/i.test(v.lang)||/English/i.test(v.name));
-    const pool=english.length?english:voices;
-    const scores=["Neural","Natural","Enhanced","Premium","Google","Microsoft","Samantha","Daniel","Alex"];
-    selectedVoice=pool.sort((a,b)=>{
-      const sa=scores.reduce((n,k)=>n+(a.name.includes(k)?2:0),0);
-      const sb=scores.reduce((n,k)=>n+(b.name.includes(k)?2:0),0);
-      return sb-sa;
-    })[0]||pool[0];
+    selectedVoice=[...voices].sort((a,b)=>voiceScore(b)-voiceScore(a))[0]||voices[0];
   }
+
   chooseVoice();
   if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged=chooseVoice;
 
   const VOICE_LINES={
     chase:[
-      "Hey! You! Get over here!",
-      "Don't ignore me!",
-      "I'm coming for you!",
-      "Come on, face me!",
-      "You think you can just walk away?",
-      "Hey! I'm talking to you!"
+      "Hey, where are you going?",
+      "Come back here.",
+      "You really want to do this?",
+      "Okay. Come on then.",
+      "Hey. I'm talking to you.",
+      "Don't just walk away."
     ],
     angry:[
-      "Stop hitting me!",
-      "Okay... now I'm actually angry!",
-      "You really shouldn't have done that!",
-      "That's it! I've had enough!",
-      "Are you serious?!",
-      "Keep swinging and see what happens!",
-      "Oh, you are REALLY annoying me now!"
+      "Ow! Stop doing that!",
+      "Seriously? Cut it out!",
+      "Okay, now you're making me angry.",
+      "That's enough.",
+      "What is wrong with you?",
+      "Stop swinging that thing at me!"
     ],
     furious:[
-      "I am DONE playing around!",
-      "You want a fight?! Fine!",
-      "That's it! Come here!",
-      "I swear, stop hitting me!",
-      "You're making me lose it!"
+      "Alright, that's it!",
+      "I'm done messing around!",
+      "You asked for this!",
+      "Come here!",
+      "Okay. Now I'm mad."
     ],
     hurt:[
-      "Ow! That really hurt!",
-      "Ah! What was that for?!",
-      "Whoa! Easy!",
-      "Ow! Stop!",
-      "Ah... okay, that hurt.",
-      "Seriously?! Right in the body?!"
+      "Ow!",
+      "Ah, that hurt!",
+      "Damn, easy!",
+      "Ow, seriously?",
+      "Ah! Stop!",
+      "What was that for?"
     ],
     scared:[
-      "Whoa... okay, okay!",
-      "Hey! You're actually hurting me!",
-      "Wait... stop swinging that thing!",
-      "Okay, this is getting bad!",
-      "Uh... can we calm down for a second?",
-      "Nope. I really don't like this!"
+      "Okay, okay, stop!",
+      "Wait. Just stop for a second!",
+      "This is getting bad.",
+      "Hey, calm down!",
+      "Alright, enough!"
     ],
     attack:[
-      "Take this!",
-      "Got you!",
       "Come on!",
-      "You're not dodging this one!",
-      "Here we go!",
-      "Try blocking THIS!"
+      "Got you!",
+      "Take this!",
+      "Here!",
+      "Try dodging this!"
     ],
     block:[
-      "What?! You blocked that?",
-      "Oh, come on!",
-      "Seriously?!",
-      "Fine... again!"
+      "What?",
+      "You blocked it?",
+      "Come on!",
+      "Seriously?"
     ],
     death:[
-      "NO!",
-      "Whoa!",
-      "Wait—!"
+      "Oh—!",
+      "Wait—!",
+      "No—!"
     ]
   };
   function speakNpc(kind,force=false) {
@@ -2463,46 +2623,54 @@
 
     const lines=VOICE_LINES[kind]||VOICE_LINES.chase;
     const line=lines[Math.floor(Math.random()*lines.length)];
-    npc.speechCooldown=1.05+Math.random()*1.15;
-    npc.bubbleTimer=2.0;
+
+    npc.speechCooldown=1.25+Math.random()*1.35;
+    npc.bubbleTimer=1.9;
     npc.speech.text.text=line;
     npc.speech.plane.setEnabled(true);
 
     try {
-      speechSynthesis.cancel();
       const u=new SpeechSynthesisUtterance(line);
-      if (selectedVoice) u.voice=selectedVoice;
-      u.volume=1;
+      if(selectedVoice) u.voice=selectedVoice;
+      u.volume=.92;
 
-      // Wider emotional range. The exact voice quality still depends on
-      // the system voices exposed by Meta Quest Browser.
-      if (kind==="furious") {
-        u.rate=1.16+Math.random()*.06;
-        u.pitch=.68+Math.random()*.05;
-      } else if (kind==="angry") {
-        u.rate=1.10+Math.random()*.06;
-        u.pitch=.76+Math.random()*.07;
-      } else if (kind==="scared") {
-        u.rate=1.18+Math.random()*.08;
-        u.pitch=1.18+Math.random()*.12;
-      } else if (kind==="hurt") {
-        u.rate=1.12+Math.random()*.09;
-        u.pitch=1.04+Math.random()*.12;
-      } else if (kind==="attack") {
-        u.rate=1.08+Math.random()*.06;
-        u.pitch=.82+Math.random()*.08;
-      } else if (kind==="block") {
-        u.rate=1.12;
-        u.pitch=.92;
-      } else {
-        u.rate=.98+Math.random()*.05;
-        u.pitch=.92+Math.random()*.06;
+      // Keep this near normal human speaking pitch/rate.
+      if(kind==="furious"){
+        u.rate=1.03+Math.random()*.035;
+        u.pitch=.91+Math.random()*.035;
+      }else if(kind==="angry"){
+        u.rate=1.00+Math.random()*.035;
+        u.pitch=.94+Math.random()*.035;
+      }else if(kind==="scared"){
+        u.rate=1.05+Math.random()*.04;
+        u.pitch=1.02+Math.random()*.045;
+      }else if(kind==="hurt"){
+        u.rate=1.00+Math.random()*.05;
+        u.pitch=.99+Math.random()*.05;
+      }else if(kind==="attack"){
+        u.rate=1.03+Math.random()*.035;
+        u.pitch=.96+Math.random()*.035;
+      }else{
+        u.rate=.96+Math.random()*.04;
+        u.pitch=.98+Math.random()*.035;
       }
 
+      // Do not cut every line off. Interrupt only for important reactions.
+      if(
+        force &&
+        currentNpcUtterance &&
+        speechSynthesis.speaking &&
+        (kind==="death" || kind==="hurt" || kind==="furious")
+      ){
+        speechSynthesis.cancel();
+      }
+
+      currentNpcUtterance=u;
+      u.onend=()=>{ if(currentNpcUtterance===u) currentNpcUtterance=null; };
+      u.onerror=()=>{ if(currentNpcUtterance===u) currentNpcUtterance=null; };
       speechSynthesis.speak(u);
     } catch(_) {}
   }
-
   // ------------------------------------------------------------
   // NPC
   // ------------------------------------------------------------
@@ -2675,18 +2843,18 @@
       pelvis:ragPoint("pelvis",0,.67,0,.17,.50),
       spineLow:ragPoint("spineLow",0,.91,0,.145,.48),
       chest:ragPoint("chest",0,1.22,0,.19,.44),
-      neckBase:ragPoint("neckBase",0,1.47,0,.09,.62),
-      head:ragPoint("head",0,1.73,0,.22,.76),
+      neckBase:ragPoint("neckBase",0,1.43,0,.09,.62),
+      head:ragPoint("head",0,1.67,0,.21,.76),
 
-      lShoulder:ragPoint("lShoulder",-.31,1.34,0,.105,.78),
-      lElbow:ragPoint("lElbow",-.48,1.08,.01,.092,.90),
-      lWrist:ragPoint("lWrist",-.51,.87,.035,.072,.98),
-      lHand:ragPoint("lHand",-.52,.77,.065,.090,1),
+      lShoulder:ragPoint("lShoulder",-.32,1.31,0,.105,.78),
+      lElbow:ragPoint("lElbow",-.46,1.04,.055,.092,.90),
+      lWrist:ragPoint("lWrist",-.40,.84,.105,.072,.98),
+      lHand:ragPoint("lHand",-.37,.75,.125,.095,1),
 
-      rShoulder:ragPoint("rShoulder",.31,1.34,0,.105,.78),
-      rElbow:ragPoint("rElbow",.48,1.08,.01,.092,.90),
-      rWrist:ragPoint("rWrist",.51,.87,.035,.072,.98),
-      rHand:ragPoint("rHand",.52,.77,.065,.090,1),
+      rShoulder:ragPoint("rShoulder",.32,1.31,0,.105,.78),
+      rElbow:ragPoint("rElbow",.46,1.04,.055,.092,.90),
+      rWrist:ragPoint("rWrist",.40,.84,.105,.072,.98),
+      rHand:ragPoint("rHand",.37,.75,.125,.095,1),
 
       lHip:ragPoint("lHip",-.15,.64,0,.115,.70),
       lKnee:ragPoint("lKnee",-.15,.36,.02,.105,.88),
@@ -3055,7 +3223,7 @@
         p.chest.pos.add(p.neckBase.pos.subtract(p.chest.pos).scale(.48)),
         p.neckBase.pos.add(new BABYLON.Vector3(0,-.055,0))
       ],
-      [.205,.235,.275,.245]
+      [.190,.215,.275,.292]
     );
 
     // Broad connected shoulders cover the torso cap and join both arms.
@@ -3172,10 +3340,18 @@
     const visual=new BABYLON.TransformNode("npcVisual",scene);
     visual.parent=root;
 
-    const skinMat=mkMat("npcSkin"+Math.random(),"#c98b68");
-    const skinDarkMat=mkMat("npcSkinDark"+Math.random(),"#a86c50");
-    const shirtMat=mkMat("npcShirt"+Math.random(),"#486b8f");
-    const shirtDarkMat=mkMat("npcShirtDark"+Math.random(),"#304c69");
+    const npcPalettes=[
+      {skin:"#c98b68",skinDark:"#a86c50",shirt:"#486b8f",shirtDark:"#304c69"},
+      {skin:"#d2a17e",skinDark:"#b37f60",shirt:"#5e6948",shirtDark:"#3d4931"},
+      {skin:"#a96f50",skinDark:"#86543c",shirt:"#7a4d57",shirtDark:"#52333b"},
+      {skin:"#e0b18b",skinDark:"#bf8968",shirt:"#4c6079",shirtDark:"#303e50"}
+    ];
+    const look=npcPalettes[Math.floor(Math.random()*npcPalettes.length)];
+
+    const skinMat=mkMat("npcSkin"+Math.random(),look.skin);
+    const skinDarkMat=mkMat("npcSkinDark"+Math.random(),look.skinDark);
+    const shirtMat=mkMat("npcShirt"+Math.random(),look.shirt);
+    const shirtDarkMat=mkMat("npcShirtDark"+Math.random(),look.shirtDark);
     const pantsMat=mkMat("npcPants"+Math.random(),"#334155");
     const pantsDarkMat=mkMat("npcPantsDark"+Math.random(),"#202a38");
     const shoeMat=mkMat("npcShoes"+Math.random(),"#111827");
@@ -3215,7 +3391,7 @@
         new BABYLON.Vector3(0,1.13,0),
         new BABYLON.Vector3(0,1.34,0)
       ],
-      [.205,.235,.275,.245],
+      [.190,.215,.275,.292],
       shirtMat,
       visual
     );
@@ -3323,8 +3499,8 @@
     pantsMat.specularPower=10;
 
     // Head + all face detail parented to the head so it tilts with the neck.
-    const head=jointSphere("npcHead",.46,skinMat);
-    head.scaling.set(.88,1.08,.84);
+    const head=jointSphere("npcHead",.45,skinMat);
+    head.scaling.set(.86,1.10,.82);
 
     function faceSphere(name,diam,pos,mat,scale=[1,1,1]){
       const m=BABYLON.MeshBuilder.CreateSphere(name,{diameter:diam,segments:11},scene);
@@ -3372,8 +3548,8 @@
 
     const chin=faceSphere("npcChin",.105,[0,-.205,.12],skinDarkMat,[1,.62,.90]);
 
-    const cheekL=faceSphere("npcCheekL",.095,[-.105,-.055,.155],skinMat,[1.15,.72,.50]);
-    const cheekR=faceSphere("npcCheekR",.095,[.105,-.055,.155],skinMat,[1.15,.72,.50]);
+    const cheekL=faceSphere("npcCheekL",.078,[-.10,-.052,.155],skinMat,[1.08,.68,.46]);
+    const cheekR=faceSphere("npcCheekR",.078,[.10,-.052,.155],skinMat,[1.08,.68,.46]);
 
     const eyebrowL=BABYLON.MeshBuilder.CreateBox("npcEyebrowL",{
       width:.10,height:.018,depth:.012
@@ -3409,9 +3585,9 @@
     const leftWristJoint=jointSphere("leftWristJoint",.125,skinMat);
     const rightWristJoint=jointSphere("rightWristJoint",.125,skinMat);
 
-    const leftHand=jointSphere("leftHand",.18,skinMat);
+    const leftHand=jointSphere("leftHand",.195,skinMat);
     leftHand.scaling.set(.78,.78,1.12);
-    const rightHand=jointSphere("rightHand",.18,skinMat);
+    const rightHand=jointSphere("rightHand",.195,skinMat);
     rightHand.scaling.set(.78,.78,1.12);
 
     function addFingers(hand,prefix,side){
@@ -3497,10 +3673,11 @@
     buckle.parent=belt;buckle.position.set(0,0,.22);buckle.material=batMetal;
 
     const collar=BABYLON.MeshBuilder.CreateTorus("npcCollar",{
-      diameter:.20,thickness:.028,tessellation:16
+      diameter:.17,thickness:.016,tessellation:16
     },scene);
     collar.parent=visual;collar.material=shirtDarkMat;
     collar.rotationQuaternion=BABYLON.Quaternion.Identity();
+    collar.setEnabled(false);
 
     // Name badge on shirt.
     const badge=childBox(
@@ -3611,6 +3788,7 @@
       hitCooldown:0,
       hpFlashTimer:0,
       attackCooldown:.35,
+      throwCooldown:2.8+Math.random()*1.8,
       attackAnim:0,
       attackDuration:.48,
       attackHasHit:false,
@@ -3665,31 +3843,25 @@
   function setNpcMaterial() {
     if (!npc || npc.dead) return;
 
-    if(npc.recentlyHit>0){
-      // Whole visible character flashes red, not only one body section.
-      npc.flashParts.forEach(p=>{
-        if(p?.isEnabled?.() !== false) p.material=MAT.npcHit;
-      });
-    }else{
-      npc.bodyShell.material=npc.shirtMat;
-      npc.shoulderBridge.material=npc.shirtMat;
-      npc.leftSleeveShell.material=npc.shirtMat;
-      npc.rightSleeveShell.material=npc.shirtMat;
-      npc.leftArmShell.material=npc.skinMat;
-      npc.rightArmShell.material=npc.skinMat;
-      npc.leftLegShell.material=npc.pantsMat;
-      npc.rightLegShell.material=npc.pantsMat;
+    // No full-body hit color flash.
+    npc.bodyShell.material=npc.shirtMat;
+    npc.shoulderBridge.material=npc.shirtMat;
+    npc.leftSleeveShell.material=npc.shirtMat;
+    npc.rightSleeveShell.material=npc.shirtMat;
 
-      npc.neck.material=npc.skinMat;
-      npc.pelvis.material=npc.pantsMat;
-      npc.head.material=npc.skinMat;
-      npc.leftHand.material=npc.skinMat;
-      npc.rightHand.material=npc.skinMat;
-      npc.leftShoe.material=npc.shoeMat;
-      npc.rightShoe.material=npc.shoeMat;
-    }
+    npc.leftArmShell.material=npc.skinMat;
+    npc.rightArmShell.material=npc.skinMat;
+    npc.leftLegShell.material=npc.pantsMat;
+    npc.rightLegShell.material=npc.pantsMat;
 
-    // Eyes, teeth and hair stay readable during the red hit flash.
+    npc.neck.material=npc.skinMat;
+    npc.pelvis.material=npc.pantsMat;
+    npc.head.material=npc.skinMat;
+    npc.leftHand.material=npc.skinMat;
+    npc.rightHand.material=npc.skinMat;
+    npc.leftShoe.material=npc.shoeMat;
+    npc.rightShoe.material=npc.shoeMat;
+
     npc.leftEyeWhite.material=npc.eyeWhiteMat;
     npc.rightEyeWhite.material=npc.eyeWhiteMat;
     npc.leftEye.material=npc.eyeMat;
@@ -3850,16 +4022,26 @@
       return rotY(local,npc.root.rotation.y);
     }
 
+    const chestCenter=W("chest");
+
     function addPiece(mesh,radius,vel){
+      // Give every piece its own outward direction from the real torso,
+      // instead of making all body parts fly in one identical direction.
+      const outward=mesh.position.subtract(chestCenter);
+      if(outward.lengthSquared()>.0001){
+        outward.normalize();
+        vel.addInPlace(outward.scale(1.1+Math.random()*1.5));
+      }
+
       deathParts.push({
         mesh,
         vel,
         radius,
-        life:6.5,
+        life:7.2,
         spin:new BABYLON.Vector3(
-          (Math.random()-.5)*9,
-          (Math.random()-.5)*9,
-          (Math.random()-.5)*9
+          (Math.random()-.5)*7,
+          (Math.random()-.5)*7,
+          (Math.random()-.5)*7
         )
       });
 
@@ -3877,12 +4059,12 @@
       m.material=mat;
       setSegment(m,a,b,1);
 
-      const vel=V(aName).add(V(bName)).scale(.5)
-        .add(dir.scale(force*.46))
+      const vel=V(aName).add(V(bName)).scale(.58)
+        .add(dir.scale(force*.24))
         .add(new BABYLON.Vector3(
-          (Math.random()-.5)*1.5,
-          .35+Math.random()*1.5,
-          (Math.random()-.5)*1.5
+          (Math.random()-.5)*1.15,
+          .20+Math.random()*1.0,
+          (Math.random()-.5)*1.15
         ));
       addPiece(m,Math.max(radius*1.2,BABYLON.Vector3.Distance(a,b)*.26),vel);
     }
@@ -3893,20 +4075,63 @@
       },scene);
       m.position.copyFrom(W(pName));
       m.material=mat;
-      const vel=V(pName)
-        .add(dir.scale(force*.48))
+      const vel=V(pName).scale(.72)
+        .add(dir.scale(force*.26))
         .add(new BABYLON.Vector3(
-          (Math.random()-.5)*1.6,
-          .45+Math.random()*1.7,
-          (Math.random()-.5)*1.6
+          (Math.random()-.5)*1.25,
+          .25+Math.random()*1.15,
+          (Math.random()-.5)*1.25
         ));
       addPiece(m,diameter*.5,vel);
     }
 
-    capsulePiece("deathAbdomen","pelvis","spineLow",.22,npc.shirtDarkMat);
-    capsulePiece("deathChest","spineLow","chest",.28,npc.shirtMat);
-    capsulePiece("deathNeck","neckBase","head",.072,npc.skinMat);
-    spherePiece("deathHead","head",.44,npc.skinMat);
+    capsulePiece("deathLowerTorso","pelvis","spineLow",.205,npc.shirtDarkMat);
+    capsulePiece("deathUpperTorso","spineLow","chest",.265,npc.shirtMat);
+    capsulePiece("deathNeck","neckBase","head",.085,npc.skinMat);
+
+    // Head keeps hair and eyes after it separates.
+    {
+      const m=BABYLON.MeshBuilder.CreateSphere("deathHead",{
+        diameter:.43,segments:16
+      },scene);
+      m.position.copyFrom(W("head"));
+      m.scaling.set(.86,1.10,.82);
+      m.material=npc.skinMat;
+
+      const hair=BABYLON.MeshBuilder.CreateSphere("deathHair",{
+        diameter:.43,segments:14
+      },scene);
+      hair.parent=m;
+      hair.position.set(0,.14,-.03);
+      hair.scaling.set(.90,.43,.92);
+      hair.material=npc.hairMat;
+
+      for(const sx of [-1,1]){
+        const eye=BABYLON.MeshBuilder.CreateSphere("deathEye",{
+          diameter:.045,segments:9
+        },scene);
+        eye.parent=m;
+        eye.position.set(sx*.075,.055,.205);
+        eye.scaling.set(1.15,.62,.34);
+        eye.material=npc.eyeWhiteMat;
+
+        const pupil=BABYLON.MeshBuilder.CreateSphere("deathPupil",{
+          diameter:.014,segments:7
+        },scene);
+        pupil.parent=m;
+        pupil.position.set(sx*.075,.055,.224);
+        pupil.material=npc.pupilMat;
+      }
+
+      const vel=V("head").scale(.72)
+        .add(dir.scale(force*.26))
+        .add(new BABYLON.Vector3(
+          (Math.random()-.5)*1.2,
+          .35+Math.random()*1.2,
+          (Math.random()-.5)*1.2
+        ));
+      addPiece(m,.22,vel);
+    }
     spherePiece("deathPelvis","pelvis",.42,npc.pantsMat);
 
     // Extra clean clothing fragments make the breakup read more clearly.
@@ -3981,10 +4206,10 @@
     npc.respawnTimer=5.6;
 
     // First: fully connected limp ragdoll absorbs the finishing hit.
-    npc.deathExplodeTimer=.28;
+    npc.deathExplodeTimer=.20;
     npc.deathExploded=false;
     npc.deathDir=dir.clone();
-    npc.deathForce=Math.min(17.5,7.0+speed*.72);
+    npc.deathForce=Math.min(14.8,6.2+speed*.60);
 
     applyNpcRagdollImpulse(
       hitPos,
@@ -4205,6 +4430,7 @@
       npc.hpFlashTimer=Math.max(0,npc.hpFlashTimer-dt);
       updateNpcLabel();
       npc.attackCooldown=Math.max(0,npc.attackCooldown-dt);
+      npc.throwCooldown=Math.max(0,npc.throwCooldown-dt);
       npc.attackAnim=Math.max(0,npc.attackAnim-dt);
       npc.recentlyHit=Math.max(0,npc.recentlyHit-dt);
       npc.speechCooldown=Math.max(0,npc.speechCooldown-dt);
@@ -4255,6 +4481,23 @@
                   ? (npc.anger>=55 ? "furious" : "angry")
                   : npc.emotion==="scared" ? "scared" : "chase"
               );
+            }
+          }
+
+          // If he is very angry and you stay farther away, he may throw
+          // a nearby small office object instead of only chasing.
+          if(
+            npc.anger>=68 &&
+            d>2.25 && d<5.3 &&
+            npc.throwCooldown<=0 &&
+            npc.stun<=0 &&
+            npc.attackAnim<=0
+          ){
+            if(npcThrowNearbyObject(playerPos)){
+              npc.throwCooldown=3.2+Math.random()*1.8;
+              npc.attackCooldown=.55;
+            }else{
+              npc.throwCooldown=1.2;
             }
           }
 
@@ -4430,7 +4673,7 @@
             spawnBloodExplosion(
               chestWorld,
               npc.deathDir,
-              1.42
+              1.12
             );
             spawnDeathJointBlood(npc.deathDir);
             coolDeathBurst(chestWorld);
@@ -4543,6 +4786,41 @@
       }
     }
   });
+
+  function npcThrowNearbyObject(playerPos){
+    if(!npc || npc.dead) return false;
+
+    const candidates=officeProps.filter(p=>
+      !p.broken &&
+      ["mug","keyboard","mouse","pencup","stapler","bin","plant","chair"].includes(p.type) &&
+      BABYLON.Vector3.Distance(
+        p.root.getAbsolutePosition?.() || p.root.position,
+        npc.root.position
+      )<2.2
+    );
+
+    if(!candidates.length) return false;
+
+    const prop=candidates[Math.floor(Math.random()*candidates.length)];
+    const pos=prop.root.getAbsolutePosition?.() || prop.root.position;
+
+    let dir=playerPos.subtract(pos);
+    if(dir.lengthSquared()<.001) dir.set(0,.1,1);
+    dir.normalize();
+
+    prop.loose=true;
+    prop.sleepTimer=0;
+    prop.vel.copyFrom(dir.scale(5.2).add(new BABYLON.Vector3(0,1.8,0)));
+    prop.ang.set(
+      (Math.random()-.5)*8,
+      (Math.random()-.5)*8,
+      (Math.random()-.5)*8
+    );
+
+    speakNpc("furious",true);
+    playImpactSound("whoosh",.6);
+    return true;
+  }
 
   // ------------------------------------------------------------
   // iPhone / desktop TEST MODE
