@@ -1,5 +1,5 @@
 (() => {
-  const BUILD_VERSION="0.23.3";
+  const BUILD_VERSION="0.23.4";
   const canvas = document.getElementById("renderCanvas");
   const engine = new BABYLON.Engine(canvas, true, { stencil:true });
   const scene = new BABYLON.Scene(engine);
@@ -59,8 +59,8 @@
   let sprinklerTimer=0;
 
   const PERF={
-    maxFx:210,
-    maxBloodSplats:92,
+    maxFx:320,
+    maxBloodSplats:140,
     maxDeathParts:56,
     propSleepSpeed:.055,
     propSleepSeconds:1.15
@@ -256,17 +256,14 @@
 
   // clean v0.23.3: officeFloorMat.diffuseTexture=DETAIL_TEX.floor;
   // clean v0.23.3: officeWallMat.diffuseTexture=DETAIL_TEX.wall;
-  deskMat.diffuseTexture=DETAIL_TEX.wood;
-  deskMat.diffuseTexture.level=.20;
-  deskMetalMat.diffuseTexture=DETAIL_TEX.metal;
-  deskMetalMat.diffuseTexture.level=.10;
+  // v0.23.4 clean material: deskMat.diffuseTexture=DETAIL_TEX.wood;
+  // v0.23.4 clean material: deskMetalMat.diffuseTexture=DETAIL_TEX.metal;
   // clean v0.23.3: chairMat.diffuseTexture=DETAIL_TEX.fabric;
-  monitorMat.diffuseTexture=DETAIL_TEX.metal;
-  monitorMat.diffuseTexture.level=.08;
+  // v0.23.4 clean material: monitorMat.diffuseTexture=DETAIL_TEX.metal;
   // clean v0.23.3: keyboardMat.diffuseTexture=DETAIL_TEX.metal;
   // clean v0.23.3: trimMat.diffuseTexture=DETAIL_TEX.wall;
-  darkTrimMat.diffuseTexture=DETAIL_TEX.metal;
-  corkMat.diffuseTexture=DETAIL_TEX.wood;
+  // v0.23.4 clean material: darkTrimMat.diffuseTexture=DETAIL_TEX.metal;
+  // v0.23.4 clean material: corkMat.diffuseTexture=DETAIL_TEX.wood;
 
   officeFloorMat.bumpTexture=BUMP_TEX.floor;officeFloorMat.bumpTexture.level=.28;
   officeWallMat.bumpTexture=BUMP_TEX.wall;officeWallMat.bumpTexture.level=.18;
@@ -1040,14 +1037,7 @@
   const lens=BABYLON.MeshBuilder.CreateCylinder("securityCamLens",{height:.055,diameter:.08,tessellation:14},scene);
   lens.parent=camRoot;lens.position.set(0,0,-.11);lens.rotation.x=Math.PI/2;lens.material=darkTrimMat;
 
-  for(let i=0;i<9;i++){
-    const p=box(
-      "floorPaper"+i,
-      new BABYLON.Vector3(-3.5+(i%5)*1.55,.012,-2.75+Math.floor(i/5)*5.15),
-      new BABYLON.Vector3(.23,.006,.17),paperMat,false
-    );
-    p.rotation.y=(i-4)*.19;
-  }
+  // floor paper clutter removed in v0.23.4
 
 
   // ------------------------------------------------------------
@@ -1454,7 +1444,7 @@
     if(dir.lengthSquared()<.001) dir.set(0,1,0);
     dir.normalize();
 
-    const bloodCount=Math.round(54+strength*34);
+    const bloodCount=Math.round(70+strength*46);
     for(let i=0;i<bloodCount;i++){
       const drop=BABYLON.MeshBuilder.CreateSphere("bloodDrop",{
         diameter:.018+Math.random()*.045,
@@ -1486,7 +1476,7 @@
     trimFxBodies();
 
     // Immediate nearby floor splats make the finishing hit feel heavier.
-    for(let i=0;i<14;i++){
+    for(let i=0;i<22;i++){
       const p=origin.add(new BABYLON.Vector3(
         (Math.random()-.5)*1.25,
         -origin.y+.01,
@@ -2777,6 +2767,43 @@
   chooseVoice();
   if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged=chooseVoice;
 
+  const NPC_VOICE_CLIPS={
+    hurt:["voice/hurt1.mp3","voice/hurt2.mp3","voice/hurt3.mp3"],
+    angry:["voice/angry1.mp3","voice/angry2.mp3"],
+    furious:["voice/furious1.mp3","voice/furious2.mp3"],
+    scared:["voice/scared1.mp3","voice/scared2.mp3"],
+    attack:["voice/attack1.mp3","voice/attack2.mp3"],
+    block:["voice/block1.mp3"],
+    death:["voice/death1.mp3","voice/death2.mp3"]
+  };
+
+  let npcVoiceAudio=null;
+  let failedVoiceFiles=new Set();
+
+  function tryPlayHumanVoice(kind){
+    const list=NPC_VOICE_CLIPS[kind];
+    if(!list?.length) return false;
+
+    const available=list.filter(x=>!failedVoiceFiles.has(x));
+    if(!available.length) return false;
+
+    const src=available[Math.floor(Math.random()*available.length)];
+
+    try{
+      if(npcVoiceAudio && !npcVoiceAudio.paused) return true;
+      const a=new Audio(src);
+      a.volume=.90;
+      a.preload="auto";
+      a.onerror=()=>failedVoiceFiles.add(src);
+      a.play().catch(()=>failedVoiceFiles.add(src));
+      npcVoiceAudio=a;
+      return true;
+    }catch(_){
+      failedVoiceFiles.add(src);
+      return false;
+    }
+  }
+
   const VOICE_LINES={
     chase:[
       "Hey, where are you going?",
@@ -2862,6 +2889,8 @@
     const lines=VOICE_LINES[kind]||VOICE_LINES.chase;
     const line=lines[Math.floor(Math.random()*lines.length)];
 
+    const playedHumanClip=tryPlayHumanVoice(kind);
+
     // Long quiet gaps between lines.
     npc.speechCooldown=
       kind==="death" ? 0 :
@@ -2870,6 +2899,8 @@
     npc.bubbleTimer=1.65;
     npc.speech.text.text=line;
     npc.speech.plane.setEnabled(true);
+
+    if(playedHumanClip) return;
 
     try {
       const u=new SpeechSynthesisUtterance(line);
@@ -3215,6 +3246,35 @@
     }
   }
 
+  function npcIsDown(){
+    if(!npc?.ragdoll) return false;
+    const p=npc.ragdoll.points;
+
+    // Local vertical positions collapse when ragdoll has been knocked over.
+    const headLow=p.head.pos.y<1.22;
+    const chestLow=p.chest.pos.y<.92;
+    const pelvisLow=p.pelvis.pos.y<.48;
+
+    const chestToPelvis=p.chest.pos.subtract(p.pelvis.pos);
+    const upright=chestToPelvis.lengthSquared()>.0001
+      ? Math.abs(chestToPelvis.normalize().y)
+      : 1;
+
+    return headLow || chestLow || pelvisLow || upright<.58;
+  }
+
+  function startNpcRecovery(){
+    if(!npc || npc.dead || npc.recovering) return;
+    npc.recovering=true;
+    npc.recoverTimer=1.05;
+    npc.recoverStableTimer=0;
+    npc.attackAnim=0;
+    npc.attackCooldown=Math.max(npc.attackCooldown,.8);
+    npc.velocity.x*=.25;
+    npc.velocity.z*=.25;
+    npc.angular.scaleInPlace(.20);
+  }
+
   function ragTarget(name){
     const rd=npc.ragdoll;
     const base=rd.points[name].base.clone();
@@ -3245,6 +3305,40 @@
           base.y-=.10*t;
         }
         return base;
+      }
+      return base;
+    }
+
+    if(npc.recovering){
+      const t=BABYLON.Scalar.Clamp(1-npc.recoverTimer/1.05,0,1);
+
+      // Pull the ragdoll into a crouched get-up pose first,
+      // then back to normal standing targets.
+      if(name==="pelvis"){
+        base.y=.48+.19*t;
+      }else if(name==="spineLow"){
+        base.y=.70+.21*t;
+      }else if(name==="chest"){
+        base.y=.97+.25*t;
+        base.z=-.06*(1-t);
+      }else if(name==="neckBase"){
+        base.y=1.20+.23*t;
+      }else if(name==="head"){
+        base.y=1.40+.27*t;
+      }else if(name==="lKnee" || name==="rKnee"){
+        base.y=.28+.08*t;
+        base.z=.12*(1-t);
+      }else if(name==="lFoot" || name==="rFoot"){
+        base.y=.07;
+        base.z=.18;
+      }else if(name==="lHand"){
+        base.x=-.34;
+        base.y=.55+.20*t;
+        base.z=.17*(1-t);
+      }else if(name==="rHand"){
+        base.x=.34;
+        base.y=.55+.20*t;
+        base.z=.17*(1-t);
       }
       return base;
     }
@@ -3385,6 +3479,7 @@
 
     let strength=.155;
     if(npc.dead && npc.deathPhase==="stagger") strength=.038;
+    else if(npc.recovering) strength=.34;
     else if(npc.stun>0) strength=.010;
     else if(npc.recentlyHit>0) strength=.024;
     else if(npc.emotion==="angry") strength=.185;
@@ -4018,6 +4113,7 @@
       width:.075,height:.055,depth:.025
     },scene);
     buckle.parent=belt;buckle.position.set(0,0,.22);buckle.material=batMetal;
+    buckle.setEnabled(false);
 
     const collar=BABYLON.MeshBuilder.CreateTorus("npcCollar",{
       diameter:.17,thickness:.016,tessellation:16
@@ -4039,6 +4135,9 @@
       new BABYLON.Vector3(.10,.012,.008),
       blueMat,false
     );
+
+    badge.setEnabled(false);
+    badgeStripe.setEnabled(false);
 
     // Shirt seams/buttons.
     const shirtButtons=[];
@@ -4136,6 +4235,9 @@
       hpFlashTimer:0,
       attackCooldown:.35,
       throwCooldown:2.8+Math.random()*1.8,
+      recovering:false,
+      recoverTimer:0,
+      recoverStableTimer:0,
       attackAnim:0,
       attackDuration:.48,
       attackHasHit:false,
@@ -4156,6 +4258,7 @@
       respawnTimer:0,
       greeted:false,
       deathPhase:"alive",
+      deathExploded:false,
       deathTimer:0,
       deathTotalTimer:0,
       deathDir:new BABYLON.Vector3(0,1,0),
@@ -4639,10 +4742,11 @@
 
     // Keep the health bar for a short instant, then hide it during collapse.
     npc.deathPhase="stagger";
-    npc.deathTimer=.48;
+    npc.deathExploded=false;
+    npc.deathTimer=.40;
     npc.deathTotalTimer=0;
     npc.ragdoll.dead=false;
-    npc.respawnTimer=6.1;
+    npc.respawnTimer=6.4;
     npc.deathDir=dir.clone();
     npc.deathHitPos=hitPos.clone();
     npc.deathSpeed=speed;
@@ -4949,12 +5053,43 @@
         updateNpcFace(dt);
         npc.stun=Math.max(0,npc.stun-dt);
 
+        if(!npc.recovering && npc.stun<=0 && npcIsDown()){
+          startNpcRecovery();
+        }
+
+        if(npc.recovering){
+          npc.recoverTimer=Math.max(0,npc.recoverTimer-dt);
+          npc.walkingNow=false;
+          npc.attackAnim=0;
+          npc.velocity.x*=Math.pow(.05,dt);
+          npc.velocity.z*=Math.pow(.05,dt);
+
+          updateNpcRagdoll(dt,true);
+
+          if(!npcIsDown()){
+            npc.recoverStableTimer+=dt;
+          }else{
+            npc.recoverStableTimer=0;
+          }
+
+          if(
+            npc.recoverTimer<=0 &&
+            npc.recoverStableTimer>.22
+          ){
+            npc.recovering=false;
+            npc.attackCooldown=Math.max(npc.attackCooldown,.55);
+          }
+
+          // Skip chase/attack while getting up.
+        }
+
+
         npc.velocity.y+=NPC_GRAVITY*dt;
         moveNpc(npc.velocity.scale(dt));
         npc.velocity.x*=Math.pow(.10,dt);
         npc.velocity.z*=Math.pow(.10,dt);
 
-        if ((isInXR() || testAIEnabled) && !playerDead) {
+        if (!npc.recovering && (isInXR() || testAIEnabled) && !playerDead) {
           const playerPos=playerWorldPos();
           const toPlayer=playerPos.subtract(npc.root.position);
           toPlayer.y=0;
@@ -5163,7 +5298,7 @@
           }
 
           // The active ragdoll produces walking/arm motion physically.
-          updateNpcRagdoll(dt,true);
+          if(!npc.recovering) updateNpcRagdoll(dt,true);
         } else {
           npc.walkingNow=false;
           updateNpcRagdoll(dt,true);
@@ -5173,7 +5308,6 @@
         npc.deathTotalTimer+=dt;
         npc.walkingNow=false;
 
-        // Linear + angular momentum continue through the whole death.
         npc.velocity.y-=2.8*dt;
         moveNpc(npc.velocity.scale(dt));
 
@@ -5187,34 +5321,41 @@
 
         if(npc.deathPhase==="stagger"){
           npc.deathTimer-=dt;
-
-          // Still partially active for a split second: knees/torso try to
-          // recover, so the final hit reads as an animation instead of
-          // instantly turning into spaghetti.
           updateNpcRagdoll(dt,true);
-
-          // Add a subtle backwards/sideways wobble while active.
-          const phase=BABYLON.Scalar.Clamp(1-npc.deathTimer/.48,0,1);
-          const wobble=Math.sin(phase*Math.PI)*.07;
-          npc.ragdoll.points.chest.pos.x+=Math.sin(npc.root.rotation.y)*wobble*dt;
-          npc.ragdoll.points.pelvis.pos.z-=wobble*.45*dt;
 
           if(npc.deathTimer<=0){
             npc.deathPhase="collapse";
+            npc.deathTimer=.28;
             npc.ragdoll.dead=true;
             npc.hp.plane.setEnabled(false);
-
-            // A second smaller impulse starts the collapse through the knees.
-            const p=npc.ragdoll.points;
-            p.lKnee.prev.y+=.025;
-            p.rKnee.prev.y+=.035;
-            p.chest.prev.subtractInPlace(
-              worldVectorToNpcLocal(npc.deathDir.scale(.020+.003*npc.deathSpeed))
-            );
           }
-        }else{
-          // Fully connected limp ragdoll. No explosion, no detached body parts.
+        }else if(npc.deathPhase==="collapse"){
+          npc.deathTimer-=dt;
           updateNpcRagdoll(dt,false);
+
+          if(npc.deathTimer<=0 && !npc.deathExploded){
+            npc.deathExploded=true;
+            npc.deathPhase="exploded";
+
+            const chestWorld=npcLocalToWorld(npc.ragdoll.points.chest.pos);
+
+            // Break the ragdoll apart from its CURRENT physical pose.
+            spawnDeathRagdollFromCurrent(
+              npc.deathDir,
+              Math.min(17,7.5+npc.deathSpeed*.75)
+            );
+
+            // Very heavy stylized blood burst.
+            spawnBloodExplosion(chestWorld,npc.deathDir,2.6);
+            spawnDeathJointBlood(npc.deathDir);
+            spawnDeathJointBlood(
+              npc.deathDir.add(new BABYLON.Vector3(0,.35,0))
+            );
+
+            npc.visual.setEnabled(false);
+            npc.weaponRoot.setEnabled(false);
+            playImpactSound("body",1.2);
+          }
         }
 
         if (npc.respawnTimer<=0) {
@@ -5230,7 +5371,27 @@
       }
     }
 
-    // Death stays as one connected ragdoll.
+    // Detached death parts after the finishing explosion.
+    for(let i=deathParts.length-1;i>=0;i--){
+      const r=deathParts[i];
+      r.life-=dt;
+      r.vel.y-=7.2*dt;
+      moveDeathPart(r,dt);
+
+      r.mesh.rotation.x+=r.spin.x*dt;
+      r.mesh.rotation.y+=r.spin.y*dt;
+      r.mesh.rotation.z+=r.spin.z*dt;
+
+      r.vel.x*=Math.pow(.72,dt);
+      r.vel.z*=Math.pow(.72,dt);
+      r.spin.scaleInPlace(Math.pow(.50,dt));
+
+      if(r.life<=0 || r.mesh.position.y<-5.4){
+        r.mesh.dispose();
+        deathParts.splice(i,1);
+      }
+    }
+
 
     updateOfficePhysics(dt);
 
