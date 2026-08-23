@@ -77,7 +77,7 @@
   let bodyVelocity=new BABYLON.Vector3(0,0,0);
 
   // Much lighter than previous versions.
-  const PLAYER_GRAVITY = -0.92;
+  const PLAYER_GRAVITY = -0.38;
   const PUSH_GAIN = 1.68;
   const MAX_PLAYER_SPEED = 9.6;
 
@@ -152,6 +152,25 @@
   deathText.fontWeight="900";
   deathBg.addControl(deathText);
 
+  const blockPlane=BABYLON.MeshBuilder.CreatePlane("blockPlane",{width:1.1,height:.42},scene);
+  blockPlane.setEnabled(false);
+  const blockTex=BABYLON.GUI.AdvancedDynamicTexture.CreateForMesh(blockPlane,700,250);
+  const blockRect=new BABYLON.GUI.Rectangle();
+  blockRect.background="#0f172aDD";
+  blockRect.color="#67e8f9";
+  blockRect.thickness=5;
+  blockRect.cornerRadius=30;
+  blockTex.addControl(blockRect);
+
+  const blockText=new BABYLON.GUI.TextBlock();
+  blockText.text="BLOCK!";
+  blockText.color="#ffffff";
+  blockText.fontSize=88;
+  blockText.fontWeight="900";
+  blockRect.addControl(blockText);
+
+  let blockFlashTimer=0;
+
   function updatePlayerHud() {
     youHpText.text=`YOU ${Math.max(0,Math.ceil(playerHP))} HP`;
     hpBar.width=Math.max(.001,playerHP/PLAYER_MAX_HP);
@@ -172,6 +191,10 @@
     deathPlane.parent=xrCamera;
     deathPlane.position.set(0,0,1.45);
     deathPlane.rotation.set(0,Math.PI,0);
+
+    blockPlane.parent=xrCamera;
+    blockPlane.position.set(.48,.18,1.15);
+    blockPlane.rotation.set(0,Math.PI,0);
   }
 
   function hurtPlayer(amount, fromWorldPos) {
@@ -224,28 +247,28 @@
   const chestRoot = new BABYLON.TransformNode("playerBodyRoot",scene);
 
   const chest = BABYLON.MeshBuilder.CreateCapsule("playerChest",{
-    height:.37,radius:.185,tessellation:14
+    height:.245,radius:.125,tessellation:14
   },scene);
   chest.parent=chestRoot;
-  chest.position.y=-.22;
-  chest.scaling.z=.82;
+  chest.position.y=-.115;
+  chest.scaling.z=.72;
   chest.material=MAT.accent;
 
-  // Very short waist instead of the old large belly.
-  const belly = BABYLON.MeshBuilder.CreateSphere("playerWaist",{diameter:.27,segments:14},scene);
+  // Tiny high waist: this is deliberately much smaller than v0.13.
+  const belly = BABYLON.MeshBuilder.CreateSphere("playerWaist",{diameter:.165,segments:12},scene);
   belly.parent=chestRoot;
-  belly.position.y=-.40;
-  belly.scaling.set(1,.48,.76);
+  belly.position.y=-.245;
+  belly.scaling.set(1,.38,.68);
   belly.material=MAT.accent;
 
-  const shoulderL = BABYLON.MeshBuilder.CreateSphere("shoulderL",{diameter:.17,segments:12},scene);
+  const shoulderL = BABYLON.MeshBuilder.CreateSphere("shoulderL",{diameter:.115,segments:10},scene);
   shoulderL.parent=chestRoot;
-  shoulderL.position.set(-.18,-.10,0);
+  shoulderL.position.set(-.125,-.025,0);
   shoulderL.material=MAT.accent;
 
   const shoulderR = shoulderL.clone("shoulderR");
   shoulderR.parent=chestRoot;
-  shoulderR.position.x=.18;
+  shoulderR.position.x=.125;
 
   chestRoot.setEnabled(false);
 
@@ -262,23 +285,23 @@
     if (f.lengthSquared()<.001) f.set(0,0,1);
     f.normalize();
 
-    // Much smaller/high torso: upper chest to high waist only.
-    const topY=Math.max(.72,head.y-.14);
-    const bottomY=Math.max(.58,head.y-.43);
+    // Tiny, very high torso: upper chest only, ending around the high waist.
+    const topY=Math.max(.86,head.y-.105);
+    const bottomY=Math.max(.72,head.y-.31);
     const bodyMid=(topY+bottomY)*.5;
 
     chestRoot.position.set(
-      head.x + f.x*.07,
-      bodyMid + .14,
-      head.z + f.z*.07
+      head.x + f.x*.055,
+      bodyMid + .065,
+      head.z + f.z*.055
     );
     chestRoot.rotation.y=Math.atan2(f.x,f.z);
 
-    // Compress slightly when crouching, but never stretch downward.
-    const bodyHeight=Math.max(.22,topY-bottomY);
-    chest.scaling.y=Math.min(.88,bodyHeight/.36);
-    belly.position.y=-Math.min(.37,bodyHeight+.05);
-    belly.scaling.y=.46;
+    // Never stretch downward when crouching.
+    const bodyHeight=Math.max(.14,topY-bottomY);
+    chest.scaling.y=Math.min(.78,bodyHeight/.245);
+    belly.position.y=-Math.min(.235,bodyHeight+.025);
+    belly.scaling.y=.34;
   }
   function keepRigAboveFloor() {
     if (!xrCamera) return;
@@ -385,6 +408,57 @@
     if (len2<.000001) return BABYLON.Vector3.Distance(p,a);
     const t=Math.max(0,Math.min(1,BABYLON.Vector3.Dot(p.subtract(a),ab)/len2));
     return BABYLON.Vector3.Distance(p,a.add(ab.scale(t)));
+  }
+
+  function segmentSegmentDistance(p1,q1,p2,q2) {
+    const d1=q1.subtract(p1);
+    const d2=q2.subtract(p2);
+    const r=p1.subtract(p2);
+
+    const a=BABYLON.Vector3.Dot(d1,d1);
+    const e=BABYLON.Vector3.Dot(d2,d2);
+    const f=BABYLON.Vector3.Dot(d2,r);
+
+    let s=0,t=0;
+
+    if(a<=.000001 && e<=.000001){
+      return BABYLON.Vector3.Distance(p1,p2);
+    }
+
+    if(a<=.000001){
+      s=0;
+      t=Math.max(0,Math.min(1,f/e));
+    }else{
+      const c=BABYLON.Vector3.Dot(d1,r);
+
+      if(e<=.000001){
+        t=0;
+        s=Math.max(0,Math.min(1,-c/a));
+      }else{
+        const b=BABYLON.Vector3.Dot(d1,d2);
+        const denom=a*e-b*b;
+
+        if(Math.abs(denom)>.000001){
+          s=Math.max(0,Math.min(1,(b*f-c*e)/denom));
+        }else{
+          s=0;
+        }
+
+        t=(b*s+f)/e;
+
+        if(t<0){
+          t=0;
+          s=Math.max(0,Math.min(1,-c/a));
+        }else if(t>1){
+          t=1;
+          s=Math.max(0,Math.min(1,(b-c)/a));
+        }
+      }
+    }
+
+    const c1=p1.add(d1.scale(s));
+    const c2=p2.add(d2.scale(t));
+    return BABYLON.Vector3.Distance(c1,c2);
   }
 
   // ------------------------------------------------------------
@@ -623,6 +697,7 @@
   batRoot.setEnabled(false);
 
   let batTipLast=null;
+  let batBaseLast=null;
   let batHitCooldown=0;
   function batTip() {
     return BABYLON.Vector3.TransformCoordinates(
@@ -674,48 +749,73 @@
 
   const VOICE_LINES={
     chase:[
-      "Hey! Get back here!",
-      "Where do you think you're going?",
-      "Come here!",
-      "Stop running!"
+      "Hey! You! Get over here!",
+      "Don't ignore me!",
+      "I'm coming for you!",
+      "Come on, face me!",
+      "You think you can just walk away?",
+      "Hey! I'm talking to you!"
     ],
     angry:[
       "Stop hitting me!",
-      "Okay, now I'm mad!",
-      "You really want to fight?",
-      "That's enough!"
+      "Okay... now I'm actually angry!",
+      "You really shouldn't have done that!",
+      "That's it! I've had enough!",
+      "Are you serious?!",
+      "Keep swinging and see what happens!",
+      "Oh, you are REALLY annoying me now!"
+    ],
+    furious:[
+      "I am DONE playing around!",
+      "You want a fight?! Fine!",
+      "That's it! Come here!",
+      "I swear, stop hitting me!",
+      "You're making me lose it!"
     ],
     hurt:[
-      "Ow! That hurt!",
-      "Ah! Seriously?",
+      "Ow! That really hurt!",
+      "Ah! What was that for?!",
       "Whoa! Easy!",
-      "Ow! Stop!"
+      "Ow! Stop!",
+      "Ah... okay, that hurt.",
+      "Seriously?! Right in the body?!"
     ],
     scared:[
       "Whoa... okay, okay!",
       "Hey! You're actually hurting me!",
-      "Wait! Stop swinging that thing!",
-      "Okay, this is getting bad!"
+      "Wait... stop swinging that thing!",
+      "Okay, this is getting bad!",
+      "Uh... can we calm down for a second?",
+      "Nope. I really don't like this!"
     ],
     attack:[
+      "Take this!",
       "Got you!",
-      "Take that!",
-      "Come on!"
+      "Come on!",
+      "You're not dodging this one!",
+      "Here we go!",
+      "Try blocking THIS!"
+    ],
+    block:[
+      "What?! You blocked that?",
+      "Oh, come on!",
+      "Seriously?!",
+      "Fine... again!"
     ],
     death:[
-      "No!",
-      "Whoa!"
+      "NO!",
+      "Whoa!",
+      "Wait—!"
     ]
   };
-
   function speakNpc(kind,force=false) {
     if (!npc || npc.dead || !("speechSynthesis" in window)) return;
     if (!force && npc.speechCooldown>0) return;
 
     const lines=VOICE_LINES[kind]||VOICE_LINES.chase;
     const line=lines[Math.floor(Math.random()*lines.length)];
-    npc.speechCooldown=1.8+Math.random()*1.8;
-    npc.bubbleTimer=1.7;
+    npc.speechCooldown=1.05+Math.random()*1.15;
+    npc.bubbleTimer=2.0;
     npc.speech.text.text=line;
     npc.speech.plane.setEnabled(true);
 
@@ -725,11 +825,30 @@
       if (selectedVoice) u.voice=selectedVoice;
       u.volume=1;
 
-      if (kind==="angry") { u.rate=1.08; u.pitch=.78; }
-      else if (kind==="scared") { u.rate=1.18; u.pitch=1.20; }
-      else if (kind==="hurt") { u.rate=1.10; u.pitch=1.10; }
-      else if (kind==="attack") { u.rate=1.04; u.pitch=.86; }
-      else { u.rate=.98; u.pitch=.96; }
+      // Wider emotional range. The exact voice quality still depends on
+      // the system voices exposed by Meta Quest Browser.
+      if (kind==="furious") {
+        u.rate=1.16+Math.random()*.06;
+        u.pitch=.68+Math.random()*.05;
+      } else if (kind==="angry") {
+        u.rate=1.10+Math.random()*.06;
+        u.pitch=.76+Math.random()*.07;
+      } else if (kind==="scared") {
+        u.rate=1.18+Math.random()*.08;
+        u.pitch=1.18+Math.random()*.12;
+      } else if (kind==="hurt") {
+        u.rate=1.12+Math.random()*.09;
+        u.pitch=1.04+Math.random()*.12;
+      } else if (kind==="attack") {
+        u.rate=1.08+Math.random()*.06;
+        u.pitch=.82+Math.random()*.08;
+      } else if (kind==="block") {
+        u.rate=1.12;
+        u.pitch=.92;
+      } else {
+        u.rate=.98+Math.random()*.05;
+        u.pitch=.92+Math.random()*.06;
+      }
 
       speechSynthesis.speak(u);
     } catch(_) {}
@@ -1270,6 +1389,7 @@
       speechCooldown:0,
       bubbleTimer:0,
       emotion:"normal",
+      anger:0,
       recentlyHit:0,
       respawnTimer:0,
       greeted:false,
@@ -1570,12 +1690,13 @@
     simpleHitSound(true);
   }
   function swingDamage(speed) {
-    // Continuous detailed curve with many possible damage values.
-    // Player damage is deliberately lower in v0.9 because the NPC is stronger.
-    if (speed<.45) return 0;
+    // Much lower continuous damage in v0.14.
+    // Soft hits can do 1-3, normal swings around the middle,
+    // and only very hard swings approach the cap.
+    if (speed<.42) return 0;
 
-    const raw = 0.8 + 1.18*Math.pow(speed,1.48);
-    return Math.round(Math.max(1,Math.min(42,raw)));
+    const raw = 0.35 + 0.56*Math.pow(speed,1.43);
+    return Math.round(Math.max(1,Math.min(24,raw)));
   }
 
   function damageNpc(hitPos,swingVel,speed) {
@@ -1599,7 +1720,7 @@
     if (dir.lengthSquared()<.001) dir=npc.root.position.subtract(hitPos);
     dir.normalize();
 
-    const force=Math.min(6.7,.55 + speed*.40);
+    const force=Math.min(4.4,.32 + speed*.27);
     npc.velocity.addInPlace(dir.scale(force*.62));
     npc.velocity.y+=Math.max(0,dir.y)*.85;
 
@@ -1610,12 +1731,17 @@
       .95
     );
 
+    npc.anger=Math.min(100,npc.anger + 12 + damage*.9);
+
     if (npc.hpValue<=30) {
       npc.emotion="scared";
-      speakNpc("scared",true);
+      speakNpc(Math.random()<.55?"scared":"angry",true);
+    } else if (npc.anger>=55) {
+      npc.emotion="angry";
+      speakNpc(Math.random()<.62?"furious":"angry",true);
     } else {
       npc.emotion="angry";
-      speakNpc(speed>3.3?"angry":"hurt",true);
+      speakNpc(speed>3.0?"angry":"hurt",true);
     }
 
     pulse(hands.right,Math.min(1,.22+speed*.09),35+Math.min(75,speed*5));
@@ -1678,6 +1804,8 @@
           updatePlayerHud();
           chestRoot.setEnabled(true);
           bodyVelocity.set(0,0,0);
+          batTipLast=null;
+          batBaseLast=null;
           for(const side of ["left","right"]) {
             hands[side].trackLast=null;
             hands[side].contact=false;
@@ -1703,6 +1831,11 @@
     if (damageFlashTimer>0) {
       damageFlashTimer-=dt;
       if (damageFlashTimer<=0) damageFlash.setEnabled(false);
+    }
+
+    if(blockFlashTimer>0){
+      blockFlashTimer-=dt;
+      if(blockFlashTimer<=0) blockPlane.setEnabled(false);
     }
 
     if (playerDead) {
@@ -1755,20 +1888,21 @@
 
             if (npc.speechCooldown<=0 && Math.random()<.014) {
               speakNpc(
-                npc.emotion==="angry" ? "angry" :
-                npc.emotion==="scared" ? "scared" : "chase"
+                npc.emotion==="angry"
+                  ? (npc.anger>=55 ? "furious" : "angry")
+                  : npc.emotion==="scared" ? "scared" : "chase"
               );
             }
           }
 
           // Start a real weapon swing, but distance alone does NOT deal damage.
-          if (d<=2.05 && npc.stun<=0 && npc.attackAnim<=0 && npc.attackCooldown<=0) {
-            npc.attackCooldown=.58;
+          if (d<=2.25 && npc.stun<=0 && npc.attackAnim<=0 && npc.attackCooldown<=0) {
+            npc.attackCooldown=.38;
             npc.attackAnim=npc.attackDuration;
             npc.attackHasHit=false;
             npc.attackBlocked=false;
             npc.weaponPrevTip=npc.weaponTip.getAbsolutePosition().clone();
-            speakNpc("attack",true);
+            speakNpc(npc.anger>=60 && Math.random()<.45 ? "furious" : "attack",true);
           }
 
           // Animate a weapon swing that continuously aims at the player's
@@ -1787,13 +1921,16 @@
 
               let deltaYaw=desiredYaw-npc.root.rotation.y;
               deltaYaw=Math.atan2(Math.sin(deltaYaw),Math.cos(deltaYaw));
-              npc.root.rotation.y+=deltaYaw*Math.min(1,dt*14);
+              npc.root.rotation.y+=deltaYaw*Math.min(1,dt*22);
             }
 
             // Aim weapon height toward current chest/head height.
-            const targetWorld=xrCamera.globalPosition.add(
-              new BABYLON.Vector3(0,-.28,0)
-            );
+            const playerSpheres=playerHitSpheres();
+            const targetSphere=playerSpheres[
+              Math.floor(Math.random()*Math.min(2,playerSpheres.length))
+            ] || playerSpheres[0];
+
+            const targetWorld=(targetSphere?.center || xrCamera.globalPosition).clone();
             const weaponWorld=npc.weaponRoot.getAbsolutePosition();
             const aim=targetWorld.subtract(weaponWorld);
 
@@ -1817,39 +1954,62 @@
               liveTarget.z*Math.sin(npc.root.rotation.y),
               -1,1
             );
-            npc.weaponRoot.rotation.y=localSide*.38;
+            npc.weaponRoot.rotation.y=localSide*.58;
 
             const tip=npc.weaponTip.getAbsolutePosition().clone();
             const prev=npc.weaponPrevTip||tip;
             npc.weaponPrevTip=tip.clone();
 
-            // Block with player bat.
+            // Reliable bat block:
+            // compare the NPC weapon's swept path against the entire player bat.
             if (!npc.attackBlocked && batRoot.isEnabled()) {
-              const bb=batBase(),bt=batTip();
-              const blockDist=Math.min(
+              const bb=batBase();
+              const bt=batTip();
+
+              const prevBb=batBaseLast || bb;
+              const prevBt=batTipLast || bt;
+
+              const dNow=segmentSegmentDistance(prev,tip,bb,bt);
+              const dPrevBat=segmentSegmentDistance(prev,tip,prevBb,prevBt);
+
+              // Also check weapon tip against current/previous bat for edge cases.
+              const dTipNow=Math.min(
                 pointSegmentDistance(tip,bb,bt),
-                pointSegmentDistance(prev,bb,bt)
+                pointSegmentDistance(prev,bb,bt),
+                pointSegmentDistance(tip,prevBb,prevBt)
               );
 
-              if(blockDist<.22 && progress>.25 && progress<.94){
+              const blockDist=Math.min(dNow,dPrevBat,dTipNow);
+
+              // Larger and earlier block window than v0.14.
+              if(blockDist<.31 && progress>.16 && progress<.97){
                 npc.attackBlocked=true;
+                npc.attackHasHit=true;
                 npc.attackAnim=0;
-                npc.stun=.50;
+                npc.stun=.62;
 
                 let push=npc.root.position.subtract(xrCamera.globalPosition);
                 push.y=0;
                 if(push.lengthSquared()<.001) push.set(0,0,1);
                 push.normalize();
 
-                npc.velocity.addInPlace(push.scale(1.25));
-                pulse(hands.right,.95,110);
+                npc.velocity.addInPlace(push.scale(1.45));
+
+                // Strong feedback so the player knows it was a successful block.
+                pulse(hands.right,1,135);
+                pulse(hands.left,.35,55);
                 simpleHitSound(true);
-                speakNpc("angry",true);
+
+                blockFlashTimer=.42;
+                blockPlane.setEnabled(true);
+
+                npc.anger=Math.min(100,npc.anger+14);
+                speakNpc("block",true);
               }
             }
 
             // Real swept hitbox against head/chest/hips.
-            if (!npc.attackBlocked && !npc.attackHasHit && progress>.32) {
+            if (!npc.attackBlocked && !npc.attackHasHit && progress>.38) {
               const hit=playerHitSpheres().some(s=>
                 segmentSphereHit(prev,tip,s.center,s.radius+.085)
               );
@@ -1966,6 +2126,7 @@
               simpleHitSound(false);
             }
           }
+          batBaseLast=batBase().clone();
           batTipLast=tip.clone();
         }
       } else {
