@@ -1,5 +1,5 @@
 (() => {
-  const BUILD_VERSION="0.23.2";
+  const BUILD_VERSION="0.23.3";
   const canvas = document.getElementById("renderCanvas");
   const engine = new BABYLON.Engine(canvas, true, { stencil:true });
   const scene = new BABYLON.Scene(engine);
@@ -254,14 +254,17 @@
   DETAIL_TEX.floor.uScale=1.25;DETAIL_TEX.floor.vScale=1.25;
   DETAIL_TEX.hair.uScale=1.7;DETAIL_TEX.hair.vScale=1.7;
 
-  officeFloorMat.diffuseTexture=DETAIL_TEX.floor;
-  officeWallMat.diffuseTexture=DETAIL_TEX.wall;
+  // clean v0.23.3: officeFloorMat.diffuseTexture=DETAIL_TEX.floor;
+  // clean v0.23.3: officeWallMat.diffuseTexture=DETAIL_TEX.wall;
   deskMat.diffuseTexture=DETAIL_TEX.wood;
+  deskMat.diffuseTexture.level=.20;
   deskMetalMat.diffuseTexture=DETAIL_TEX.metal;
-  chairMat.diffuseTexture=DETAIL_TEX.fabric;
+  deskMetalMat.diffuseTexture.level=.10;
+  // clean v0.23.3: chairMat.diffuseTexture=DETAIL_TEX.fabric;
   monitorMat.diffuseTexture=DETAIL_TEX.metal;
-  keyboardMat.diffuseTexture=DETAIL_TEX.metal;
-  trimMat.diffuseTexture=DETAIL_TEX.wall;
+  monitorMat.diffuseTexture.level=.08;
+  // clean v0.23.3: keyboardMat.diffuseTexture=DETAIL_TEX.metal;
+  // clean v0.23.3: trimMat.diffuseTexture=DETAIL_TEX.wall;
   darkTrimMat.diffuseTexture=DETAIL_TEX.metal;
   corkMat.diffuseTexture=DETAIL_TEX.wood;
 
@@ -3647,14 +3650,14 @@
     beardMat.diffuseTexture=DETAIL_TEX.hair;
     const teethMat=mkMat("npcTeeth"+Math.random(),"#f4eee5");
 
-    skinMat.diffuseTexture=DETAIL_TEX.skin;
-    skinDarkMat.diffuseTexture=DETAIL_TEX.skin;
-    shirtMat.diffuseTexture=DETAIL_TEX.fabric;
-    shirtDarkMat.diffuseTexture=DETAIL_TEX.fabric;
-    pantsMat.diffuseTexture=DETAIL_TEX.fabric;
-    pantsDarkMat.diffuseTexture=DETAIL_TEX.fabric;
-    shoeMat.diffuseTexture=DETAIL_TEX.metal;
-    hairMat.diffuseTexture=DETAIL_TEX.hair;
+    // clean v0.23.3: skinMat.diffuseTexture=DETAIL_TEX.skin;
+    // clean v0.23.3: skinDarkMat.diffuseTexture=DETAIL_TEX.skin;
+    // clean v0.23.3: shirtMat.diffuseTexture=DETAIL_TEX.fabric;
+    // clean v0.23.3: shirtDarkMat.diffuseTexture=DETAIL_TEX.fabric;
+    // clean v0.23.3: pantsMat.diffuseTexture=DETAIL_TEX.fabric;
+    // clean v0.23.3: pantsDarkMat.diffuseTexture=DETAIL_TEX.fabric;
+    // clean v0.23.3: shoeMat.diffuseTexture=DETAIL_TEX.metal;
+    // clean v0.23.3: hairMat.diffuseTexture=DETAIL_TEX.hair;
 
     skinMat.bumpTexture=BUMP_TEX.skin;skinMat.bumpTexture.level=.34;
     skinDarkMat.bumpTexture=BUMP_TEX.skin;skinDarkMat.bumpTexture.level=.30;
@@ -3810,10 +3813,10 @@
     const neckJoint=jointSphere("npcNeckJoint",.17,skinMat);
 
     // Give skin/clothes softer highlights instead of a toy-like plastic shine.
-    skinMat.specularColor=new BABYLON.Color3(.14,.09,.07);
-    skinMat.specularPower=20;
-    shirtMat.specularColor=new BABYLON.Color3(.07,.05,.04);
-    shirtMat.specularPower=12;
+    skinMat.specularColor=new BABYLON.Color3(.055,.040,.032);
+    skinMat.specularPower=10;
+    shirtMat.specularColor=new BABYLON.Color3(.025,.028,.032);
+    shirtMat.specularPower=7;
     pantsMat.specularColor=new BABYLON.Color3(.04,.05,.07);
     pantsMat.specularPower=10;
 
@@ -4233,44 +4236,57 @@
     });
   }
 
-  function npcBatSweepHit(prevTip,tip,base,radius=.19){
+  function npcBatSweepHit(prevTip,tip,base,radius=.22){
     if(!npc || npc.dead || !npc.ragdoll) return null;
 
     let best=null;
     let bestDist=Infinity;
 
+    // Approximate previous bat base using the current shaft direction.
+    const shaft=tip.subtract(base);
+    const prevBase=prevTip.subtract(shaft);
+
     for(const p of npc.ragdoll.list){
-      const w=npcLocalToWorld(p.pos);
+      const world=npcLocalToWorld(p.pos);
       const hitRadius=radius+p.radius;
 
-      // 1) Fast swing path between previous and current bat tip.
-      const swept=segmentSphereHit(prevTip,tip,w,hitRadius);
+      const tests=[
+        // Fast moving tip.
+        pointSegmentDistance(world,prevTip,tip),
 
-      // 2) Entire current bat shaft, so a hit near the middle of the bat counts.
-      const shaft=segmentSphereHit(base,tip,w,hitRadius*.92);
+        // Current bat shaft.
+        pointSegmentDistance(world,base,tip),
 
-      // 3) Slight fallback for slow/contact hits.
-      const tipDist=BABYLON.Vector3.Distance(tip,w);
+        // Previous bat shaft.
+        pointSegmentDistance(world,prevBase,prevTip),
 
-      if(swept || shaft || tipDist<hitRadius){
-        const d=Math.min(
-          pointSegmentDistance(w,prevTip,tip),
-          pointSegmentDistance(w,base,tip),
-          tipDist
-        );
+        // Swept base.
+        pointSegmentDistance(world,prevBase,base)
+      ];
 
-        if(d<bestDist){
-          bestDist=d;
-          best={
-            point:w.clone(),
-            part:p.name
-          };
-        }
+      // Sample three intermediate bat shafts too. This closes gaps on
+      // very fast controller swings where a thin bat can jump past a limb.
+      for(const t of [.25,.50,.75]){
+        const a=BABYLON.Vector3.Lerp(prevBase,base,t);
+        const b=BABYLON.Vector3.Lerp(prevTip,tip,t);
+        tests.push(pointSegmentDistance(world,a,b));
+      }
+
+      const d=Math.min(...tests);
+
+      if(d<hitRadius && d<bestDist){
+        bestDist=d;
+        best={
+          point:world.clone(),
+          part:p.name,
+          distance:d
+        };
       }
     }
 
     return best;
   }
+
   function resolveNpcWorld(prevY) {
     if (!npc) return;
     if (npc.root.position.y<0) {
@@ -4649,11 +4665,116 @@
     pulse(hands.right,1,145);
     playImpactSound("body",1.1);
   }
+  function classifyNpcHit(hitWorld){
+    if(!npc?.ragdoll){
+      return {zone:"torso",mult:1,point:null};
+    }
+
+    const groups=[
+      {zone:"head",names:["head","neckBase"],mult:1.42},
+      {zone:"torso",names:["chest","spineLow","pelvis"],mult:1.00},
+      {zone:"rightArm",names:["rShoulder","rElbow","rWrist","rHand"],mult:.72},
+      {zone:"leftArm",names:["lShoulder","lElbow","lWrist","lHand"],mult:.72},
+      {zone:"rightLeg",names:["rHip","rKnee","rAnkle","rFoot"],mult:.80},
+      {zone:"leftLeg",names:["lHip","lKnee","lAnkle","lFoot"],mult:.80}
+    ];
+
+    let best={zone:"torso",mult:1,dist:Infinity,point:null};
+
+    for(const group of groups){
+      for(const name of group.names){
+        const p=npc.ragdoll.points[name];
+        if(!p) continue;
+
+        const world=npcLocalToWorld(p.pos);
+        const dist=BABYLON.Vector3.Distance(hitWorld,world);
+
+        if(dist<best.dist){
+          best={
+            zone:group.zone,
+            mult:group.mult,
+            dist,
+            point:p
+          };
+        }
+      }
+    }
+
+    return best;
+  }
+
+  function applyInjury(zone,damage,speed){
+    if(!npc?.injuries) return;
+
+    const amount=damage*(.65+Math.min(1,speed*.06));
+
+    if(zone==="head"){
+      npc.injuries.head=Math.min(100,npc.injuries.head+amount*1.40);
+      npc.stun=Math.max(
+        npc.stun,
+        .13+Math.min(.35,damage*.012)
+      );
+    }else if(zone==="rightArm" || zone==="leftArm"){
+      npc.injuries[zone]=Math.min(100,npc.injuries[zone]+amount);
+      npc.stun=Math.max(npc.stun,.06);
+    }else if(zone==="rightLeg" || zone==="leftLeg"){
+      npc.injuries[zone]=Math.min(100,npc.injuries[zone]+amount*1.15);
+      npc.stun=Math.max(
+        npc.stun,
+        .08+Math.min(.20,damage*.008)
+      );
+    }else{
+      npc.injuries.torso=Math.min(
+        100,
+        npc.injuries.torso+amount*.55
+      );
+    }
+  }
+
+  function applyNpcSpinKnockback(hitWorld,impulseWorld,speed,mult=1){
+    if(!npc) return;
+
+    const center=npc.root.position.add(
+      new BABYLON.Vector3(0,1.0,0)
+    );
+
+    const lever=hitWorld.subtract(center);
+
+    let force=impulseWorld.clone();
+    if(force.lengthSquared()<.000001) return;
+    force.normalize();
+
+    const torque=BABYLON.Vector3.Cross(lever,force);
+    const hardness=BABYLON.Scalar.Clamp((speed-.7)/6,0,1);
+    const scale=(.50+hardness*2.10)*mult;
+
+    npc.angular.y+=BABYLON.Scalar.Clamp(
+      torque.y*scale,
+      -4.6,4.6
+    );
+
+    npc.angular.x+=BABYLON.Scalar.Clamp(
+      torque.x*scale*.42,
+      -1.6,1.6
+    );
+
+    npc.angular.z+=BABYLON.Scalar.Clamp(
+      torque.z*scale*.42,
+      -1.6,1.6
+    );
+
+    // Extra yaw from an off-centre horizontal hit.
+    npc.angular.y+=BABYLON.Scalar.Clamp(
+      (-lever.x*force.z+lever.z*force.x)*speed*.18*mult,
+      -2.4,2.4
+    );
+  }
+
   function swingDamage(speed) {
     // Much lower continuous damage in v0.14.
     // Soft hits can do 1-3, normal swings around the middle,
     // and only very hard swings approach the cap.
-    if (speed<.34) return 0;
+    if (speed<.22) return 0;
 
     const raw = 0.35 + 0.56*Math.pow(speed,1.43);
     return Math.round(Math.max(1,Math.min(24,raw)));
@@ -5160,16 +5281,16 @@
             // Office objects and windows use the entire swept bat path.
             handleBatOfficeHit(batTipLast,tip,vel,speed);
 
-            if(speed>.42 && batHitCooldown<=0){
+            if(speed>.28 && batHitCooldown<=0){
               const npcHit=npcBatSweepHit(
                 batTipLast,
                 tip,
                 batBase(),
-                .205
+                .235
               );
 
               if(npcHit){
-                batHitCooldown=.16;
+                batHitCooldown=.12;
                 damageNpc(npcHit.point,vel,speed);
               }
             }
@@ -5292,6 +5413,16 @@
 
   bindTestControls();
   updatePlayerHud();
+
+  // Startup integrity test for combat.
+  if(
+    typeof classifyNpcHit!=="function" ||
+    typeof applyInjury!=="function" ||
+    typeof applyNpcSpinKnockback!=="function" ||
+    typeof npcBatSweepHit!=="function"
+  ){
+    throw new Error("Combat helpers failed to initialize");
+  }
 
   engine.runRenderLoop(()=>scene.render());
   addEventListener("resize",()=>engine.resize());
