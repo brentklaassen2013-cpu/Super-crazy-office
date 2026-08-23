@@ -1,5 +1,5 @@
 (() => {
-  const BUILD_VERSION="0.24.3";
+  const BUILD_VERSION="0.24.5";
   const canvas = document.getElementById("renderCanvas");
   const engine = new BABYLON.Engine(canvas, true, { stencil:true });
   const scene = new BABYLON.Scene(engine);
@@ -61,9 +61,9 @@
   const PERF={
     maxFx:320,
     maxBloodSplats:140,
-    maxDeathParts:10,
-    propSleepSpeed:.055,
-    propSleepSeconds:1.15
+    maxDeathParts:0,
+    propSleepSpeed:.14,
+    propSleepSeconds:.28
   };
 
   function trimFxBodies(){
@@ -725,6 +725,11 @@
     const cable=BABYLON.MeshBuilder.CreateTorus("monitorCable"+i,{diameter:.28,thickness:.012,tessellation:14},scene);
     cable.position.set(d[0]+.30,.53,d[1]+.25);
     cable.rotation.x=Math.PI/2;cable.material=darkTrimMat;
+
+    // Treat the loose cable/ring as a physical desk item.
+    registerProp(cable,[cable],{
+      type:"cable",mass:.06,radius:.15,minY:.02,breakThreshold:99,hp:4
+    });
   });
 
   createBin("binA",-4.15,-2.7);
@@ -1622,7 +1627,7 @@
     return false;
   }
 
-  function spawnDebrisBox(pos,size,material,vel,life=4.2){
+  function spawnDebrisBox(pos,size,material,vel,life=2.8){
     const m=BABYLON.MeshBuilder.CreateBox("debris",{width:size.x,height:size.y,depth:size.z},scene);
     m.position.copyFrom(pos);m.material=material;
     fxBodies.push({
@@ -1642,7 +1647,7 @@
 
     for(const other of officeProps){
       if(other===deskProp || other.broken) continue;
-      if(!["monitor","keyboard","mouse","mug","phone","papers"].includes(other.type)) continue;
+      if(!["monitor","keyboard","mouse","mousepad","mug","phone","papers","pencup","stapler","cable"].includes(other.type)) continue;
 
       const ox=other.root.position.x;
       const oz=other.root.position.z;
@@ -1650,7 +1655,7 @@
       const dz=oz-cz;
 
       // Close enough to be sitting on the desk surface.
-      if(Math.abs(dx)<=1.18 && Math.abs(dz)<=.82 && other.root.position.y>.74){
+      if(Math.abs(dx)<=1.22 && Math.abs(dz)<=.88 && other.root.position.y>.42){
         other.loose=true;
         other.sleepTimer=0;
         other.minY=0;
@@ -1685,7 +1690,7 @@
 
     for(const other of officeProps){
       if(other===deskProp || other.broken) continue;
-      if(!["monitor","keyboard","mouse","mug","phone","papers"].includes(other.type)) continue;
+      if(!["monitor","keyboard","mouse","mousepad","mug","phone","papers","pencup","stapler","cable"].includes(other.type)) continue;
 
       const ox=other.root.position.x;
       const oz=other.root.position.z;
@@ -1713,6 +1718,18 @@
         m.setEnabled?.(false);
       }
     });
+    if(prop.type==="desk"){
+      // Safety sweep: no hidden desk collider may remain after destruction.
+      for(const s of [...collisionSurfaces]){
+        if(s===prop.root || s?.parent===prop.root){
+          removeCollision(s);
+          s.setEnabled?.(false);
+        }
+      }
+
+      // Anything resting on the desk must start falling immediately.
+      loosenDeskContents(prop,d,Math.max(speed,4.0),true);
+    }
 
     const center=prop.root.getAbsolutePosition?.()?.clone?.() || prop.root.position.clone();
     const d=dir.clone(); if(d.lengthSquared()<.001) d.set(0,1,0); d.normalize();
@@ -1723,12 +1740,11 @@
       spawnDebrisBox(
         center.add(off),size,mat,
         base.add(new BABYLON.Vector3((Math.random()-.5)*scatter,Math.random()*scatter,(Math.random()-.5)*scatter)),
-        4+Math.random()*1.8
+        2.4+Math.random()*1.4
       );
     };
 
     if(prop.type==="desk"){
-      loosenDeskContents(prop,d,Math.max(speed,4.2),true);
       chunk(new BABYLON.Vector3(0,.72,0),new BABYLON.Vector3(.70,.07,.32),deskMat,1.8);
       chunk(new BABYLON.Vector3(.36,.55,.12),new BABYLON.Vector3(.28,.45,.25),deskMat,1.6);
       for(const sx of [-1,1]) chunk(new BABYLON.Vector3(sx*.52,.33,.18),new BABYLON.Vector3(.06,.60,.06),deskMetalMat,2.2);
@@ -1855,13 +1871,25 @@
       if(!p.loose || p.broken) continue;
 
       p.vel.y-=8.8*dt;
+
+      // Clamp furniture speed / spin to stop objects exploding through the room.
+      const maxPropSpeed=p.type==="monitor" ? 4.0 : p.type==="keyboard" ? 5.0 : 5.8;
+      if(p.vel.length()>maxPropSpeed){
+        p.vel.normalize().scaleInPlace(maxPropSpeed);
+      }
+
+      p.ang.x=BABYLON.Scalar.Clamp(p.ang.x,-4.0,4.0);
+      p.ang.y=BABYLON.Scalar.Clamp(p.ang.y,-4.0,4.0);
+      p.ang.z=BABYLON.Scalar.Clamp(p.ang.z,-4.0,4.0);
+
       p.root.position.addInPlace(p.vel.scale(dt));
       p.root.rotation.x+=p.ang.x*dt;
       p.root.rotation.y+=p.ang.y*dt;
       p.root.rotation.z+=p.ang.z*dt;
-      p.vel.x*=Math.pow(.46,dt);
-      p.vel.z*=Math.pow(.46,dt);
-      p.ang.scaleInPlace(Math.pow(.32,dt));
+
+      p.vel.x*=Math.pow(.30,dt);
+      p.vel.z*=Math.pow(.30,dt);
+      p.ang.scaleInPlace(Math.pow(.16,dt));
 
       if(p.root.position.y<p.minY){
         p.root.position.y=p.minY;
@@ -2398,8 +2426,8 @@
     const h=playerWorldPos();
     return [
       {name:"head",center:h.clone(),radius:.135},
-      {name:"chest",center:h.add(new BABYLON.Vector3(0,-.38,0)),radius:.23},
-      {name:"hips",center:h.add(new BABYLON.Vector3(0,-.68,0)),radius:.19}
+      // Body collision now ends at the chest: no hip/waist hitbox.
+      {name:"chest",center:h.add(new BABYLON.Vector3(0,-.34,0)),radius:.20}
     ];
   }
 
@@ -3766,7 +3794,7 @@
     const rd=npc.ragdoll;
     const frame=Math.min(1.4,dt*60);
     const gravity=active ? -5.4 : -7.1;
-    const damping=active ? .900 : .970;
+    const damping=active ? .865 : .930;
 
     let strength=.155;
     if(npc.dead && npc.deathPhase==="stagger") strength=.038;
@@ -3778,6 +3806,13 @@
 
     for(const p of rd.list){
       const vel=p.pos.subtract(p.prev).scale(damping);
+
+      // Clamp individual point speed to stop solver explosions.
+      const maxStep=active ? .090 : .115;
+      if(vel.length()>maxStep){
+        vel.normalize().scaleInPlace(maxStep);
+      }
+
       p.prev.copyFrom(p.pos);
       p.pos.addInPlace(vel);
       p.pos.y+=gravity*dt*dt;
@@ -3797,19 +3832,14 @@
       }
     }
 
-    // More iterations = tighter joints. Five is a good Quest 2 compromise.
-    for(let iteration=0;iteration<13;iteration++){
+    // Stable Quest setting: enough constraints without over-solving/jitter.
+    for(let iteration=0;iteration<8;iteration++){
       for(const c of rd.constraints) solveRagConstraint(c);
       for(const p of rd.list) collideNpcRagdollPoint(p,dt);
     }
 
     updateNpcRagdollMeshes();
 
-    if(npc.typeName==="Tank"){
-      speakNpc("angry",true);
-    }else if(npc.typeName==="Runner"){
-      speakNpc("scared",true);
-    }
   }
 
   function updateNpcFace(dt){
@@ -5702,12 +5732,24 @@
         npc.deathTotalTimer+=dt;
         npc.walkingNow=false;
 
-        npc.velocity.y-=2.8*dt;
-        moveNpc(npc.velocity.scale(dt));
+        if(npc.deathPhase!=="settled"){
+          npc.velocity.y-=2.8*dt;
 
-        npc.root.rotation.x+=npc.angular.x*dt;
-        npc.root.rotation.y+=npc.angular.y*dt;
-        npc.root.rotation.z+=npc.angular.z*dt;
+          const deadSpeed=npc.velocity.length();
+          if(deadSpeed>4.2){
+            npc.velocity.normalize().scaleInPlace(4.2);
+          }
+
+          moveNpc(npc.velocity.scale(dt));
+
+          npc.angular.x=BABYLON.Scalar.Clamp(npc.angular.x,-2.2,2.2);
+          npc.angular.y=BABYLON.Scalar.Clamp(npc.angular.y,-2.2,2.2);
+          npc.angular.z=BABYLON.Scalar.Clamp(npc.angular.z,-2.2,2.2);
+
+          npc.root.rotation.x+=npc.angular.x*dt;
+          npc.root.rotation.y+=npc.angular.y*dt;
+          npc.root.rotation.z+=npc.angular.z*dt;
+        }
 
         npc.velocity.x*=Math.pow(.34,dt);
         npc.velocity.z*=Math.pow(.34,dt);
@@ -5719,37 +5761,32 @@
 
           if(npc.deathTimer<=0){
             npc.deathPhase="collapse";
-            npc.deathTimer=.07;
+            npc.deathTimer=.85;
             npc.ragdoll.dead=true;
             npc.hp.plane.setEnabled(false);
+            npc.weaponRoot.setEnabled(false);
           }
         }else if(npc.deathPhase==="collapse"){
           npc.deathTimer-=dt;
-          updateNpcRagdoll(dt,false);
 
-          if(npc.deathTimer<=0 && !npc.deathExploded){
+          // One connected ragdoll only. This is much more stable on Quest.
+          if(npc.deathTimer>0){
+            updateNpcRagdoll(dt,false);
+          }else{
+            npc.deathPhase="settled";
             npc.deathExploded=true;
-            npc.deathPhase="exploded";
+            npc.velocity.set(0,0,0);
+            npc.angular.set(0,0,0);
 
-            const chestWorld=npcLocalToWorld(npc.ragdoll.points.chest.pos);
-
-            // Break the ragdoll apart from its CURRENT physical pose.
-            spawnDeathRagdollFromCurrent(
-              npc.deathDir,
-              Math.min(4.8,2.6+npc.deathSpeed*.12)
-            );
-
-            // Very heavy stylized blood burst.
-            spawnBloodExplosion(chestWorld,npc.deathDir,2.6);
-            spawnDeathJointBlood(npc.deathDir);
-            spawnDeathJointBlood(
-              npc.deathDir.add(new BABYLON.Vector3(0,.35,0))
-            );
-
-            npc.visual.setEnabled(false);
-            npc.weaponRoot.setEnabled(false);
-            playImpactSound("body",1.2);
+            // Freeze Verlet velocity so the body stops jittering.
+            for(const p of npc.ragdoll.list){
+              p.prev.copyFrom(p.pos);
+            }
           }
+        }else if(npc.deathPhase==="settled"){
+          // Keep the final ragdoll pose frozen until respawn.
+          npc.velocity.set(0,0,0);
+          npc.angular.set(0,0,0);
         }
 
         if (npc.respawnTimer<=0) {
