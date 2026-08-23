@@ -1,5 +1,5 @@
 (() => {
-  const BUILD_VERSION="0.23.4";
+  const BUILD_VERSION="0.23.5";
   const canvas = document.getElementById("renderCanvas");
   const engine = new BABYLON.Engine(canvas, true, { stencil:true });
   const scene = new BABYLON.Scene(engine);
@@ -3246,27 +3246,77 @@
     }
   }
 
-  function npcIsDown(){
-    if(!npc?.ragdoll) return false;
+  function npcUprightMetrics(){
+    if(!npc?.ragdoll) return {
+      upright:1,
+      chestOffset:0,
+      headOffset:0,
+      rootTilt:0,
+      headY:2,
+      chestY:1.3,
+      pelvisY:.7
+    };
+
     const p=npc.ragdoll.points;
 
-    // Local vertical positions collapse when ragdoll has been knocked over.
-    const headLow=p.head.pos.y<1.22;
-    const chestLow=p.chest.pos.y<.92;
-    const pelvisLow=p.pelvis.pos.y<.48;
+    const spine=p.chest.pos.subtract(p.pelvis.pos);
+    let upright=1;
+    if(spine.lengthSquared()>.000001){
+      upright=Math.abs(spine.normalize().y);
+    }
 
-    const chestToPelvis=p.chest.pos.subtract(p.pelvis.pos);
-    const upright=chestToPelvis.lengthSquared()>.0001
-      ? Math.abs(chestToPelvis.normalize().y)
-      : 1;
+    const chestDx=p.chest.pos.x-p.pelvis.pos.x;
+    const chestDz=p.chest.pos.z-p.pelvis.pos.z;
+    const headDx=p.head.pos.x-p.pelvis.pos.x;
+    const headDz=p.head.pos.z-p.pelvis.pos.z;
 
-    return headLow || chestLow || pelvisLow || upright<.58;
+    return {
+      upright,
+      chestOffset:Math.hypot(chestDx,chestDz),
+      headOffset:Math.hypot(headDx,headDz),
+      rootTilt:Math.max(
+        Math.abs(npc.root.rotation.x),
+        Math.abs(npc.root.rotation.z)
+      ),
+      headY:p.head.pos.y,
+      chestY:p.chest.pos.y,
+      pelvisY:p.pelvis.pos.y
+    };
+  }
+
+  function npcIsDown(){
+    const m=npcUprightMetrics();
+
+    // This is deliberately strict. A half-upright NPC is still "down".
+    return (
+      m.headY<1.43 ||
+      m.chestY<1.05 ||
+      m.pelvisY<.52 ||
+      m.upright<.86 ||
+      m.chestOffset>.17 ||
+      m.headOffset>.24 ||
+      m.rootTilt>.14
+    );
+  }
+
+  function npcIsFullyUpright(){
+    const m=npcUprightMetrics();
+
+    return (
+      m.headY>1.54 &&
+      m.chestY>1.13 &&
+      m.pelvisY>.58 &&
+      m.upright>.955 &&
+      m.chestOffset<.085 &&
+      m.headOffset<.13 &&
+      m.rootTilt<.045
+    );
   }
 
   function startNpcRecovery(){
     if(!npc || npc.dead || npc.recovering) return;
     npc.recovering=true;
-    npc.recoverTimer=1.05;
+    npc.recoverTimer=1.45;
     npc.recoverStableTimer=0;
     npc.attackAnim=0;
     npc.attackCooldown=Math.max(npc.attackCooldown,.8);
@@ -3310,35 +3360,54 @@
     }
 
     if(npc.recovering){
-      const t=BABYLON.Scalar.Clamp(1-npc.recoverTimer/1.05,0,1);
+      const t=BABYLON.Scalar.Clamp(1-npc.recoverTimer/1.45,0,1);
 
       // Pull the ragdoll into a crouched get-up pose first,
       // then back to normal standing targets.
       if(name==="pelvis"){
-        base.y=.48+.19*t;
+        base.x=0;
+        base.z=0;
+        base.y=.50+.17*t;
       }else if(name==="spineLow"){
-        base.y=.70+.21*t;
+        base.x=0;
+        base.z=0;
+        base.y=.74+.17*t;
       }else if(name==="chest"){
-        base.y=.97+.25*t;
-        base.z=-.06*(1-t);
+        base.x=0;
+        base.z=0;
+        base.y=1.01+.21*t;
       }else if(name==="neckBase"){
-        base.y=1.20+.23*t;
+        base.x=0;
+        base.z=0;
+        base.y=1.23+.20*t;
       }else if(name==="head"){
-        base.y=1.40+.27*t;
-      }else if(name==="lKnee" || name==="rKnee"){
-        base.y=.28+.08*t;
-        base.z=.12*(1-t);
-      }else if(name==="lFoot" || name==="rFoot"){
+        base.x=0;
+        base.z=0;
+        base.y=1.44+.23*t;
+      }else if(name==="lKnee"){
+        base.x=-.15;
+        base.y=.27+.09*t;
+        base.z=.10*(1-t);
+      }else if(name==="rKnee"){
+        base.x=.15;
+        base.y=.27+.09*t;
+        base.z=.10*(1-t);
+      }else if(name==="lFoot"){
+        base.x=-.15;
         base.y=.07;
-        base.z=.18;
+        base.z=.20;
+      }else if(name==="rFoot"){
+        base.x=.15;
+        base.y=.07;
+        base.z=.20;
       }else if(name==="lHand"){
-        base.x=-.34;
-        base.y=.55+.20*t;
-        base.z=.17*(1-t);
+        base.x=-.37;
+        base.y=.58+.17*t;
+        base.z=.12*(1-t);
       }else if(name==="rHand"){
-        base.x=.34;
-        base.y=.55+.20*t;
-        base.z=.17*(1-t);
+        base.x=.37;
+        base.y=.58+.17*t;
+        base.z=.12*(1-t);
       }
       return base;
     }
@@ -3479,7 +3548,7 @@
 
     let strength=.155;
     if(npc.dead && npc.deathPhase==="stagger") strength=.038;
-    else if(npc.recovering) strength=.34;
+    else if(npc.recovering) strength=.46;
     else if(npc.stun>0) strength=.010;
     else if(npc.recentlyHit>0) strength=.024;
     else if(npc.emotion==="angry") strength=.185;
@@ -5061,12 +5130,26 @@
           npc.recoverTimer=Math.max(0,npc.recoverTimer-dt);
           npc.walkingNow=false;
           npc.attackAnim=0;
-          npc.velocity.x*=Math.pow(.05,dt);
-          npc.velocity.z*=Math.pow(.05,dt);
+
+          // No sideways travel while getting up.
+          npc.velocity.x*=Math.pow(.015,dt);
+          npc.velocity.z*=Math.pow(.015,dt);
+
+          // Remove the leftover X/Z spin that made him walk while tilted.
+          const uprightBlend=1-Math.exp(-dt*8.5);
+          npc.root.rotation.x=BABYLON.Scalar.Lerp(
+            npc.root.rotation.x,0,uprightBlend
+          );
+          npc.root.rotation.z=BABYLON.Scalar.Lerp(
+            npc.root.rotation.z,0,uprightBlend
+          );
+          npc.angular.x*=Math.pow(.02,dt);
+          npc.angular.z*=Math.pow(.02,dt);
 
           updateNpcRagdoll(dt,true);
 
-          if(!npcIsDown()){
+          // He must be genuinely upright for a while, not merely "not down".
+          if(npcIsFullyUpright()){
             npc.recoverStableTimer+=dt;
           }else{
             npc.recoverStableTimer=0;
@@ -5074,13 +5157,15 @@
 
           if(
             npc.recoverTimer<=0 &&
-            npc.recoverStableTimer>.22
+            npc.recoverStableTimer>.34
           ){
+            npc.root.rotation.x=0;
+            npc.root.rotation.z=0;
+            npc.angular.x=0;
+            npc.angular.z=0;
             npc.recovering=false;
-            npc.attackCooldown=Math.max(npc.attackCooldown,.55);
+            npc.attackCooldown=Math.max(npc.attackCooldown,.70);
           }
-
-          // Skip chase/attack while getting up.
         }
 
 
@@ -5103,7 +5188,12 @@
 
           // Even when scared, NPC never runs away. Fear only changes voice,
           // speed and hesitation.
-          if (npc.stun<=0 && npc.attackAnim<=0 && d>1.35 && d<10) {
+          if (
+            npc.stun<=0 &&
+            npc.attackAnim<=0 &&
+            npcIsFullyUpright() &&
+            d>1.35 && d<10
+          ) {
             walking=true;
             const dir=toPlayer.normalize();
             npc.root.rotation.y=Math.atan2(dir.x,dir.z);
@@ -5130,6 +5220,7 @@
           // a nearby small office object instead of only chasing.
           if(
             npc.anger>=68 &&
+            npcIsFullyUpright() &&
             d>2.25 && d<5.3 &&
             npc.throwCooldown<=0 &&
             npc.stun<=0 &&
@@ -5144,7 +5235,13 @@
           }
 
           // Start a real weapon swing, but distance alone does NOT deal damage.
-          if (d<=2.25 && npc.stun<=0 && npc.attackAnim<=0 && npc.attackCooldown<=0) {
+          if (
+            d<=2.25 &&
+            npcIsFullyUpright() &&
+            npc.stun<=0 &&
+            npc.attackAnim<=0 &&
+            npc.attackCooldown<=0
+          ) {
             const armPenalty=BABYLON.Scalar.Clamp(npc.injuries.rightArm/100,0,.7);
             npc.attackCooldown=.38+armPenalty*.42;
             npc.attackAnim=npc.attackDuration*(1+armPenalty*.34);
@@ -5287,6 +5384,21 @@
         npc.root.rotation.z+=npc.angular.z*dt;
         npc.angular.scaleInPlace(Math.pow(.16,dt));
 
+        // If a hard hit left him meaningfully tilted, force a get-up cycle
+        // before walking again.
+        if(
+          !npc.recovering &&
+          npc.stun<=0 &&
+          (
+            Math.abs(npc.root.rotation.x)>.13 ||
+            Math.abs(npc.root.rotation.z)>.13 ||
+            !npcIsFullyUpright()
+          )
+        ){
+          startNpcRecovery();
+          walking=false;
+        }
+
         npc.walkingNow=walking;
           if(walking){
             npc.walkPhase+=dt*8.5;
@@ -5299,7 +5411,7 @@
 
           // The active ragdoll produces walking/arm motion physically.
           if(!npc.recovering) updateNpcRagdoll(dt,true);
-        } else {
+        } else if(!npc.recovering) {
           npc.walkingNow=false;
           updateNpcRagdoll(dt,true);
         }
