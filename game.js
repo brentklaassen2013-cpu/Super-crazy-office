@@ -57,6 +57,17 @@
   bloodMat.specularColor=new BABYLON.Color3(.18,.02,.02);
   const bloodBrightMat=mkMat("bloodBright","#b30b18");
   const outsideMat=mkMat("outsideGround","#333943");
+  const trimMat=mkMat("officeTrim","#eef1f4");
+  const darkTrimMat=mkMat("darkTrim","#505963");
+  const paperMat=mkMat("paper","#f1f1ed");
+  const mugMat=mkMat("mug","#d7dde4");
+  const blueMat=mkMat("officeBlue","#4779a8");
+  const redMat=mkMat("officeRed","#b84242");
+  const bookMatA=mkMat("bookA","#425c7d");
+  const bookMatB=mkMat("bookB","#934e42");
+  const bookMatC=mkMat("bookC","#668457");
+  const boardMat=mkMat("whiteboard","#f5f7f7");
+  const corkMat=mkMat("cork","#aa8057");
 
   const glassMat=new BABYLON.StandardMaterial("officeGlass",scene);
   glassMat.diffuseColor=new BABYLON.Color3(.45,.72,.86);
@@ -206,23 +217,65 @@
     root.position.set(x,0,z);
     root.rotation.y=rot;
 
-    const top=childBox(name+"Top",root,new BABYLON.Vector3(0,.76,0),new BABYLON.Vector3(1.55,.09,.72),deskMat,true);
-    const modesty=childBox(name+"Panel",root,new BABYLON.Vector3(0,.43,.30),new BABYLON.Vector3(1.35,.55,.07),deskMat,false);
+    const top=childBox(name+"Top",root,new BABYLON.Vector3(0,.76,0),new BABYLON.Vector3(1.58,.085,.74),deskMat,true);
+    const edge=childBox(name+"FrontEdge",root,new BABYLON.Vector3(0,.725,-.345),new BABYLON.Vector3(1.58,.07,.035),darkTrimMat,false);
+    const modesty=childBox(name+"Panel",root,new BABYLON.Vector3(0,.43,.30),new BABYLON.Vector3(1.35,.55,.055),deskMat,false);
+
     const legs=[];
     for(const lx of [-.66,.66]){
       for(const lz of [-.26,.26]){
         legs.push(childBox(
           name+"Leg"+lx+lz,root,
           new BABYLON.Vector3(lx,.37,lz),
-          new BABYLON.Vector3(.07,.72,.07),
+          new BABYLON.Vector3(.065,.72,.065),
           deskMetalMat,
           false
         ));
       }
     }
 
-    return registerProp(root,[top,modesty,...legs],{
-      type:"desk",mass:12,radius:.78,minY:0,breakThreshold:10
+    // Drawer pedestal.
+    const drawerBody=childBox(
+      name+"DrawerBody",root,
+      new BABYLON.Vector3(.53,.39,.08),
+      new BABYLON.Vector3(.38,.61,.49),
+      darkTrimMat,false
+    );
+    const drawers=[];
+    for(let i=0;i<3;i++){
+      const y=.57-i*.18;
+      drawers.push(childBox(
+        name+"Drawer"+i,root,
+        new BABYLON.Vector3(.53,y,-.175),
+        new BABYLON.Vector3(.33,.135,.025),
+        deskMetalMat,false
+      ));
+      const handle=childBox(
+        name+"Handle"+i,root,
+        new BABYLON.Vector3(.53,y,-.194),
+        new BABYLON.Vector3(.12,.018,.018),
+        trimMat,false
+      );
+      drawers.push(handle);
+    }
+
+    // Cable grommet and under-desk cable tray.
+    const grommet=BABYLON.MeshBuilder.CreateCylinder(name+"Grommet",{
+      height:.012,diameter:.085,tessellation:14
+    },scene);
+    grommet.parent=root;
+    grommet.position.set(-.55,.808,.18);
+    grommet.material=darkTrimMat;
+
+    const cableTray=childBox(
+      name+"CableTray",root,
+      new BABYLON.Vector3(0,.61,.27),
+      new BABYLON.Vector3(.78,.055,.12),
+      darkTrimMat,false
+    );
+
+    return registerProp(root,[top,edge,modesty,...legs,drawerBody,...drawers,grommet,cableTray],{
+      type:"desk",mass:13,radius:.80,minY:0,breakThreshold:11
     });
   }
 
@@ -231,14 +284,59 @@
     root.position.set(x,0,z);
     root.rotation.y=rot;
 
-    const seat=childBox(name+"Seat",root,new BABYLON.Vector3(0,.46,0),new BABYLON.Vector3(.48,.10,.48),chairMat,false);
-    const back=childBox(name+"Back",root,new BABYLON.Vector3(0,.80,.20),new BABYLON.Vector3(.48,.58,.08),chairMat,false);
+    const seat=childBox(name+"Seat",root,new BABYLON.Vector3(0,.47,0),new BABYLON.Vector3(.50,.11,.50),chairMat,false);
+    const cushion=childBox(name+"Cushion",root,new BABYLON.Vector3(0,.535,-.015),new BABYLON.Vector3(.44,.055,.43),darkTrimMat,false);
+    const back=childBox(name+"Back",root,new BABYLON.Vector3(0,.82,.205),new BABYLON.Vector3(.48,.61,.075),chairMat,false);
+    const backPad=childBox(name+"BackPad",root,new BABYLON.Vector3(0,.82,.155),new BABYLON.Vector3(.41,.50,.035),darkTrimMat,false);
 
-    const stem=childCylinder(name+"Stem",root,new BABYLON.Vector3(0,.25,0),.38,.075,deskMetalMat);
-    const base=childBox(name+"Base",root,new BABYLON.Vector3(0,.07,0),new BABYLON.Vector3(.55,.055,.55),deskMetalMat,false);
+    const stem=childCylinder(name+"Stem",root,new BABYLON.Vector3(0,.255,0),.37,.072,deskMetalMat);
 
-    return registerProp(root,[seat,back,stem,base],{
-      type:"chair",mass:2.2,radius:.42,minY:0,breakThreshold:8
+    // Armrests.
+    const armMeshes=[];
+    for(const sx of [-1,1]){
+      armMeshes.push(childCylinder(
+        name+"ArmStem"+sx,root,
+        new BABYLON.Vector3(sx*.29,.60,.04),
+        .28,.04,deskMetalMat
+      ));
+      armMeshes.push(childBox(
+        name+"ArmPad"+sx,root,
+        new BABYLON.Vector3(sx*.29,.73,-.02),
+        new BABYLON.Vector3(.08,.045,.34),
+        chairMat,false
+      ));
+    }
+
+    // Five-star rolling base and wheels.
+    const baseHub=BABYLON.MeshBuilder.CreateCylinder(name+"Hub",{
+      height:.055,diameter:.18,tessellation:14
+    },scene);
+    baseHub.parent=root;baseHub.position.y=.075;baseHub.material=deskMetalMat;
+
+    const baseMeshes=[baseHub];
+    for(let i=0;i<5;i++){
+      const a=i/5*Math.PI*2;
+      const spoke=childBox(
+        name+"Spoke"+i,root,
+        new BABYLON.Vector3(Math.cos(a)*.17,.067,Math.sin(a)*.17),
+        new BABYLON.Vector3(.38,.035,.045),
+        deskMetalMat,false
+      );
+      spoke.rotation.y=-a;
+      baseMeshes.push(spoke);
+
+      const wheel=BABYLON.MeshBuilder.CreateTorus(name+"Wheel"+i,{
+        diameter:.075,thickness:.025,tessellation:10
+      },scene);
+      wheel.parent=root;
+      wheel.position.set(Math.cos(a)*.38,.045,Math.sin(a)*.38);
+      wheel.rotation.z=Math.PI/2;
+      wheel.material=chairMat;
+      baseMeshes.push(wheel);
+    }
+
+    return registerProp(root,[seat,cushion,back,backPad,stem,...armMeshes,...baseMeshes],{
+      type:"chair",mass:2.5,radius:.46,minY:0,breakThreshold:8
     });
   }
 
@@ -247,13 +345,36 @@
     root.position.set(x,.82,z);
     root.rotation.y=rot;
 
-    const housing=childBox(name+"Housing",root,new BABYLON.Vector3(0,.29,0),new BABYLON.Vector3(.55,.35,.075),monitorMat,false);
-    const screen=childBox(name+"Screen",root,new BABYLON.Vector3(0,.29,-.041),new BABYLON.Vector3(.49,.29,.012),screenMat,false);
-    const stand=childCylinder(name+"Stand",root,new BABYLON.Vector3(0,.10,.02),.23,.045,deskMetalMat);
-    const foot=childBox(name+"Foot",root,new BABYLON.Vector3(0,-.02,.03),new BABYLON.Vector3(.28,.035,.20),deskMetalMat,false);
+    const housing=childBox(name+"Housing",root,new BABYLON.Vector3(0,.30,0),new BABYLON.Vector3(.59,.38,.080),monitorMat,false);
+    const bezel=childBox(name+"Bezel",root,new BABYLON.Vector3(0,.30,-.044),new BABYLON.Vector3(.55,.34,.016),darkTrimMat,false);
+    const screen=childBox(name+"Screen",root,new BABYLON.Vector3(0,.305,-.054),new BABYLON.Vector3(.505,.292,.008),screenMat,false);
 
-    return registerProp(root,[housing,screen,stand,foot],{
-      type:"monitor",mass:1.15,radius:.34,minY:.18,breakThreshold:2.0,screen
+    const stand=childCylinder(name+"Stand",root,new BABYLON.Vector3(0,.105,.02),.24,.047,deskMetalMat);
+    const hinge=BABYLON.MeshBuilder.CreateCylinder(name+"Hinge",{
+      height:.16,diameter:.055,tessellation:12
+    },scene);
+    hinge.parent=root;hinge.position.set(0,.175,.035);hinge.rotation.z=Math.PI/2;hinge.material=deskMetalMat;
+
+    const foot=childBox(name+"Foot",root,new BABYLON.Vector3(0,-.025,.035),new BABYLON.Vector3(.31,.035,.21),deskMetalMat,false);
+
+    const led=BABYLON.MeshBuilder.CreateSphere(name+"LED",{diameter:.018,segments:7},scene);
+    led.parent=root;led.position.set(.25,.145,-.061);
+    led.material=blueMat;
+    blueMat.emissiveColor=new BABYLON.Color3(.1,.35,.7);
+
+    // Back vent strips.
+    const vents=[];
+    for(let i=0;i<5;i++){
+      vents.push(childBox(
+        name+"Vent"+i,root,
+        new BABYLON.Vector3(-.16+i*.08,.31,.045),
+        new BABYLON.Vector3(.045,.12,.008),
+        darkTrimMat,false
+      ));
+    }
+
+    return registerProp(root,[housing,bezel,screen,stand,hinge,foot,led,...vents],{
+      type:"monitor",mass:1.25,radius:.36,minY:.18,breakThreshold:2.0,screen
     });
   }
 
@@ -340,6 +461,239 @@
   // Low office divider/cabinet.
   box("cabinetA",new BABYLON.Vector3(-4.10,.55,.05),new BABYLON.Vector3(.62,1.10,2.0),deskMetalMat,true);
   box("cabinetB",new BABYLON.Vector3(4.10,.55,.05),new BABYLON.Vector3(.62,1.10,2.0),deskMetalMat,true);
+
+  // ------------------------------------------------------------
+  // Office detail pass
+  // ------------------------------------------------------------
+
+  // Baseboards / wall trim.
+  box("baseboardLeft",new BABYLON.Vector3(-4.88,.09,0),new BABYLON.Vector3(.055,.16,7.72),trimMat,false);
+  box("baseboardRight",new BABYLON.Vector3(4.88,.09,0),new BABYLON.Vector3(.055,.16,7.72),trimMat,false);
+  box("baseboardFrontL",new BABYLON.Vector3(-3.28,.09,-3.88),new BABYLON.Vector3(3.30,.16,.055),trimMat,false);
+  box("baseboardFrontR",new BABYLON.Vector3(3.28,.09,-3.88),new BABYLON.Vector3(3.30,.16,.055),trimMat,false);
+
+  // Carpet tile seams.
+  for(let x=-4.5;x<=4.5;x+=1){
+    box("carpetLineX"+x,new BABYLON.Vector3(x,.008,0),new BABYLON.Vector3(.009,.006,7.75),darkTrimMat,false);
+  }
+  for(let z=-3.5;z<=3.5;z+=1){
+    box("carpetLineZ"+z,new BABYLON.Vector3(0,.009,z),new BABYLON.Vector3(9.75,.006,.009),darkTrimMat,false);
+  }
+
+  // Window frames and simple blinds.
+  for(const x of [-3.16,0,3.16]){
+    box("windowFrameTop"+x,new BABYLON.Vector3(x,2.54,3.91),new BABYLON.Vector3(2.72,.055,.07),darkTrimMat,false);
+    box("windowFrameBottom"+x,new BABYLON.Vector3(x,.61,3.91),new BABYLON.Vector3(2.72,.055,.07),darkTrimMat,false);
+    box("windowFrameL"+x,new BABYLON.Vector3(x-1.33,1.57,3.91),new BABYLON.Vector3(.05,1.92,.07),darkTrimMat,false);
+    box("windowFrameR"+x,new BABYLON.Vector3(x+1.33,1.57,3.91),new BABYLON.Vector3(.05,1.92,.07),darkTrimMat,false);
+    box("windowCross"+x,new BABYLON.Vector3(x,1.58,3.91),new BABYLON.Vector3(2.68,.035,.055),darkTrimMat,false);
+
+    for(let i=0;i<4;i++){
+      box(
+        "blind"+x+"_"+i,
+        new BABYLON.Vector3(x,2.42-i*.11,3.86),
+        new BABYLON.Vector3(2.52,.018,.045),
+        trimMat,false
+      );
+    }
+  }
+
+  // Door frame and open door.
+  box("doorFrameL",new BABYLON.Vector3(-1.55,1.25,-3.86),new BABYLON.Vector3(.10,2.50,.11),darkTrimMat,false);
+  box("doorFrameR",new BABYLON.Vector3(1.55,1.25,-3.86),new BABYLON.Vector3(.10,2.50,.11),darkTrimMat,false);
+  box("doorFrameTop",new BABYLON.Vector3(0,2.48,-3.86),new BABYLON.Vector3(3.18,.10,.11),darkTrimMat,false);
+
+  const doorRoot=new BABYLON.TransformNode("openOfficeDoor",scene);
+  doorRoot.position.set(-1.46,0,-3.73);
+  doorRoot.rotation.y=-.62;
+  const door=childBox("doorSlab",doorRoot,new BABYLON.Vector3(.67,1.18,0),new BABYLON.Vector3(1.34,2.35,.07),deskMat,false);
+  const handle=BABYLON.MeshBuilder.CreateSphere("doorHandle",{diameter:.08,segments:10},scene);
+  handle.parent=doorRoot;handle.position.set(1.18,1.15,-.07);handle.material=batMetal;
+
+  function createMug(name,x,z,rot=0){
+    const root=new BABYLON.TransformNode(name,scene);
+    root.position.set(x,.84,z);root.rotation.y=rot;
+
+    const cup=BABYLON.MeshBuilder.CreateCylinder(name+"Cup",{
+      height:.14,diameterTop:.12,diameterBottom:.105,tessellation:14
+    },scene);
+    cup.parent=root;cup.position.y=.07;cup.material=mugMat;
+
+    const handle=BABYLON.MeshBuilder.CreateTorus(name+"Handle",{
+      diameter:.10,thickness:.022,tessellation:12
+    },scene);
+    handle.parent=root;handle.position.set(.07,.075,0);
+    handle.rotation.z=Math.PI/2;handle.material=mugMat;
+
+    const coffee=BABYLON.MeshBuilder.CreateCylinder(name+"Coffee",{
+      height:.008,diameter:.095,tessellation:14
+    },scene);
+    coffee.parent=root;coffee.position.y=.142;coffee.material=batDark;
+
+    return registerProp(root,[cup,handle,coffee],{
+      type:"mug",mass:.28,radius:.10,minY:.02,breakThreshold:3
+    });
+  }
+
+  function createMouse(name,x,z,rot=0){
+    const root=new BABYLON.TransformNode(name,scene);
+    root.position.set(x,.835,z);root.rotation.y=rot;
+
+    const mouse=BABYLON.MeshBuilder.CreateSphere(name+"Body",{diameter:.12,segments:12},scene);
+    mouse.parent=root;mouse.scaling.set(.72,.34,1.05);mouse.material=keyboardMat;
+
+    const wheel=BABYLON.MeshBuilder.CreateCylinder(name+"Wheel",{
+      height:.022,diameter:.026,tessellation:9
+    },scene);
+    wheel.parent=root;wheel.position.set(0,.038,-.025);wheel.rotation.z=Math.PI/2;wheel.material=darkTrimMat;
+
+    return registerProp(root,[mouse,wheel],{
+      type:"mouse",mass:.12,radius:.08,minY:.02,breakThreshold:6
+    });
+  }
+
+  function createPaperStack(name,x,z,rot=0){
+    const root=new BABYLON.TransformNode(name,scene);
+    root.position.set(x,.84,z);root.rotation.y=rot;
+    const papers=[];
+    for(let i=0;i<5;i++){
+      const p=childBox(
+        name+"Paper"+i,root,
+        new BABYLON.Vector3((i%2)*.006,i*.006,(i%3)*.004),
+        new BABYLON.Vector3(.27,.005,.20),
+        paperMat,false
+      );
+      p.rotation.y=(i-2)*.025;
+      papers.push(p);
+    }
+    return registerProp(root,papers,{
+      type:"papers",mass:.10,radius:.16,minY:.01,breakThreshold:7
+    });
+  }
+
+  function createDeskPhone(name,x,z,rot=0){
+    const root=new BABYLON.TransformNode(name,scene);
+    root.position.set(x,.84,z);root.rotation.y=rot;
+    const base=childBox(name+"Base",root,new BABYLON.Vector3(0,.035,0),new BABYLON.Vector3(.27,.07,.19),keyboardMat,false);
+    const handset=childBox(name+"Handset",root,new BABYLON.Vector3(0,.095,0),new BABYLON.Vector3(.25,.055,.065),darkTrimMat,false);
+    for(const sx of [-1,1]){
+      const ear=BABYLON.MeshBuilder.CreateSphere(name+"Ear"+sx,{diameter:.075,segments:9},scene);
+      ear.parent=root;ear.position.set(sx*.105,.10,0);ear.scaling.set(.72,1,.90);ear.material=darkTrimMat;
+    }
+    return registerProp(root,[base,handset],{
+      type:"phone",mass:.42,radius:.17,minY:.02,breakThreshold:5
+    });
+  }
+
+  deskLayout.forEach((d,i)=>{
+    const facing=d[2];
+    const front=(facing===0?-1:1);
+    createMug("mug"+i,d[0]-.50,d[1]+front*.16,facing);
+    createMouse("mouse"+i,d[0]+.39,d[1]+front*.22,facing);
+    createPaperStack("papers"+i,d[0]-.25,d[1]-front*.17,facing);
+    if(i===1) createDeskPhone("deskPhone",d[0]+.48,d[1]-front*.15,facing);
+  });
+
+  // Whiteboard with frame and sticky notes.
+  const whiteboardRoot=new BABYLON.TransformNode("whiteboard",scene);
+  whiteboardRoot.position.set(-4.84,1.62,-1.45);
+  whiteboardRoot.rotation.y=Math.PI/2;
+  const whiteboard=childBox("whiteboardPanel",whiteboardRoot,new BABYLON.Vector3(0,0,0),new BABYLON.Vector3(2.10,1.05,.035),boardMat,false);
+  childBox("whiteboardTop",whiteboardRoot,new BABYLON.Vector3(0,.55,-.01),new BABYLON.Vector3(2.22,.055,.055),darkTrimMat,false);
+  childBox("whiteboardBottom",whiteboardRoot,new BABYLON.Vector3(0,-.55,-.01),new BABYLON.Vector3(2.22,.055,.055),darkTrimMat,false);
+  childBox("whiteboardL",whiteboardRoot,new BABYLON.Vector3(-1.08,0,-.01),new BABYLON.Vector3(.055,1.15,.055),darkTrimMat,false);
+  childBox("whiteboardR",whiteboardRoot,new BABYLON.Vector3(1.08,0,-.01),new BABYLON.Vector3(.055,1.15,.055),darkTrimMat,false);
+  for(let i=0;i<7;i++){
+    const note=childBox(
+      "sticky"+i,whiteboardRoot,
+      new BABYLON.Vector3(-.75+(i%4)*.42,.25-Math.floor(i/4)*.40,-.025),
+      new BABYLON.Vector3(.22,.18,.007),
+      i%3===0?paperMat:i%3===1?blueMat:redMat,
+      false
+    );
+    note.rotation.z=(i-3)*.025;
+  }
+
+  // Wall clock.
+  const clockRoot=new BABYLON.TransformNode("clockRoot",scene);
+  clockRoot.position.set(4.84,2.22,-1.65);
+  clockRoot.rotation.y=-Math.PI/2;
+  const clockFace=BABYLON.MeshBuilder.CreateCylinder("clockFace",{
+    height:.035,diameter:.48,tessellation:24
+  },scene);
+  clockFace.parent=clockRoot;clockFace.rotation.z=Math.PI/2;clockFace.material=boardMat;
+  const clockRim=BABYLON.MeshBuilder.CreateTorus("clockRim",{
+    diameter:.49,thickness:.025,tessellation:24
+  },scene);
+  clockRim.parent=clockRoot;clockRim.rotation.z=Math.PI/2;clockRim.material=darkTrimMat;
+
+  // Bookshelf.
+  const shelfRoot=new BABYLON.TransformNode("bookshelf",scene);
+  shelfRoot.position.set(4.55,0,2.50);
+  childBox("shelfBody",shelfRoot,new BABYLON.Vector3(0,.82,0),new BABYLON.Vector3(.72,1.64,.38),darkTrimMat,false);
+  for(let y of [.32,.76,1.20]){
+    childBox("shelf"+y,shelfRoot,new BABYLON.Vector3(0,y,0),new BABYLON.Vector3(.67,.045,.36),trimMat,false);
+  }
+  const bookMats=[bookMatA,bookMatB,bookMatC,paperMat];
+  let bi=0;
+  for(let row=0;row<3;row++){
+    for(let col=0;col<5;col++){
+      const h=.22+((col+row)%3)*.045;
+      const bk=childBox(
+        "book"+bi,shelfRoot,
+        new BABYLON.Vector3(-.24+col*.12,.39+row*.44+h/2,.01),
+        new BABYLON.Vector3(.075,h,.25),
+        bookMats[bi%bookMats.length],false
+      );
+      bk.rotation.z=(col%2?.025:-.02);
+      bi++;
+    }
+  }
+
+  // Printer/copier.
+  const printerRoot=new BABYLON.TransformNode("printer",scene);
+  printerRoot.position.set(3.90,1.12,-.15);
+  const printerBody=childBox("printerBody",printerRoot,new BABYLON.Vector3(0,.20,0),new BABYLON.Vector3(.55,.38,.48),trimMat,false);
+  const printerTop=childBox("printerTop",printerRoot,new BABYLON.Vector3(0,.43,.02),new BABYLON.Vector3(.48,.10,.42),darkTrimMat,false);
+  const printerScreen=childBox("printerScreen",printerRoot,new BABYLON.Vector3(.16,.47,-.215),new BABYLON.Vector3(.14,.08,.015),screenMat,false);
+  const paperTray=childBox("paperTray",printerRoot,new BABYLON.Vector3(0,.08,-.27),new BABYLON.Vector3(.42,.045,.18),darkTrimMat,false);
+
+  // Water cooler.
+  const coolerRoot=new BABYLON.TransformNode("waterCooler",scene);
+  coolerRoot.position.set(-4.25,0,-2.15);
+  const coolerBody=childBox("coolerBody",coolerRoot,new BABYLON.Vector3(0,.48,0),new BABYLON.Vector3(.38,.86,.35),trimMat,false);
+  const bottleMat=new BABYLON.StandardMaterial("waterBottleMat",scene);
+  bottleMat.diffuseColor=new BABYLON.Color3(.35,.65,.82);bottleMat.alpha=.42;
+  const bottle=BABYLON.MeshBuilder.CreateCylinder("waterBottle",{
+    height:.46,diameterTop:.22,diameterBottom:.30,tessellation:16
+  },scene);
+  bottle.parent=coolerRoot;bottle.position.y=1.05;bottle.material=bottleMat;
+  const tapBlue=BABYLON.MeshBuilder.CreateSphere("tapBlue",{diameter:.055,segments:8},scene);
+  tapBlue.parent=coolerRoot;tapBlue.position.set(-.07,.58,-.19);tapBlue.material=blueMat;
+  const tapRed=tapBlue.clone("tapRed");tapRed.parent=coolerRoot;tapRed.position.x=.07;tapRed.material=redMat;
+
+  // Fire extinguisher.
+  const extinguisher=BABYLON.MeshBuilder.CreateCylinder("extinguisher",{
+    height:.62,diameter:.20,tessellation:16
+  },scene);
+  extinguisher.position.set(2.05,.32,-3.72);extinguisher.material=redMat;
+  const extingTop=BABYLON.MeshBuilder.CreateCylinder("extinguisherTop",{
+    height:.08,diameter:.12,tessellation:12
+  },scene);
+  extingTop.position.set(2.05,.67,-3.72);extingTop.material=darkTrimMat;
+
+  // Ceiling air vents.
+  for(const x of [-3.3,3.3]){
+    const vent=box("ceilingVent"+x,new BABYLON.Vector3(x,2.93,2.15),new BABYLON.Vector3(.72,.025,.42),darkTrimMat,false);
+    for(let i=0;i<5;i++){
+      box(
+        "ventSlat"+x+"_"+i,
+        new BABYLON.Vector3(x-.26+i*.13,2.912,2.15),
+        new BABYLON.Vector3(.025,.012,.34),
+        trimMat,false
+      );
+    }
+  }
 
   function surfaceSphereHit(surface,center,radius){
     if(!surface || surface.isDisposed?.() || !surface.isEnabled()) return null;
@@ -1600,55 +1954,85 @@
 
   function makeNpcRagdoll(){
     const p={
-      pelvis:ragPoint("pelvis",0,.67,0,.18,.55),
-      chest:ragPoint("chest",0,1.18,0,.20,.45),
-      head:ragPoint("head",0,1.72,0,.23,.72),
+      pelvis:ragPoint("pelvis",0,.67,0,.17,.50),
+      spineLow:ragPoint("spineLow",0,.91,0,.145,.48),
+      chest:ragPoint("chest",0,1.22,0,.19,.44),
+      neckBase:ragPoint("neckBase",0,1.47,0,.09,.62),
+      head:ragPoint("head",0,1.73,0,.22,.76),
 
-      lShoulder:ragPoint("lShoulder",-.30,1.34,0,.10,.85),
-      lElbow:ragPoint("lElbow",-.46,1.08,.01,.09,1),
-      lHand:ragPoint("lHand",-.49,.83,.04,.09,1),
+      lShoulder:ragPoint("lShoulder",-.31,1.34,0,.105,.78),
+      lElbow:ragPoint("lElbow",-.48,1.08,.01,.092,.90),
+      lWrist:ragPoint("lWrist",-.51,.87,.035,.072,.98),
+      lHand:ragPoint("lHand",-.52,.77,.065,.090,1),
 
-      rShoulder:ragPoint("rShoulder",.30,1.34,0,.10,.85),
-      rElbow:ragPoint("rElbow",.46,1.08,.01,.09,1),
-      rHand:ragPoint("rHand",.49,.83,.04,.09,1),
+      rShoulder:ragPoint("rShoulder",.31,1.34,0,.105,.78),
+      rElbow:ragPoint("rElbow",.48,1.08,.01,.092,.90),
+      rWrist:ragPoint("rWrist",.51,.87,.035,.072,.98),
+      rHand:ragPoint("rHand",.52,.77,.065,.090,1),
 
-      lHip:ragPoint("lHip",-.14,.63,0,.11,.75),
-      lKnee:ragPoint("lKnee",-.14,.34,.02,.10,.95),
-      lFoot:ragPoint("lFoot",-.14,.10,.12,.11,1),
+      lHip:ragPoint("lHip",-.15,.64,0,.115,.70),
+      lKnee:ragPoint("lKnee",-.15,.36,.02,.105,.88),
+      lAnkle:ragPoint("lAnkle",-.15,.13,.055,.082,.98),
+      lFoot:ragPoint("lFoot",-.15,.07,.23,.105,1),
 
-      rHip:ragPoint("rHip",.14,.63,0,.11,.75),
-      rKnee:ragPoint("rKnee",.14,.34,.02,.10,.95),
-      rFoot:ragPoint("rFoot",.14,.10,.12,.11,1)
+      rHip:ragPoint("rHip",.15,.64,0,.115,.70),
+      rKnee:ragPoint("rKnee",.15,.36,.02,.105,.88),
+      rAnkle:ragPoint("rAnkle",.15,.13,.055,.082,.98),
+      rFoot:ragPoint("rFoot",.15,.07,.23,.105,1)
     };
 
     const constraints=[
-      ragConstraint(p.pelvis,p.chest,1),
-      ragConstraint(p.chest,p.head,.98),
+      // Spine + real neck chain.
+      ragConstraint(p.pelvis,p.spineLow,1),
+      ragConstraint(p.spineLow,p.chest,1),
+      ragConstraint(p.chest,p.neckBase,.995),
+      ragConstraint(p.neckBase,p.head,.985),
 
-      ragConstraint(p.chest,p.lShoulder,.98),
-      ragConstraint(p.lShoulder,p.lElbow,.98),
-      ragConstraint(p.lElbow,p.lHand,.98),
+      // Arms with wrists.
+      ragConstraint(p.chest,p.lShoulder,.99),
+      ragConstraint(p.lShoulder,p.lElbow,.995),
+      ragConstraint(p.lElbow,p.lWrist,.995),
+      ragConstraint(p.lWrist,p.lHand,.995),
 
-      ragConstraint(p.chest,p.rShoulder,.98),
-      ragConstraint(p.rShoulder,p.rElbow,.98),
-      ragConstraint(p.rElbow,p.rHand,.98),
+      ragConstraint(p.chest,p.rShoulder,.99),
+      ragConstraint(p.rShoulder,p.rElbow,.995),
+      ragConstraint(p.rElbow,p.rWrist,.995),
+      ragConstraint(p.rWrist,p.rHand,.995),
 
-      ragConstraint(p.pelvis,p.lHip,.98),
-      ragConstraint(p.lHip,p.lKnee,.99),
-      ragConstraint(p.lKnee,p.lFoot,.99),
+      // Legs with ankles.
+      ragConstraint(p.pelvis,p.lHip,.99),
+      ragConstraint(p.lHip,p.lKnee,.995),
+      ragConstraint(p.lKnee,p.lAnkle,.997),
+      ragConstraint(p.lAnkle,p.lFoot,.985),
 
-      ragConstraint(p.pelvis,p.rHip,.98),
-      ragConstraint(p.rHip,p.rKnee,.99),
-      ragConstraint(p.rKnee,p.rFoot,.99),
+      ragConstraint(p.pelvis,p.rHip,.99),
+      ragConstraint(p.rHip,p.rKnee,.995),
+      ragConstraint(p.rKnee,p.rAnkle,.997),
+      ragConstraint(p.rAnkle,p.rFoot,.985),
 
-      // Structural braces keep the active ragdoll human-shaped without
-      // making it perfectly rigid.
-      ragConstraint(p.lShoulder,p.rShoulder,.94),
-      ragConstraint(p.lHip,p.rHip,.96),
-      ragConstraint(p.lShoulder,p.rHip,.84),
-      ragConstraint(p.rShoulder,p.lHip,.84),
-      ragConstraint(p.head,p.lShoulder,.76),
-      ragConstraint(p.head,p.rShoulder,.76)
+      // Shoulder/hip width.
+      ragConstraint(p.lShoulder,p.rShoulder,.975),
+      ragConstraint(p.lHip,p.rHip,.985),
+
+      // Neck and shoulder braces prevent the head from detaching visually.
+      ragConstraint(p.neckBase,p.lShoulder,.94),
+      ragConstraint(p.neckBase,p.rShoulder,.94),
+      ragConstraint(p.head,p.lShoulder,.80),
+      ragConstraint(p.head,p.rShoulder,.80),
+
+      // Torso braces: flexible but connected.
+      ragConstraint(p.lShoulder,p.lHip,.87),
+      ragConstraint(p.rShoulder,p.rHip,.87),
+      ragConstraint(p.lShoulder,p.rHip,.82),
+      ragConstraint(p.rShoulder,p.lHip,.82),
+      ragConstraint(p.spineLow,p.lShoulder,.86),
+      ragConstraint(p.spineLow,p.rShoulder,.86),
+      ragConstraint(p.chest,p.lHip,.86),
+      ragConstraint(p.chest,p.rHip,.86),
+
+      // Knee/ankle stabilizers keep knees from folding inside out too easily.
+      ragConstraint(p.lHip,p.lAnkle,.73),
+      ragConstraint(p.rHip,p.rAnkle,.73)
     ];
 
     return {
@@ -1659,7 +2043,6 @@
       dead:false
     };
   }
-
   function setSegment(mesh,a,b,baseHeight=1){
     const d=b.subtract(a);
     const len=Math.max(.001,d.length());
@@ -1684,6 +2067,25 @@
     }
   }
 
+  function setRotationAlong(mesh,a,b){
+    const d=b.subtract(a);
+    if(d.lengthSquared()<.000001) return;
+    const dir=d.normalize();
+    const up=new BABYLON.Vector3(0,1,0);
+    let axis=BABYLON.Vector3.Cross(up,dir);
+    const dot=BABYLON.Scalar.Clamp(BABYLON.Vector3.Dot(up,dir),-1,1);
+    const angle=Math.acos(dot);
+
+    if(axis.lengthSquared()<.000001){
+      mesh.rotationQuaternion=dot<0
+        ? BABYLON.Quaternion.RotationAxis(new BABYLON.Vector3(1,0,0),Math.PI)
+        : BABYLON.Quaternion.Identity();
+    }else{
+      axis.normalize();
+      mesh.rotationQuaternion=BABYLON.Quaternion.RotationAxis(axis,angle);
+    }
+  }
+
   function ragTarget(name){
     const rd=npc.ragdoll;
     const base=rd.points[name].base.clone();
@@ -1692,35 +2094,46 @@
 
     const walking=npc.walkingNow ? 1 : 0;
     const phase=npc.walkPhase;
-    const stride=Math.sin(phase)*.16*walking;
-    const lift=Math.max(0,Math.sin(phase))* .055*walking;
-    const liftOpp=Math.max(0,-Math.sin(phase))* .055*walking;
+    const stride=Math.sin(phase)*.155*walking;
+    const lift=Math.max(0,Math.sin(phase))*.052*walking;
+    const liftOpp=Math.max(0,-Math.sin(phase))*.052*walking;
 
-    if(name==="lFoot"){
-      base.z+=stride;
-      base.y+=lift;
-    }else if(name==="rFoot"){
-      base.z-=stride;
-      base.y+=liftOpp;
-    }else if(name==="lKnee"){
-      base.z+=stride*.48;
-      base.y+=lift*.55;
-    }else if(name==="rKnee"){
-      base.z-=stride*.48;
-      base.y+=liftOpp*.55;
-    }else if(name==="lHand"){
-      base.z-=stride*.55;
-    }else if(name==="rHand"){
-      base.z+=stride*.55;
-    }else if(name==="lElbow"){
-      base.z-=stride*.30;
-    }else if(name==="rElbow"){
-      base.z+=stride*.30;
+    // Tiny breathing/sway prevents the NPC from looking completely frozen.
+    const breathe=Math.sin(performance.now()*.0026)*.008;
+    if(name==="chest") base.y+=breathe;
+    if(name==="neckBase") base.y+=breathe*.65;
+    if(name==="head") {
+      base.y+=breathe*.45;
+      base.x+=Math.sin(performance.now()*.0017)*.006;
     }
 
-    // During attacks the physical right arm aims at the player's CURRENT
-    // chest position. This keeps the active ragdoll, but makes the swing
-    // actually reach toward the player rather than straight forward.
+    if(name==="lFoot"){
+      base.z+=stride; base.y+=lift;
+    }else if(name==="rFoot"){
+      base.z-=stride; base.y+=liftOpp;
+    }else if(name==="lAnkle"){
+      base.z+=stride*.78; base.y+=lift*.70;
+    }else if(name==="rAnkle"){
+      base.z-=stride*.78; base.y+=liftOpp*.70;
+    }else if(name==="lKnee"){
+      base.z+=stride*.48; base.y+=lift*.48;
+    }else if(name==="rKnee"){
+      base.z-=stride*.48; base.y+=liftOpp*.48;
+    }else if(name==="lHand"){
+      base.z-=stride*.52;
+    }else if(name==="rHand"){
+      base.z+=stride*.52;
+    }else if(name==="lWrist"){
+      base.z-=stride*.44;
+    }else if(name==="rWrist"){
+      base.z+=stride*.44;
+    }else if(name==="lElbow"){
+      base.z-=stride*.27;
+    }else if(name==="rElbow"){
+      base.z+=stride*.27;
+    }
+
+    // Right arm actively reaches toward the player's current body.
     if(npc.attackAnim>0 && xrCamera){
       const progress=1-(npc.attackAnim/npc.attackDuration);
       const shoulder=rd.points.rShoulder.base.clone();
@@ -1730,38 +2143,42 @@
       const target=npcWorldToLocalPoint(targetWorld);
 
       let reach=target.subtract(shoulder);
-      if(reach.lengthSquared()<.001) reach.set(0,0,.68);
-      reach.normalize().scaleInPlace(.68);
+      if(reach.lengthSquared()<.001) reach.set(0,0,.72);
+      reach.normalize().scaleInPlace(.72);
 
       const strike=shoulder.add(reach);
-      const windup=shoulder.add(new BABYLON.Vector3(.18,.20,-.28));
+      const windup=shoulder.add(new BABYLON.Vector3(.20,.22,-.30));
 
       let handTarget;
-      if(progress<.28){
+      if(progress<.27){
         handTarget=BABYLON.Vector3.Lerp(
           rd.points.rHand.base,
           windup,
-          progress/.28
+          progress/.27
         );
       }else{
-        const t=(progress-.28)/.72;
+        const t=(progress-.27)/.73;
         const smooth=t*t*(3-2*t);
         handTarget=BABYLON.Vector3.Lerp(windup,strike,smooth);
       }
 
-      if(name==="rHand"){
-        return handTarget;
-      }else if(name==="rElbow"){
+      if(name==="rHand") return handTarget;
+
+      if(name==="rWrist"){
+        return BABYLON.Vector3.Lerp(shoulder,handTarget,.80)
+          .add(new BABYLON.Vector3(.025,.015,0));
+      }
+
+      if(name==="rElbow"){
         const elbow=BABYLON.Vector3.Lerp(shoulder,handTarget,.50);
-        elbow.y+=.08;
-        elbow.x+=.05;
+        elbow.y+=.085;
+        elbow.x+=.055;
         return elbow;
       }
     }
 
     return base;
   }
-
   function solveRagConstraint(c){
     const a=c.a,b=c.b;
     const d=b.pos.subtract(a.pos);
@@ -1809,11 +2226,11 @@
     const gravity=active ? -4.8 : -7.1;
     const damping=active ? .925 : .975;
 
-    let strength=.18;
-    if(npc.stun>0) strength=.020;
-    else if(npc.recentlyHit>0) strength=.036;
-    else if(npc.emotion==="angry") strength=.21;
-    else if(npc.emotion==="scared") strength=.14;
+    let strength=.155;
+    if(npc.stun>0) strength=.010;
+    else if(npc.recentlyHit>0) strength=.024;
+    else if(npc.emotion==="angry") strength=.185;
+    else if(npc.emotion==="scared") strength=.125;
 
     for(const p of rd.list){
       const vel=p.pos.subtract(p.prev).scale(damping);
@@ -1824,8 +2241,10 @@
       if(active){
         const target=ragTarget(p.name);
         const localStrength=
-          (p.name==="pelvis" || p.name==="chest") ? strength*1.35 :
-          p.name==="head" ? strength*1.12 :
+          (p.name==="pelvis" || p.name==="spineLow" || p.name==="chest")
+            ? strength*1.34 :
+          p.name==="neckBase" ? strength*1.18 :
+          p.name==="head" ? strength*1.08 :
           strength;
 
         p.pos.addInPlace(
@@ -1835,7 +2254,7 @@
     }
 
     // More iterations = tighter joints. Five is a good Quest 2 compromise.
-    for(let iteration=0;iteration<8;iteration++){
+    for(let iteration=0;iteration<11;iteration++){
       for(const c of rd.constraints) solveRagConstraint(c);
       for(const p of rd.list) collideNpcRagdollPoint(p,dt);
     }
@@ -1847,40 +2266,62 @@
     if(!npc?.ragdoll) return;
     const p=npc.ragdoll.points;
 
-    setSegment(npc.torso,p.pelvis.pos,p.chest.pos,1);
+    // Core body is now a connected pelvis -> abdomen -> chest -> neck -> head.
+    setSegment(npc.abdomen,p.pelvis.pos,p.spineLow.pos,1);
+    setSegment(npc.torso,p.spineLow.pos,p.chest.pos,1);
+    setSegment(npc.neck,p.neckBase.pos,p.head.pos,1);
+
     npc.chestPlate.position.copyFrom(p.chest.pos);
     npc.pelvis.position.copyFrom(p.pelvis.pos);
-    npc.head.position.copyFrom(p.head.pos);
+    npc.spineJoint.position.copyFrom(p.spineLow.pos);
+    npc.neckJoint.position.copyFrom(p.neckBase.pos);
 
+    npc.head.position.copyFrom(p.head.pos);
+    setRotationAlong(npc.head,p.neckBase.pos,p.head.pos);
+
+    // Arms include wrist joints, so there are no floating gaps.
     setSegment(npc.leftUpperArm,p.lShoulder.pos,p.lElbow.pos,1);
-    setSegment(npc.leftLowerArm,p.lElbow.pos,p.lHand.pos,1);
+    setSegment(npc.leftLowerArm,p.lElbow.pos,p.lWrist.pos,1);
+    npc.leftShoulderJoint.position.copyFrom(p.lShoulder.pos);
+    npc.leftElbowJoint.position.copyFrom(p.lElbow.pos);
+    npc.leftWristJoint.position.copyFrom(p.lWrist.pos);
     npc.leftHand.position.copyFrom(p.lHand.pos);
+    npc.leftHand.rotationQuaternion=npc.leftLowerArm.rotationQuaternion?.clone() || BABYLON.Quaternion.Identity();
 
     setSegment(npc.rightUpperArm,p.rShoulder.pos,p.rElbow.pos,1);
-    setSegment(npc.rightLowerArm,p.rElbow.pos,p.rHand.pos,1);
+    setSegment(npc.rightLowerArm,p.rElbow.pos,p.rWrist.pos,1);
+    npc.rightShoulderJoint.position.copyFrom(p.rShoulder.pos);
+    npc.rightElbowJoint.position.copyFrom(p.rElbow.pos);
+    npc.rightWristJoint.position.copyFrom(p.rWrist.pos);
     npc.rightHand.position.copyFrom(p.rHand.pos);
+    npc.rightHand.rotationQuaternion=npc.rightLowerArm.rotationQuaternion?.clone() || BABYLON.Quaternion.Identity();
 
+    // Legs include ankle joints and rounded feet.
     setSegment(npc.leftUpperLeg,p.lHip.pos,p.lKnee.pos,1);
-    setSegment(npc.leftLowerLeg,p.lKnee.pos,p.lFoot.pos,1);
-    npc.leftShoe.position.copyFrom(p.lFoot.pos);
+    setSegment(npc.leftLowerLeg,p.lKnee.pos,p.lAnkle.pos,1);
+    setSegment(npc.leftShoe,p.lAnkle.pos,p.lFoot.pos,.31);
+    npc.leftHipJoint.position.copyFrom(p.lHip.pos);
+    npc.leftKneeJoint.position.copyFrom(p.lKnee.pos);
+    npc.leftAnkleJoint.position.copyFrom(p.lAnkle.pos);
 
     setSegment(npc.rightUpperLeg,p.rHip.pos,p.rKnee.pos,1);
-    setSegment(npc.rightLowerLeg,p.rKnee.pos,p.rFoot.pos,1);
-    npc.rightShoe.position.copyFrom(p.rFoot.pos);
+    setSegment(npc.rightLowerLeg,p.rKnee.pos,p.rAnkle.pos,1);
+    setSegment(npc.rightShoe,p.rAnkle.pos,p.rFoot.pos,.31);
+    npc.rightHipJoint.position.copyFrom(p.rHip.pos);
+    npc.rightKneeJoint.position.copyFrom(p.rKnee.pos);
+    npc.rightAnkleJoint.position.copyFrom(p.rAnkle.pos);
 
-    // Face follows the head point.
-    npc.nose.position.copyFrom(p.head.pos.add(new BABYLON.Vector3(0,-.03,.245)));
-    npc.leftEye.position.copyFrom(p.head.pos.add(new BABYLON.Vector3(-.085,.08,.225)));
-    npc.rightEye.position.copyFrom(p.head.pos.add(new BABYLON.Vector3(.085,.08,.225)));
-    npc.mouth.position.copyFrom(p.head.pos.add(new BABYLON.Vector3(0,-.11,.242)));
-    npc.hair.position.copyFrom(p.head.pos.add(new BABYLON.Vector3(0,.15,-.015)));
-    npc.leftEar.position.copyFrom(p.head.pos.add(new BABYLON.Vector3(-.245,.015,0)));
-    npc.rightEar.position.copyFrom(p.head.pos.add(new BABYLON.Vector3(.245,.015,0)));
+    // Clothing details follow the spine/pelvis.
+    npc.belt.position.copyFrom(p.pelvis.pos.add(p.spineLow.pos).scale(.5));
+    setRotationAlong(npc.belt,p.pelvis.pos,p.spineLow.pos);
 
-    // Weapon is physically attached to the ragdoll right hand.
+    npc.collar.position.copyFrom(p.neckBase.pos);
+    setRotationAlong(npc.collar,p.chest.pos,p.neckBase.pos);
+
+    // Weapon stays connected to the physical right hand.
     npc.weaponRoot.position.copyFrom(p.rHand.pos);
+    npc.weaponRoot.rotationQuaternion=npc.rightHand.rotationQuaternion?.clone() || BABYLON.Quaternion.Identity();
   }
-
   function applyNpcRagdollImpulse(hitWorld,impulseWorld,radius=1.0){
     if(!npc?.ragdoll) return;
 
@@ -1896,7 +2337,7 @@
 
       // Verlet impulse: changing prev creates instantaneous velocity.
       p.prev.subtractInPlace(
-        impulseLocal.scale(.020*falloff*massScale)
+        impulseLocal.scale(.026*falloff*massScale)
       );
     }
   }
@@ -1908,16 +2349,23 @@
     const visual=new BABYLON.TransformNode("npcVisual",scene);
     visual.parent=root;
 
-    const skinMat=mkMat("npcSkin"+Math.random(),"#e8a06f");
-    const shirtMat=mkMat("npcShirt"+Math.random(),"#f59a3d");
+    const skinMat=mkMat("npcSkin"+Math.random(),"#d99768");
+    const skinDarkMat=mkMat("npcSkinDark"+Math.random(),"#bd7b58");
+    const shirtMat=mkMat("npcShirt"+Math.random(),"#df6b32");
+    const shirtDarkMat=mkMat("npcShirtDark"+Math.random(),"#9f4527");
     const pantsMat=mkMat("npcPants"+Math.random(),"#334155");
+    const pantsDarkMat=mkMat("npcPantsDark"+Math.random(),"#202a38");
     const shoeMat=mkMat("npcShoes"+Math.random(),"#111827");
-    const eyeMat=mkMat("npcEyes"+Math.random(),"#111111");
+    const soleMat=mkMat("npcSoles"+Math.random(),"#080b10");
+    const eyeWhiteMat=mkMat("npcEyeWhite"+Math.random(),"#f5f6f4");
+    const eyeMat=mkMat("npcEyes"+Math.random(),"#2a211b");
+    const pupilMat=mkMat("npcPupil"+Math.random(),"#090909");
     const hairMat=mkMat("npcHair"+Math.random(),"#30231c");
+    const teethMat=mkMat("npcTeeth"+Math.random(),"#f4eee5");
 
     function capsule(name,radius,material){
       const m=BABYLON.MeshBuilder.CreateCapsule(name,{
-        height:1,radius,tessellation:14
+        height:1,radius,tessellation:16
       },scene);
       m.parent=visual;
       m.material=material;
@@ -1925,95 +2373,199 @@
       return m;
     }
 
+    function jointSphere(name,diameter,material){
+      const m=BABYLON.MeshBuilder.CreateSphere(name,{
+        diameter,segments:14
+      },scene);
+      m.parent=visual;
+      m.material=material;
+      return m;
+    }
+
+    // Connected core.
+    const abdomen=capsule("npcAbdomen",.225,shirtDarkMat);
     const torso=capsule("npcTorso",.285,shirtMat);
+    const neck=capsule("npcNeck",.075,skinMat);
 
-    const chestPlate=BABYLON.MeshBuilder.CreateSphere("npcChest",{
-      diameter:.54,segments:16
-    },scene);
-    chestPlate.parent=visual;
-    chestPlate.scaling.set(1,.72,.68);
-    chestPlate.material=shirtMat;
+    const chestPlate=jointSphere("npcChest",.56,shirtMat);
+    chestPlate.scaling.set(1,.70,.72);
 
-    const pelvis=BABYLON.MeshBuilder.CreateSphere("npcPelvis",{
-      diameter:.43,segments:14
-    },scene);
-    pelvis.parent=visual;
-    pelvis.scaling.y=.62;
-    pelvis.material=pantsMat;
+    const pelvis=jointSphere("npcPelvis",.44,pantsMat);
+    pelvis.scaling.set(1,.64,.90);
 
-    const head=BABYLON.MeshBuilder.CreateSphere("npcHead",{
-      diameter:.49,segments:18
-    },scene);
-    head.parent=visual;
-    head.material=skinMat;
+    const spineJoint=jointSphere("npcSpineJoint",.31,shirtDarkMat);
+    spineJoint.scaling.set(1,.72,.80);
 
-    const nose=BABYLON.MeshBuilder.CreateSphere("npcNose",{
-      diameter:.09,segments:10
-    },scene);
-    nose.parent=visual;
-    nose.scaling.z=1.25;
-    nose.material=skinMat;
+    const neckJoint=jointSphere("npcNeckJoint",.17,skinMat);
 
-    const leftEye=BABYLON.MeshBuilder.CreateSphere("npcLeftEye",{
-      diameter:.055,segments:10
-    },scene);
-    leftEye.parent=visual;
-    leftEye.scaling.z=.55;
-    leftEye.material=eyeMat;
+    // Head + all face detail parented to the head so it tilts with the neck.
+    const head=jointSphere("npcHead",.49,skinMat);
+    head.scaling.set(.95,1.05,.93);
 
-    const rightEye=leftEye.clone("npcRightEye");
-    rightEye.parent=visual;
+    function faceSphere(name,diam,pos,mat,scale=[1,1,1]){
+      const m=BABYLON.MeshBuilder.CreateSphere(name,{diameter:diam,segments:11},scene);
+      m.parent=head;
+      m.position.set(...pos);
+      m.scaling.set(...scale);
+      m.material=mat;
+      return m;
+    }
+
+    const nose=faceSphere("npcNose",.095,[0,-.025,.245],skinMat,[.82,1,1.32]);
+    const leftEar=faceSphere("npcLeftEar",.105,[-.245,.015,0],skinMat,[.52,1,.48]);
+    const rightEar=faceSphere("npcRightEar",.105,[.245,.015,0],skinMat,[.52,1,.48]);
+
+    const leftEyeWhite=faceSphere("npcLeftEyeWhite",.075,[-.085,.075,.225],eyeWhiteMat,[1,.78,.45]);
+    const rightEyeWhite=faceSphere("npcRightEyeWhite",.075,[.085,.075,.225],eyeWhiteMat,[1,.78,.45]);
+    const leftEye=faceSphere("npcLeftEye",.036,[-.085,.075,.258],eyeMat,[1,1,.55]);
+    const rightEye=faceSphere("npcRightEye",.036,[.085,.075,.258],eyeMat,[1,1,.55]);
+    const leftPupil=faceSphere("npcLeftPupil",.018,[-.085,.075,.275],pupilMat,[1,1,.45]);
+    const rightPupil=faceSphere("npcRightPupil",.018,[.085,.075,.275],pupilMat,[1,1,.45]);
 
     const mouth=BABYLON.MeshBuilder.CreateBox("npcMouth",{
-      width:.13,height:.025,depth:.012
+      width:.14,height:.027,depth:.014
     },scene);
-    mouth.parent=visual;
-    mouth.material=eyeMat;
+    mouth.parent=head;
+    mouth.position.set(0,-.115,.242);
+    mouth.material=pupilMat;
+
+    const teeth=BABYLON.MeshBuilder.CreateBox("npcTeeth",{
+      width:.085,height:.014,depth:.008
+    },scene);
+    teeth.parent=head;teeth.position.set(0,-.106,.251);teeth.material=teethMat;
+
+    const chin=faceSphere("npcChin",.105,[0,-.205,.12],skinDarkMat,[1,.62,.90]);
+
+    const eyebrowL=BABYLON.MeshBuilder.CreateBox("npcEyebrowL",{
+      width:.10,height:.018,depth:.012
+    },scene);
+    eyebrowL.parent=head;eyebrowL.position.set(-.085,.145,.236);eyebrowL.rotation.z=-.08;eyebrowL.material=hairMat;
+    const eyebrowR=eyebrowL.clone("npcEyebrowR");eyebrowR.parent=head;eyebrowR.position.x=.085;eyebrowR.rotation.z=.08;
 
     const hair=BABYLON.MeshBuilder.CreateSphere("npcHair",{
-      diameter:.50,segments:14
+      diameter:.505,segments:16
     },scene);
-    hair.parent=visual;
-    hair.scaling.set(1.01,.52,1.01);
+    hair.parent=head;
+    hair.position.set(0,.145,-.015);
+    hair.scaling.set(1.01,.51,1.01);
     hair.material=hairMat;
 
-    const leftEar=BABYLON.MeshBuilder.CreateSphere("npcLeftEar",{
-      diameter:.10,segments:10
+    // Small side hair patches.
+    for(const sx of [-1,1]){
+      const side=faceSphere(
+        "npcSideHair"+sx,.18,[sx*.19,.105,-.08],hairMat,[.55,1,.55]
+      );
+    }
+
+    // Arms with visible overlapping joints.
+    const leftUpperArm=capsule("leftUpperArm",.093,skinMat);
+    const leftLowerArm=capsule("leftLowerArm",.080,skinMat);
+    const rightUpperArm=capsule("rightUpperArm",.093,skinMat);
+    const rightLowerArm=capsule("rightLowerArm",.080,skinMat);
+
+    const leftShoulderJoint=jointSphere("leftShoulderJoint",.22,shirtMat);
+    const rightShoulderJoint=jointSphere("rightShoulderJoint",.22,shirtMat);
+    const leftElbowJoint=jointSphere("leftElbowJoint",.155,skinMat);
+    const rightElbowJoint=jointSphere("rightElbowJoint",.155,skinMat);
+    const leftWristJoint=jointSphere("leftWristJoint",.125,skinMat);
+    const rightWristJoint=jointSphere("rightWristJoint",.125,skinMat);
+
+    const leftHand=jointSphere("leftHand",.18,skinMat);
+    leftHand.scaling.set(.78,.78,1.12);
+    const rightHand=jointSphere("rightHand",.18,skinMat);
+    rightHand.scaling.set(.78,.78,1.12);
+
+    function addFingers(hand,prefix,side){
+      for(let i=0;i<3;i++){
+        const f=BABYLON.MeshBuilder.CreateCapsule(prefix+"Finger"+i,{
+          height:.105-i*.007,radius:.014,tessellation:9
+        },scene);
+        f.parent=hand;
+        f.rotation.x=Math.PI/2;
+        f.position.set((i-1)*.032,-.005,.09);
+        f.material=skinMat;
+      }
+      const thumb=BABYLON.MeshBuilder.CreateCapsule(prefix+"Thumb",{
+        height:.080,radius:.016,tessellation:9
+      },scene);
+      thumb.parent=hand;
+      thumb.rotation.x=Math.PI/2;
+      thumb.rotation.z=side<0?.65:-.65;
+      thumb.position.set(side*.065,-.02,.025);
+      thumb.material=skinMat;
+    }
+    addFingers(leftHand,"npcL",-1);
+    addFingers(rightHand,"npcR",1);
+
+    // Shirt sleeve cuffs overlap the arm/shoulder connection.
+    const leftSleeve=jointSphere("leftSleeve",.205,shirtMat);
+    leftSleeve.scaling.set(.92,.82,.92);
+    const rightSleeve=jointSphere("rightSleeve",.205,shirtMat);
+    rightSleeve.scaling.set(.92,.82,.92);
+
+    // Legs with visible hip/knee/ankle joints.
+    const leftUpperLeg=capsule("leftUpperLeg",.110,pantsMat);
+    const leftLowerLeg=capsule("leftLowerLeg",.094,pantsMat);
+    const rightUpperLeg=capsule("rightUpperLeg",.110,pantsMat);
+    const rightLowerLeg=capsule("rightLowerLeg",.094,pantsMat);
+
+    const leftHipJoint=jointSphere("leftHipJoint",.205,pantsMat);
+    const rightHipJoint=jointSphere("rightHipJoint",.205,pantsMat);
+    const leftKneeJoint=jointSphere("leftKneeJoint",.175,pantsMat);
+    const rightKneeJoint=jointSphere("rightKneeJoint",.175,pantsMat);
+    const leftAnkleJoint=jointSphere("leftAnkleJoint",.135,pantsDarkMat);
+    const rightAnkleJoint=jointSphere("rightAnkleJoint",.135,pantsDarkMat);
+
+    const leftShoe=capsule("leftShoe",.105,shoeMat);
+    const rightShoe=capsule("rightShoe",.105,shoeMat);
+
+    const leftSole=BABYLON.MeshBuilder.CreateBox("leftSole",{
+      width:.19,height:.035,depth:.31
     },scene);
-    leftEar.parent=visual;
-    leftEar.scaling.set(.55,1,.48);
-    leftEar.material=skinMat;
+    leftSole.parent=leftShoe;leftSole.position.set(0,-.05,.02);leftSole.material=soleMat;
+    const rightSole=leftSole.clone("rightSole");rightSole.parent=rightShoe;
 
-    const rightEar=leftEar.clone("npcRightEar");
-    rightEar.parent=visual;
+    // Laces add a little visual detail.
+    for(const shoe of [leftShoe,rightShoe]){
+      for(let i=0;i<3;i++){
+        const lace=BABYLON.MeshBuilder.CreateBox("shoeLace",{
+          width:.115,height:.009,depth:.012
+        },scene);
+        lace.parent=shoe;lace.position.set(0,.035,.025+i*.035);lace.material=paperMat;
+      }
+    }
 
-    const leftUpperArm=capsule("leftUpperArm",.088,skinMat);
-    const leftLowerArm=capsule("leftLowerArm",.077,skinMat);
-    const rightUpperArm=capsule("rightUpperArm",.088,skinMat);
-    const rightLowerArm=capsule("rightLowerArm",.077,skinMat);
-
-    const leftHand=BABYLON.MeshBuilder.CreateSphere("leftHand",{
-      diameter:.17,segments:12
+    // Belt and collar fill the last obvious body gaps.
+    const belt=BABYLON.MeshBuilder.CreateCylinder("npcBelt",{
+      height:.055,diameter:.43,tessellation:18
     },scene);
-    leftHand.parent=visual;
-    leftHand.material=skinMat;
+    belt.parent=visual;belt.material=pantsDarkMat;
+    belt.rotationQuaternion=BABYLON.Quaternion.Identity();
 
-    const rightHand=leftHand.clone("rightHand");
-    rightHand.parent=visual;
-
-    const leftUpperLeg=capsule("leftUpperLeg",.105,pantsMat);
-    const leftLowerLeg=capsule("leftLowerLeg",.090,pantsMat);
-    const rightUpperLeg=capsule("rightUpperLeg",.105,pantsMat);
-    const rightLowerLeg=capsule("rightLowerLeg",.090,pantsMat);
-
-    const leftShoe=BABYLON.MeshBuilder.CreateBox("leftShoe",{
-      width:.20,height:.12,depth:.32
+    const buckle=BABYLON.MeshBuilder.CreateBox("npcBuckle",{
+      width:.075,height:.055,depth:.025
     },scene);
-    leftShoe.parent=visual;
-    leftShoe.material=shoeMat;
+    buckle.parent=belt;buckle.position.set(0,0,.22);buckle.material=batMetal;
 
-    const rightShoe=leftShoe.clone("rightShoe");
-    rightShoe.parent=visual;
+    const collar=BABYLON.MeshBuilder.CreateTorus("npcCollar",{
+      diameter:.20,thickness:.028,tessellation:16
+    },scene);
+    collar.parent=visual;collar.material=shirtDarkMat;
+    collar.rotationQuaternion=BABYLON.Quaternion.Identity();
+
+    // Name badge on shirt.
+    const badge=childBox(
+      "npcBadge",chestPlate,
+      new BABYLON.Vector3(.12,.03,.25),
+      new BABYLON.Vector3(.13,.07,.012),
+      paperMat,false
+    );
+    const badgeStripe=childBox(
+      "npcBadgeStripe",badge,
+      new BABYLON.Vector3(0,.012,-.012),
+      new BABYLON.Vector3(.10,.012,.008),
+      blueMat,false
+    );
 
     const speech=speechBubble(root);
     const hp=hpLabel(root);
@@ -2021,29 +2573,43 @@
 
     npc={
       root,visual,
-      torso,chestPlate,pelvis,head,nose,leftEye,rightEye,mouth,hair,leftEar,rightEar,
-      leftUpperArm,leftLowerArm,leftHand,
-      rightUpperArm,rightLowerArm,rightHand,
-      leftUpperLeg,leftLowerLeg,leftShoe,
-      rightUpperLeg,rightLowerLeg,rightShoe,
+      abdomen,torso,neck,chestPlate,pelvis,spineJoint,neckJoint,
+      head,nose,leftEar,rightEar,leftEyeWhite,rightEyeWhite,leftEye,rightEye,leftPupil,rightPupil,
+      mouth,teeth,chin,eyebrowL,eyebrowR,hair,
+      leftUpperArm,leftLowerArm,leftShoulderJoint,leftElbowJoint,leftWristJoint,leftHand,leftSleeve,
+      rightUpperArm,rightLowerArm,rightShoulderJoint,rightElbowJoint,rightWristJoint,rightHand,rightSleeve,
+      leftUpperLeg,leftLowerLeg,leftHipJoint,leftKneeJoint,leftAnkleJoint,leftShoe,
+      rightUpperLeg,rightLowerLeg,rightHipJoint,rightKneeJoint,rightAnkleJoint,rightShoe,
+      belt,collar,badge,badgeStripe,
 
       parts:[
-        torso,chestPlate,pelvis,head,nose,leftEye,rightEye,mouth,hair,leftEar,rightEar,
-        leftUpperArm,leftLowerArm,leftHand,
-        rightUpperArm,rightLowerArm,rightHand,
-        leftUpperLeg,leftLowerLeg,leftShoe,
-        rightUpperLeg,rightLowerLeg,rightShoe
+        abdomen,torso,neck,chestPlate,pelvis,spineJoint,neckJoint,
+        head,nose,leftEar,rightEar,leftEyeWhite,rightEyeWhite,leftEye,rightEye,leftPupil,rightPupil,
+        mouth,teeth,chin,eyebrowL,eyebrowR,hair,
+        leftUpperArm,leftLowerArm,leftShoulderJoint,leftElbowJoint,leftWristJoint,leftHand,leftSleeve,
+        rightUpperArm,rightLowerArm,rightShoulderJoint,rightElbowJoint,rightWristJoint,rightHand,rightSleeve,
+        leftUpperLeg,leftLowerLeg,leftHipJoint,leftKneeJoint,leftAnkleJoint,leftShoe,
+        rightUpperLeg,rightLowerLeg,rightHipJoint,rightKneeJoint,rightAnkleJoint,rightShoe,
+        belt,collar,badge,badgeStripe
       ],
 
       skinParts:[
-        head,nose,leftEar,rightEar,leftUpperArm,leftLowerArm,leftHand,
-        rightUpperArm,rightLowerArm,rightHand
+        neck,neckJoint,head,nose,leftEar,rightEar,chin,
+        leftUpperArm,leftLowerArm,leftElbowJoint,leftWristJoint,leftHand,
+        rightUpperArm,rightLowerArm,rightElbowJoint,rightWristJoint,rightHand
       ],
-      shirtParts:[torso,chestPlate],
-      pantsParts:[pelvis,leftUpperLeg,leftLowerLeg,rightUpperLeg,rightLowerLeg],
+      shirtParts:[
+        abdomen,torso,chestPlate,spineJoint,leftShoulderJoint,rightShoulderJoint,
+        leftSleeve,rightSleeve,collar
+      ],
+      pantsParts:[
+        pelvis,leftUpperLeg,leftLowerLeg,leftHipJoint,leftKneeJoint,leftAnkleJoint,
+        rightUpperLeg,rightLowerLeg,rightHipJoint,rightKneeJoint,rightAnkleJoint,belt
+      ],
       shoeParts:[leftShoe,rightShoe],
 
-      skinMat,shirtMat,pantsMat,shoeMat,eyeMat,
+      skinMat,skinDarkMat,shirtMat,shirtDarkMat,pantsMat,pantsDarkMat,shoeMat,
+      eyeMat,eyeWhiteMat,pupilMat,hairMat,
       speech,hp,
       weaponRoot:weapon.root,weaponTip:weapon.tip,weaponCfg:weapon.cfg,
 
@@ -2069,7 +2635,10 @@
       recentlyHit:0,
       respawnTimer:0,
       greeted:false,
-      deathDelay:0,
+      deathExplodeTimer:0,
+      deathExploded:false,
+      deathDir:new BABYLON.Vector3(0,1,0),
+      deathForce:0,
       ragdoll:null
     };
 
@@ -2077,7 +2646,6 @@
     npc.hp.text.text="160 HP";
     updateNpcRagdollMeshes();
   }
-
   // IMPORTANT: spawn the first NPC immediately when the scene loads.
   createNpc();
 
@@ -2092,21 +2660,27 @@
       npc.skinParts.forEach(p=>p.material=MAT.npcHit);
       npc.shirtParts.forEach(p=>p.material=MAT.npcHit);
       npc.pantsParts.forEach(p=>p.material=MAT.npcHit);
-      return;
+    }else{
+      npc.skinParts.forEach(p=>p.material=npc.skinMat);
+      npc.shirtParts.forEach(p=>p.material=npc.shirtMat);
+      npc.pantsParts.forEach(p=>p.material=npc.pantsMat);
+      npc.shoeParts.forEach(p=>p.material=npc.shoeMat);
+
+      if(npc.emotion==="angry") npc.chestPlate.material=MAT.npcAngry;
+      else if(npc.emotion==="scared") npc.chestPlate.material=MAT.npcScared;
     }
 
-    npc.skinParts.forEach(p=>p.material=npc.skinMat);
-    npc.shirtParts.forEach(p=>p.material=npc.shirtMat);
-    npc.pantsParts.forEach(p=>p.material=npc.pantsMat);
-    npc.shoeParts.forEach(p=>p.material=npc.shoeMat);
+    // Face detail keeps its proper materials even during body hit flash.
+    npc.leftEyeWhite.material=npc.eyeWhiteMat;
+    npc.rightEyeWhite.material=npc.eyeWhiteMat;
     npc.leftEye.material=npc.eyeMat;
     npc.rightEye.material=npc.eyeMat;
-    npc.mouth.material=npc.eyeMat;
-
-    // Emotion still shows subtly through the chest instead of recoloring
-    // the entire person unnaturally.
-    if(npc.emotion==="angry") npc.chestPlate.material=MAT.npcAngry;
-    else if(npc.emotion==="scared") npc.chestPlate.material=MAT.npcScared;
+    npc.leftPupil.material=npc.pupilMat;
+    npc.rightPupil.material=npc.pupilMat;
+    npc.eyebrowL.material=npc.hairMat;
+    npc.eyebrowR.material=npc.hairMat;
+    npc.hair.material=npc.hairMat;
+    npc.teeth.material=npc.eyeWhiteMat;
   }
   function npcSphereHit(center,radius) {
     if (!npc || npc.dead || !npc.ragdoll) return false;
@@ -2219,83 +2793,90 @@
     }
   }
 
-  function spawnDeathRagdoll(origin,launchDir,force) {
-    const specs=[
-      {type:"capsule",r:.29,h:.74,off:[0,1.08,0],mat:"shirt"},
-      {type:"sphere",d:.48,off:[0,1.71,0],mat:"skin"},
-      {type:"box",size:[.43,.25,.31],off:[0,.67,0],mat:"pants"},
+  function spawnDeathRagdollFromCurrent(launchDir,force) {
+    if(!npc?.ragdoll) return;
+    const p=npc.ragdoll.points;
 
-      {type:"capsule",r:.095,h:.40,off:[-.34,1.30,0],mat:"skin"},
-      {type:"capsule",r:.078,h:.37,off:[-.47,1.02,0],mat:"skin"},
-      {type:"sphere",d:.16,off:[-.49,.80,.02],mat:"skin"},
+    const dir=launchDir.clone();
+    if(dir.lengthSquared()<.001) dir.set(0,1,0);
+    dir.normalize();
 
-      {type:"capsule",r:.095,h:.40,off:[.34,1.30,0],mat:"skin"},
-      {type:"capsule",r:.078,h:.37,off:[.47,1.02,0],mat:"skin"},
-      {type:"sphere",d:.16,off:[.49,.80,.02],mat:"skin"},
+    function W(name){ return npcLocalToWorld(p[name].pos); }
+    function V(name){
+      const local=p[name].pos.subtract(p[name].prev).scale(55);
+      return rotY(local,npc.root.rotation.y);
+    }
 
-      {type:"capsule",r:.105,h:.46,off:[-.15,.43,0],mat:"pants"},
-      {type:"capsule",r:.088,h:.43,off:[-.15,.10,0],mat:"pants"},
-      {type:"box",size:[.19,.11,.30],off:[-.15,-.14,.08],mat:"shoe"},
-
-      {type:"capsule",r:.105,h:.46,off:[.15,.43,0],mat:"pants"},
-      {type:"capsule",r:.088,h:.43,off:[.15,.10,0],mat:"pants"},
-      {type:"box",size:[.19,.11,.30],off:[.15,-.14,.08],mat:"shoe"}
-    ];
-
-    const baseDir=launchDir.clone();
-    if(baseDir.lengthSquared()<.001) baseDir.set(0,1,0);
-    baseDir.normalize();
-
-    for(const sp of specs){
-      let m,radius;
-
-      if(sp.type==="sphere"){
-        m=BABYLON.MeshBuilder.CreateSphere("deathPart",{
-          diameter:sp.d,segments:14
-        },scene);
-        radius=sp.d*.5;
-      }else if(sp.type==="box"){
-        m=BABYLON.MeshBuilder.CreateBox("deathPart",{
-          width:sp.size[0],height:sp.size[1],depth:sp.size[2]
-        },scene);
-        radius=Math.max(...sp.size)*.42;
-      }else{
-        m=BABYLON.MeshBuilder.CreateCapsule("deathPart",{
-          radius:sp.r,height:sp.h,tessellation:14
-        },scene);
-        radius=Math.max(sp.r*1.2,sp.h*.28);
-      }
-
-      m.material=
-        sp.mat==="skin" ? npc.skinMat :
-        sp.mat==="pants" ? npc.pantsMat :
-        sp.mat==="shoe" ? npc.shoeMat :
-        npc.shirtMat;
-
-      m.position=origin.add(new BABYLON.Vector3(...sp.off));
-
-      const radial=new BABYLON.Vector3(
-        (Math.random()-.5)*3.3,
-        .6+Math.random()*2.6,
-        (Math.random()-.5)*3.3
-      );
-
-      const vel=baseDir.scale(force*(.62+Math.random()*.28)).add(radial);
-
+    function addPiece(mesh,radius,vel){
       deathParts.push({
-        mesh:m,
+        mesh,
         vel,
         radius,
-        life:6.2,
+        life:6.5,
         spin:new BABYLON.Vector3(
-          (Math.random()-.5)*10,
-          (Math.random()-.5)*10,
-          (Math.random()-.5)*10
+          (Math.random()-.5)*9,
+          (Math.random()-.5)*9,
+          (Math.random()-.5)*9
         )
       });
     }
-  }
 
+    function capsulePiece(name,aName,bName,radius,mat){
+      const a=W(aName),b=W(bName);
+      const m=BABYLON.MeshBuilder.CreateCapsule(name,{
+        height:1,radius,tessellation:14
+      },scene);
+      m.material=mat;
+      setSegment(m,a,b,1);
+
+      const vel=V(aName).add(V(bName)).scale(.5)
+        .add(dir.scale(force*.46))
+        .add(new BABYLON.Vector3(
+          (Math.random()-.5)*1.5,
+          .35+Math.random()*1.5,
+          (Math.random()-.5)*1.5
+        ));
+      addPiece(m,Math.max(radius*1.2,BABYLON.Vector3.Distance(a,b)*.26),vel);
+    }
+
+    function spherePiece(name,pName,diameter,mat){
+      const m=BABYLON.MeshBuilder.CreateSphere(name,{
+        diameter,segments:14
+      },scene);
+      m.position.copyFrom(W(pName));
+      m.material=mat;
+      const vel=V(pName)
+        .add(dir.scale(force*.48))
+        .add(new BABYLON.Vector3(
+          (Math.random()-.5)*1.6,
+          .45+Math.random()*1.7,
+          (Math.random()-.5)*1.6
+        ));
+      addPiece(m,diameter*.5,vel);
+    }
+
+    capsulePiece("deathAbdomen","pelvis","spineLow",.22,npc.shirtDarkMat);
+    capsulePiece("deathChest","spineLow","chest",.28,npc.shirtMat);
+    capsulePiece("deathNeck","neckBase","head",.072,npc.skinMat);
+    spherePiece("deathHead","head",.48,npc.skinMat);
+    spherePiece("deathPelvis","pelvis",.42,npc.pantsMat);
+
+    capsulePiece("deathLUpperArm","lShoulder","lElbow",.09,npc.skinMat);
+    capsulePiece("deathLLowerArm","lElbow","lWrist",.077,npc.skinMat);
+    spherePiece("deathLHand","lHand",.17,npc.skinMat);
+
+    capsulePiece("deathRUpperArm","rShoulder","rElbow",.09,npc.skinMat);
+    capsulePiece("deathRLowerArm","rElbow","rWrist",.077,npc.skinMat);
+    spherePiece("deathRHand","rHand",.17,npc.skinMat);
+
+    capsulePiece("deathLThigh","lHip","lKnee",.105,npc.pantsMat);
+    capsulePiece("deathLShin","lKnee","lAnkle",.09,npc.pantsMat);
+    capsulePiece("deathLFoot","lAnkle","lFoot",.10,npc.shoeMat);
+
+    capsulePiece("deathRThigh","rHip","rKnee",.105,npc.pantsMat);
+    capsulePiece("deathRShin","rKnee","rAnkle",.09,npc.pantsMat);
+    capsulePiece("deathRFoot","rAnkle","rFoot",.10,npc.shoeMat);
+  }
   function coolDeathBurst(origin) {
     const sparkMat=mkMat("deathSpark"+Math.random(),"#ffd166");
     for(let i=0;i<16;i++){
@@ -2344,24 +2925,27 @@
     npc.hp.plane.setEnabled(false);
     npc.speech.plane.setEnabled(false);
     npc.ragdoll.dead=true;
-    npc.respawnTimer=5.3;
+    npc.respawnTimer=5.6;
 
-    // Use the actual root position so the separated ragdoll parts keep
-    // the NPC's current location and can fly through a broken office window.
-    const origin=npc.root.position.clone();
-    const force=Math.min(15.5,6.2+speed*.66);
+    // First: fully connected limp ragdoll absorbs the finishing hit.
+    npc.deathExplodeTimer=.34;
+    npc.deathExploded=false;
+    npc.deathDir=dir.clone();
+    npc.deathForce=Math.min(14.2,5.8+speed*.58);
 
-    spawnDeathRagdoll(origin,dir,force);
+    applyNpcRagdollImpulse(
+      hitPos,
+      dir.scale(npc.deathForce).add(new BABYLON.Vector3(0,2.0,0)),
+      2.7
+    );
+
+    // Small first impact; the large blood/explosion happens after the
+    // connected body has actually reacted to the hit.
     spawnBloodExplosion(
       npcLocalToWorld(npc.ragdoll.points.chest.pos),
       dir,
-      .90+Math.min(.55,speed*.035)
+      .32
     );
-    coolDeathBurst(npcLocalToWorld(npc.ragdoll.points.chest.pos));
-
-    npc.visual.setEnabled(false);
-    npc.weaponRoot.setEnabled(false);
-
     pulse(hands.right,1,150);
     simpleHitSound(true);
   }
@@ -2721,6 +3305,29 @@
       } else {
         npc.respawnTimer-=dt;
         npc.walkingNow=false;
+
+        if(!npc.deathExploded){
+          // True limp, connected ragdoll phase.
+          updateNpcRagdoll(dt,false);
+
+          npc.deathExplodeTimer-=dt;
+          if(npc.deathExplodeTimer<=0){
+            npc.deathExploded=true;
+
+            const chestWorld=npcLocalToWorld(npc.ragdoll.points.chest.pos);
+            spawnDeathRagdollFromCurrent(npc.deathDir,npc.deathForce);
+
+            spawnBloodExplosion(
+              chestWorld,
+              npc.deathDir,
+              1.00
+            );
+            coolDeathBurst(chestWorld);
+
+            npc.visual.setEnabled(false);
+            npc.weaponRoot.setEnabled(false);
+          }
+        }
 
         if (npc.respawnTimer<=0) {
           npc.root.dispose();
