@@ -1,5 +1,5 @@
 (() => {
-  const BUILD_VERSION="0.23.7";
+  const BUILD_VERSION="0.23.8";
   const canvas = document.getElementById("renderCanvas");
   const engine = new BABYLON.Engine(canvas, true, { stencil:true });
   const scene = new BABYLON.Scene(engine);
@@ -61,7 +61,7 @@
   const PERF={
     maxFx:320,
     maxBloodSplats:140,
-    maxDeathParts:56,
+    maxDeathParts:34,
     propSleepSpeed:.055,
     propSleepSeconds:1.15
   };
@@ -340,41 +340,41 @@
   // while NPC/body pieces can fall four metres outside the windows.
   const ground=box(
     "officeFloor",
-    new BABYLON.Vector3(0,-.12,-2.5),
-    new BABYLON.Vector3(12.8,.24,15.5),
+    new BABYLON.Vector3(0,-.12,-3.6),
+    new BABYLON.Vector3(15.8,.24,18.8),
     officeFloorMat,
     true
   );
 
   const outsideGround=box(
     "streetBelow",
-    new BABYLON.Vector3(0,-4.32,3),
-    new BABYLON.Vector3(34,.25,26),
+    new BABYLON.Vector3(0,-4.32,3.4),
+    new BABYLON.Vector3(42,.25,30),
     outsideMat,
     true
   );
 
   // Ceiling + side walls.
-  box("officeCeiling",new BABYLON.Vector3(0,3.55,-2.5),new BABYLON.Vector3(12.8,.18,15.5));
-  box("officeLeftWall",new BABYLON.Vector3(-6.4,1.73,-2.5),new BABYLON.Vector3(.20,3.5,15.5));
-  box("officeRightWall",new BABYLON.Vector3(6.4,1.73,-2.5),new BABYLON.Vector3(.20,3.5,15.5));
+  box("officeCeiling",new BABYLON.Vector3(0,4.0,-3.6),new BABYLON.Vector3(15.8,.18,18.8));
+  box("officeLeftWall",new BABYLON.Vector3(-7.9,1.95,-3.6),new BABYLON.Vector3(.20,4.0,18.8));
+  box("officeRightWall",new BABYLON.Vector3(7.9,1.95,-3.6),new BABYLON.Vector3(.20,4.0,18.8));
 
   // Front wall with an open doorway.
-  box("frontWallL",new BABYLON.Vector3(-3.93,1.73,-4),new BABYLON.Vector3(4.95,3.5,.20));
-  box("frontWallR",new BABYLON.Vector3(3.93,1.73,-4),new BABYLON.Vector3(4.95,3.5,.20));
-  box("frontWallTop",new BABYLON.Vector3(0,3.08,-4),new BABYLON.Vector3(2.9,.88,.20));
+  box("frontWallL",new BABYLON.Vector3(-5.0,1.95,-5.2),new BABYLON.Vector3(5.95,4.0,.20));
+  box("frontWallR",new BABYLON.Vector3(5.0,1.95,-5.2),new BABYLON.Vector3(5.95,4.0,.20));
+  box("frontWallTop",new BABYLON.Vector3(0,3.45,-5.2),new BABYLON.Vector3(3.9,1.08,.20));
 
   // New rear exterior wall: the old wall at z=-4 is now an interior divider.
-  box("rearOuterWall",new BABYLON.Vector3(0,1.73,-9),new BABYLON.Vector3(12.8,3.5,.20));
+  box("rearOuterWall",new BABYLON.Vector3(0,1.95,-12.9),new BABYLON.Vector3(15.8,4.0,.20));
 
   // Window wall: sill, header and columns create three real openings.
-  box("windowSill",new BABYLON.Vector3(0,.32,4),new BABYLON.Vector3(12.8,.64,.20));
-  box("windowHeader",new BABYLON.Vector3(0,3.18,4),new BABYLON.Vector3(12.8,.74,.20));
-  for(const x of [-6.1,-2.03,2.03,6.1]){
-    box("windowColumn"+x,new BABYLON.Vector3(x,1.77,4),new BABYLON.Vector3(.55,2.38,.20));
+  box("windowSill",new BABYLON.Vector3(0,.32,4),new BABYLON.Vector3(15.8,.64,.20));
+  box("windowHeader",new BABYLON.Vector3(0,3.45,4),new BABYLON.Vector3(15.8,.82,.20));
+  for(const x of [-7.55,-3.78,0,3.78,7.55]){
+    box("windowColumn"+x,new BABYLON.Vector3(x,1.92,4),new BABYLON.Vector3(.54,2.65,.20));
   }
 
-  function makeWindow(name,x,width=3.35){
+  function makeWindow(name,x,width=3.18){
     const g=BABYLON.MeshBuilder.CreateBox(name,{
       width,height:1.90,depth:.055
     },scene);
@@ -389,9 +389,10 @@
     return g;
   }
 
-  makeWindow("officeWindowLeft",-4.07);
-  makeWindow("officeWindowMiddle",0);
-  makeWindow("officeWindowRight",4.07);
+  makeWindow("officeWindowA",-5.66);
+  makeWindow("officeWindowB",-1.89);
+  makeWindow("officeWindowC",1.89);
+  makeWindow("officeWindowD",5.66);
 
   // Ceiling lights.
   const lightPanelMat=mkMat("lightPanel","#eaf6ff");
@@ -399,7 +400,7 @@
   for(const x of [-2.5,0,2.5]){
     const p=box("ceilingLight"+x,new BABYLON.Vector3(x,2.94,0),new BABYLON.Vector3(1.25,.035,.42),lightPanelMat,false);
   }
-  for(const z of [-5.0,-7.2]){
+  for(const z of [-5.2,-7.6,-10.1]){
     for(const x of [-2.4,0,2.4]){
       box("rearCeilingLight"+x+"_"+z,new BABYLON.Vector3(x,2.94,z),new BABYLON.Vector3(1.15,.035,.38),lightPanelMat,false);
     }
@@ -407,11 +408,11 @@
 
   // A few distant buildings outside so the room visibly feels high up.
   const distantMat=mkMat("distant","#273241");
-  for(let i=0;i<6;i++){
+  for(let i=0;i<8;i++){
     const h=2.5+(i%3)*1.6;
     const b=box(
       "distantBuilding"+i,
-      new BABYLON.Vector3(-8+i*3.1,-4.15+h/2,10+(i%2)*3),
+      new BABYLON.Vector3(-10.5+i*3.0,-4.15+h/2,10+(i%3)*2.5),
       new BABYLON.Vector3(2.2,h,2.4),
       distantMat,
       false
@@ -754,12 +755,12 @@
   }
 
   // Window frames and simple blinds.
-  for(const x of [-4.07,0,4.07]){
-    box("windowFrameTop"+x,new BABYLON.Vector3(x,2.86,3.91),new BABYLON.Vector3(3.42,.055,.07),darkTrimMat,false);
-    box("windowFrameBottom"+x,new BABYLON.Vector3(x,.61,3.91),new BABYLON.Vector3(3.42,.055,.07),darkTrimMat,false);
-    box("windowFrameL"+x,new BABYLON.Vector3(x-1.68,1.72,3.91),new BABYLON.Vector3(.05,2.20,.07),darkTrimMat,false);
-    box("windowFrameR"+x,new BABYLON.Vector3(x+1.68,1.72,3.91),new BABYLON.Vector3(.05,2.20,.07),darkTrimMat,false);
-    box("windowCross"+x,new BABYLON.Vector3(x,1.73,3.91),new BABYLON.Vector3(3.36,.035,.055),darkTrimMat,false);
+  for(const x of [-5.66,-1.89,1.89,5.66]){
+    box("windowFrameTop"+x,new BABYLON.Vector3(x,3.05,3.91),new BABYLON.Vector3(3.25,.055,.07),darkTrimMat,false);
+    box("windowFrameBottom"+x,new BABYLON.Vector3(x,.61,3.91),new BABYLON.Vector3(3.25,.055,.07),darkTrimMat,false);
+    box("windowFrameL"+x,new BABYLON.Vector3(x-1.60,1.83,3.91),new BABYLON.Vector3(.05,2.42,.07),darkTrimMat,false);
+    box("windowFrameR"+x,new BABYLON.Vector3(x+1.60,1.83,3.91),new BABYLON.Vector3(.05,2.42,.07),darkTrimMat,false);
+    box("windowCross"+x,new BABYLON.Vector3(x,1.84,3.91),new BABYLON.Vector3(3.20,.035,.055),darkTrimMat,false);
 
     for(let i=0;i<4;i++){
       box(
@@ -3031,6 +3032,50 @@
     {name:"Broom",damage:15,knockback:2.3,reach:.98}
   ];
 
+  const NPC_ARCHETYPES=[
+    {
+      name:"Worker",
+      maxHp:160,
+      speed:1.30,
+      attackMul:1.00,
+      knockbackMul:1.00,
+      attackRate:.38,
+      throwRate:1.0,
+      preferredEmotion:"normal"
+    },
+    {
+      name:"Runner",
+      maxHp:128,
+      speed:1.78,
+      attackMul:.85,
+      knockbackMul:.88,
+      attackRate:.33,
+      throwRate:.7,
+      preferredEmotion:"scared"
+    },
+    {
+      name:"Tank",
+      maxHp:235,
+      speed:.96,
+      attackMul:1.14,
+      knockbackMul:1.08,
+      attackRate:.52,
+      throwRate:1.15,
+      preferredEmotion:"angry"
+    },
+    {
+      name:"Bruiser",
+      maxHp:190,
+      speed:1.42,
+      attackMul:1.26,
+      knockbackMul:1.22,
+      attackRate:.42,
+      throwRate:1.25,
+      preferredEmotion:"angry"
+    }
+  ];
+
+
   function createNpcWeapon(visual) {
     const cfg=NPC_WEAPONS[Math.floor(Math.random()*NPC_WEAPONS.length)];
     const root=new BABYLON.TransformNode("npcWeaponRoot",scene);
@@ -3582,6 +3627,12 @@
     }
 
     updateNpcRagdollMeshes();
+
+    if(npc.typeName==="Tank"){
+      speakNpc("angry",true);
+    }else if(npc.typeName==="Runner"){
+      speakNpc("scared",true);
+    }
   }
 
   function updateNpcFace(dt){
@@ -3796,6 +3847,7 @@
       {skin:"#e0b18b",skinDark:"#bf8968",shirt:"#4c6079",shirtDark:"#303e50"}
     ];
     const look=npcPalettes[Math.floor(Math.random()*npcPalettes.length)];
+    const archetype=NPC_ARCHETYPES[Math.floor(Math.random()*NPC_ARCHETYPES.length)];
 
     const skinMat=mkMat("npcSkin"+Math.random(),look.skin);
     const skinDarkMat=mkMat("npcSkinDark"+Math.random(),look.skinDark);
@@ -3808,7 +3860,11 @@
     const eyeWhiteMat=mkMat("npcEyeWhite"+Math.random(),"#f5f6f4");
     const eyeMat=mkMat("npcEyes"+Math.random(),"#2a211b");
     const pupilMat=mkMat("npcPupil"+Math.random(),"#090909");
-    const hairMat=mkMat("npcHair"+Math.random(),"#30231c");
+    const hairBase=
+      archetype.name==="Runner" ? "#3a2a20" :
+      archetype.name==="Tank" ? "#201812" :
+      archetype.name==="Bruiser" ? "#38261d" : "#30231c";
+    const hairMat=mkMat("npcHair"+Math.random(),hairBase);
     const beardMat=mkMat("npcBeard"+Math.random(),"#4b3429");
     beardMat.alpha=.48;
     // v0.23.7 smoother NPC beard: no noisy diffuse texture;
@@ -4303,8 +4359,10 @@
       speech,hp,
       weaponRoot:weapon.root,weaponTip:weapon.tip,weaponCfg:weapon.cfg,
 
-      hpValue:160,
-      maxHp:160,
+      typeName:archetype.name,
+      archetype,
+      hpValue:archetype.maxHp,
+      maxHp:archetype.maxHp,
       dead:false,
       velocity:new BABYLON.Vector3(0,0,0),
       angular:new BABYLON.Vector3(0,0,0),
@@ -4325,7 +4383,7 @@
       walkingNow:false,
       speechCooldown:0,
       bubbleTimer:0,
-      emotion:"normal",
+      emotion:archetype.preferredEmotion||"normal",
       anger:0,
       injuries:{head:0,torso:0,leftArm:0,rightArm:0,leftLeg:0,rightLeg:0},
       faceBlink:1.2+Math.random()*2.2,
@@ -4362,7 +4420,7 @@
     const max=Math.max(1,npc.maxHp||160);
     const pct=BABYLON.Scalar.Clamp(hp/max,0,1);
 
-    npc.hp.text.text=`${hp} / ${max} HP`;
+    npc.hp.text.text=`${npc.typeName||"NPC"} • ${hp} / ${max} HP`;
     npc.hp.bar.width=`${Math.max(0.01,pct)*100}%`;
 
     // Every successful hit makes the HP bar flash red.
@@ -4553,14 +4611,14 @@
 
       const vn=BABYLON.Vector3.Dot(r.vel,hit.normal);
       if(vn<0){
-        r.vel.subtractInPlace(hit.normal.scale(vn*1.22));
-        r.vel.scaleInPlace(.72);
+        r.vel.subtractInPlace(hit.normal.scale(vn*1.06));
+        r.vel.scaleInPlace(.58);
       }
     }
   }
   function moveDeathPart(r,dt) {
     const delta=r.vel.scale(dt);
-    const steps=Math.max(1,Math.ceil(delta.length()/.055));
+    const steps=Math.max(1,Math.ceil(delta.length()/.032));
     const step=delta.scale(1/steps);
     for(let i=0;i<steps;i++){
       r.mesh.position.addInPlace(step);
@@ -4614,18 +4672,18 @@
       const outward=mesh.position.subtract(chestCenter);
       if(outward.lengthSquared()>.0001){
         outward.normalize();
-        vel.addInPlace(outward.scale(1.35+Math.random()*1.65));
+        vel.addInPlace(outward.scale(.75+Math.random()*1.05));
       }
 
       deathParts.push({
         mesh,
         vel,
         radius,
-        life:7.8,
+        life:5.9,
         spin:new BABYLON.Vector3(
-          (Math.random()-.5)*7,
-          (Math.random()-.5)*7,
-          (Math.random()-.5)*7
+          (Math.random()-.5)*4.0,
+          (Math.random()-.5)*4.0,
+          (Math.random()-.5)*4.0
         )
       });
 
@@ -4644,11 +4702,11 @@
       setSegment(m,a,b,1);
 
       const vel=V(aName).add(V(bName)).scale(.58)
-        .add(dir.scale(force*.24))
+        .add(dir.scale(force*.17))
         .add(new BABYLON.Vector3(
-          (Math.random()-.5)*1.15,
-          .20+Math.random()*1.0,
-          (Math.random()-.5)*1.15
+          (Math.random()-.5)*.72,
+          .18+Math.random()*.58,
+          (Math.random()-.5)*.72
         ));
       addPiece(m,Math.max(radius*1.2,BABYLON.Vector3.Distance(a,b)*.26),vel);
     }
@@ -4660,11 +4718,11 @@
       m.position.copyFrom(W(pName));
       m.material=mat;
       const vel=V(pName).scale(.72)
-        .add(dir.scale(force*.26))
+        .add(dir.scale(force*.18))
         .add(new BABYLON.Vector3(
-          (Math.random()-.5)*1.25,
-          .25+Math.random()*1.15,
-          (Math.random()-.5)*1.25
+          (Math.random()-.5)*.78,
+          .20+Math.random()*.62,
+          (Math.random()-.5)*.78
         ));
       addPiece(m,diameter*.5,vel);
     }
@@ -4823,7 +4881,7 @@
     npc.deathTimer=.40;
     npc.deathTotalTimer=0;
     npc.ragdoll.dead=false;
-    npc.respawnTimer=6.4;
+    npc.respawnTimer=6.9;
     npc.deathDir=dir.clone();
     npc.deathHitPos=hitPos.clone();
     npc.deathSpeed=speed;
@@ -5206,7 +5264,7 @@
             const dir=toPlayer.normalize();
             npc.root.rotation.y=Math.atan2(dir.x,dir.z);
 
-            let speed=1.30;
+            let speed=npc.archetype?.speed || 1.30;
             if (npc.emotion==="angry") speed=1.72;
             if (npc.emotion==="scared") speed=1.18;
 
@@ -5235,7 +5293,7 @@
             npc.attackAnim<=0
           ){
             if(npcThrowNearbyObject(playerPos)){
-              npc.throwCooldown=3.2+Math.random()*1.8;
+              npc.throwCooldown=(3.2+Math.random()*1.8)/(npc.archetype?.throwRate||1);
               npc.attackCooldown=.55;
             }else{
               npc.throwCooldown=1.2;
@@ -5251,7 +5309,7 @@
             npc.attackCooldown<=0
           ) {
             const armPenalty=BABYLON.Scalar.Clamp(npc.injuries.rightArm/100,0,.7);
-            npc.attackCooldown=.38+armPenalty*.42;
+            npc.attackCooldown=(npc.archetype?.attackRate ?? .38)+armPenalty*.42;
             npc.attackAnim=npc.attackDuration*(1+armPenalty*.34);
             npc.attackHasHit=false;
             npc.attackBlocked=false;
@@ -5367,7 +5425,7 @@
               if(hit){
                 npc.attackHasHit=true;
                 const armWeak=BABYLON.Scalar.Clamp(1-npc.injuries.rightArm*.004,.62,1);
-                hurtPlayer(Math.max(1,Math.round(npc.weaponCfg.damage*armWeak)),npc.root.position);
+                hurtPlayer(Math.max(1,Math.round(npc.weaponCfg.damage*(npc.archetype?.attackMul||1)*armWeak)),npc.root.position);
 
                 let away=playerWorldPos().subtract(npc.root.position);
                 away.y=0;
@@ -5375,7 +5433,7 @@
                 away.normalize();
 
                 bodyVelocity.addInPlace(
-                  away.scale(npc.weaponCfg.knockback*.62)
+                  away.scale(npc.weaponCfg.knockback*(npc.archetype?.knockbackMul||1)*.62)
                     .add(new BABYLON.Vector3(0,.38,0))
                 );
               }
@@ -5462,7 +5520,7 @@
             // Break the ragdoll apart from its CURRENT physical pose.
             spawnDeathRagdollFromCurrent(
               npc.deathDir,
-              Math.min(17,7.5+npc.deathSpeed*.75)
+              Math.min(12.5,5.8+npc.deathSpeed*.48)
             );
 
             // Very heavy stylized blood burst.
