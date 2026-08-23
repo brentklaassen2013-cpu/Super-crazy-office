@@ -1,5 +1,5 @@
 (() => {
-  const BUILD_VERSION="0.24.5";
+  const BUILD_VERSION="0.24.6";
   const canvas = document.getElementById("renderCanvas");
   const engine = new BABYLON.Engine(canvas, true, { stencil:true });
   const scene = new BABYLON.Scene(engine);
@@ -46,6 +46,17 @@
   MAT.npcHit.emissiveColor=new BABYLON.Color3(.18,.006,.008);
   MAT.npcHit.specularColor=new BABYLON.Color3(.10,.01,.01);
 
+  const potatoMat=mkMat("potatoSkin","#a97848");
+  potatoMat.specularColor=new BABYLON.Color3(.035,.025,.018);
+  potatoMat.specularPower=8;
+  potatoMat.emissiveColor=potatoMat.diffuseColor.scale(.018);
+
+  const potatoDarkMat=mkMat("potatoDark","#6d472c");
+  potatoDarkMat.specularColor=new BABYLON.Color3(.02,.015,.01);
+
+  const potatoLightMat=mkMat("potatoLight","#c3915b");
+  potatoLightMat.specularColor=new BABYLON.Color3(.035,.025,.018);
+
   // ------------------------------------------------------------
   // Destructible OFFICE map
   // ------------------------------------------------------------
@@ -59,11 +70,11 @@
   let sprinklerTimer=0;
 
   const PERF={
-    maxFx:320,
-    maxBloodSplats:140,
+    maxFx:220,
+    maxBloodSplats:0,
     maxDeathParts:0,
-    propSleepSpeed:.14,
-    propSleepSeconds:.28
+    propSleepSpeed:.16,
+    propSleepSeconds:.24
   };
 
   function trimFxBodies(){
@@ -2119,9 +2130,9 @@
   let bodyVelocity=new BABYLON.Vector3(0,0,0);
 
   // Much lighter than previous versions.
-  const PLAYER_GRAVITY = -4.35;
-  const PUSH_GAIN = 1.68;
-  const MAX_PLAYER_SPEED = 9.6;
+  const PLAYER_GRAVITY = -2.85;
+  const PUSH_GAIN = 1.52;
+  const MAX_PLAYER_SPEED = 8.8;
 
   // ------------------------------------------------------------
   // Camera-fixed player HUD: always shows your own HP.
@@ -2332,41 +2343,121 @@
   }
 
   // ------------------------------------------------------------
-  // Visible Gorilla-style compact torso.
+  // Potato player body — visual only.
+  // The actual player collision remains head + chest only.
   // ------------------------------------------------------------
-  const chestRoot = new BABYLON.TransformNode("playerBodyRoot",scene);
+  const chestRoot = new BABYLON.TransformNode("potatoBodyRoot",scene);
 
-  const chest = BABYLON.MeshBuilder.CreateCapsule("playerChest",{
-    height:.060,radius:.028,tessellation:8
+  const potatoBody=BABYLON.MeshBuilder.CreateSphere("playerPotatoBody",{
+    diameter:.54,segments:20
   },scene);
-  chest.parent=chestRoot;
-  chest.position.y=-.020;
-  chest.scaling.z=.34;
-  chest.material=MAT.accent;
+  potatoBody.parent=chestRoot;
+  potatoBody.position.set(0,-.07,0);
+  potatoBody.scaling.set(.78,1.02,.68);
+  potatoBody.material=potatoMat;
 
-  const belly = BABYLON.MeshBuilder.CreateSphere("playerWaist",{diameter:.056,segments:8},scene);
-  belly.parent=chestRoot;
-  belly.position.y=-.082;
-  belly.scaling.set(1,.22,.42);
-  belly.material=MAT.accent;
-  belly.setEnabled(false);
+  // Potato dimples.
+  const potatoDimples=[];
+  [
+    [-.16,.08,-.24],
+    [.15,.01,-.245],
+    [-.08,-.18,-.23],
+    [.11,.20,-.20]
+  ].forEach((p,i)=>{
+    const d=BABYLON.MeshBuilder.CreateSphere("playerPotatoDimple"+i,{
+      diameter:.032,segments:8
+    },scene);
+    d.parent=potatoBody;
+    d.position.set(p[0],p[1],p[2]);
+    d.scaling.set(1,.55,.30);
+    d.material=potatoDarkMat;
+    potatoDimples.push(d);
+  });
 
-  const shoulderL = BABYLON.MeshBuilder.CreateSphere("shoulderL",{diameter:.032,segments:8},scene);
-  shoulderL.parent=chestRoot;
-  shoulderL.position.set(-.042,-.014,0);
-  shoulderL.material=MAT.accent;
-  shoulderL.setEnabled(false);
+  // Big potato butt cheeks. These are visual only and never affect collisions.
+  const buttRoot=new BABYLON.TransformNode("potatoButtRoot",scene);
+  buttRoot.parent=chestRoot;
+  buttRoot.position.set(0,-.25,.16);
 
-  const shoulderR = shoulderL.clone("shoulderR");
-  shoulderR.parent=chestRoot;
-  shoulderR.position.x=.042;
-  shoulderR.setEnabled(false);
+  const buttL=BABYLON.MeshBuilder.CreateSphere("potatoButtL",{
+    diameter:.34,segments:18
+  },scene);
+  buttL.parent=buttRoot;
+  buttL.position.set(-.13,0,.05);
+  buttL.scaling.set(1.00,.88,.95);
+  buttL.material=potatoLightMat;
+
+  const buttR=buttL.clone("potatoButtR");
+  buttR.parent=buttRoot;
+  buttR.position.x=.13;
+
+  let buttJiggleX=0;
+  let buttJiggleY=0;
+  let buttJiggleVX=0;
+  let buttJiggleVY=0;
+  let potatoBodyLastPos=null;
 
   chestRoot.setEnabled(false);
 
-  function updateBodyVisual() {
-    // v0.24.3: torso hidden completely
-    chestRoot.setEnabled(false);
+  function updateBodyVisual(dt=1/72) {
+    if(!xrCamera || playerDead){
+      chestRoot.setEnabled(false);
+      return;
+    }
+
+    chestRoot.setEnabled(true);
+
+    const head=xrCamera.globalPosition.clone();
+    let f=xrCamera.getForwardRay(1).direction.clone();
+    f.y=0;
+    if(f.lengthSquared()<.001) f.set(0,0,1);
+    f.normalize();
+
+    // Stay clearly below the headset so the potato never fills your face.
+    const bodyPos=new BABYLON.Vector3(
+      head.x - f.x*.075,
+      Math.max(.80,head.y-.58),
+      head.z - f.z*.075
+    );
+
+    chestRoot.position.copyFrom(bodyPos);
+    chestRoot.rotation.y=Math.atan2(f.x,f.z);
+
+    // Small potato wobble from movement.
+    const speedXZ=Math.hypot(bodyVelocity.x,bodyVelocity.z);
+    const wobble=Math.min(.055,speedXZ*.006);
+    potatoBody.rotation.z=Math.sin(performance.now()*.008)*wobble;
+    potatoBody.rotation.x=Math.cos(performance.now()*.006)*wobble*.65;
+
+    // Soft spring jiggle. Visual only = no extra physics solver/glitches.
+    let accelX=0,accelY=0;
+    if(potatoBodyLastPos){
+      const move=bodyPos.subtract(potatoBodyLastPos);
+      accelX=BABYLON.Scalar.Clamp(-move.x*42,-.32,.32);
+      accelY=BABYLON.Scalar.Clamp(-move.y*38,-.28,.28);
+    }
+    potatoBodyLastPos=bodyPos.clone();
+
+    const spring=24;
+    const damping=8.5;
+    buttJiggleVX+=(accelX - buttJiggleX*spring)*dt;
+    buttJiggleVY+=(accelY - buttJiggleY*spring)*dt;
+    buttJiggleVX*=Math.exp(-damping*dt);
+    buttJiggleVY*=Math.exp(-damping*dt);
+    buttJiggleX+=buttJiggleVX;
+    buttJiggleY+=buttJiggleVY;
+
+    buttJiggleX=BABYLON.Scalar.Clamp(buttJiggleX,-.075,.075);
+    buttJiggleY=BABYLON.Scalar.Clamp(buttJiggleY,-.055,.055);
+
+    buttL.position.x=-.13+buttJiggleX;
+    buttR.position.x=.13+buttJiggleX;
+    buttL.position.y=buttJiggleY;
+    buttR.position.y=-buttJiggleY*.72;
+
+    const squash=Math.min(.10,Math.abs(buttJiggleY)*1.25);
+    buttL.scaling.y=.88-squash;
+    buttR.scaling.y=.88+squash*.55;
   }
   function keepRigAboveFloor() {
     if (!xrCamera) return;
@@ -2534,33 +2625,52 @@
   };
 
   function makeHand(side) {
-    const root=new BABYLON.TransformNode(side+"Hand",scene);
-    const m=side==="left"?MAT.handL:MAT.handR;
+    const root=new BABYLON.TransformNode(side+"PotatoHand",scene);
 
-    const palm=BABYLON.MeshBuilder.CreateCapsule(side+"Palm",{height:.17,radius:.055,tessellation:12},scene);
+    // Main hand is one chunky potato instead of a human hand.
+    const palm=BABYLON.MeshBuilder.CreateSphere(side+"PotatoPalm",{
+      diameter:.145,segments:16
+    },scene);
     palm.parent=root;
-    palm.rotation.x=Math.PI/2;
     palm.position.z=.025;
-    palm.scaling.x=1.12;
-    palm.scaling.y=.80;
-    palm.material=m;
+    palm.scaling.set(1.02,.78,1.22);
+    palm.material=potatoMat;
 
-    const thumb=BABYLON.MeshBuilder.CreateCapsule(side+"Thumb",{height:.105,radius:.019,tessellation:10},scene);
-    thumb.parent=root;
-    thumb.rotation.x=.18;
-    thumb.rotation.z=side==="left"?.72:-.72;
-    thumb.position.x=side==="left"?.067:-.067;
-    thumb.position.z=.005;
-    thumb.material=m;
-
-    for (let i=0;i<2;i++) {
-      const f=BABYLON.MeshBuilder.CreateCapsule(side+"Finger"+i,{height:.14-i*.008,radius:.018,tessellation:10},scene);
-      f.parent=root;
-      f.rotation.x=Math.PI/2;
-      f.position.x=i===0?-.028:.028;
-      f.position.z=.13;
-      f.material=m;
+    // Three small potato nubs.
+    for(let i=0;i<3;i++){
+      const nub=BABYLON.MeshBuilder.CreateSphere(side+"PotatoNub"+i,{
+        diameter:.045,segments:10
+      },scene);
+      nub.parent=root;
+      nub.position.set((i-1)*.042,-.005,.103);
+      nub.scaling.set(.80,.72,1.12);
+      nub.material=potatoLightMat;
     }
+
+    const thumb=BABYLON.MeshBuilder.CreateSphere(side+"PotatoThumb",{
+      diameter:.055,segments:10
+    },scene);
+    thumb.parent=root;
+    thumb.position.set(side==="left"?.075:-.075,-.012,.025);
+    thumb.scaling.set(1.12,.78,.85);
+    thumb.material=potatoLightMat;
+
+    // Small dark potato dimples.
+    const dimplePositions=[
+      [-.035,.032,.082],
+      [.038,-.024,.076],
+      [.010,.040,-.035]
+    ];
+    dimplePositions.forEach((p,i)=>{
+      const d=BABYLON.MeshBuilder.CreateSphere(side+"HandDimple"+i,{
+        diameter:.017,segments:7
+      },scene);
+      d.parent=root;
+      d.position.set(p[0],p[1],p[2]);
+      d.scaling.set(1,.45,.35);
+      d.material=potatoDarkMat;
+    });
+
     root.setEnabled(false);
     return root;
   }
@@ -2582,7 +2692,7 @@
     } catch(_) {}
   }
 
-  const HAND_RADIUS=.09;
+  const HAND_RADIUS=.105;
   function closestPointAabb(p,mesh) {
     const bb=mesh.getBoundingInfo().boundingBox;
     const min=bb.minimumWorld,max=bb.maximumWorld;
@@ -2628,8 +2738,26 @@
   function handWorld(h){ return h.node?.getAbsolutePosition().clone()||null; }
   function handTrack(h){ return h.node?.position?.clone()||handWorld(h); }
 
+  function safeVisibleHandPosition(pos){
+    const p=pos.clone();
+
+    // Office floor top is around y=0. Never render the potato hand below it.
+    const floorSafeY=HAND_RADIUS+.012;
+    if(p.y<floorSafeY) p.y=floorSafeY;
+
+    return p;
+  }
+
   function updateHandLocomotion(h,worldPos,trackPos,dt) {
-    const c=surfaceContact(worldPos);
+    let c=surfaceContact(worldPos);
+
+    if(!c && worldPos.y<HAND_RADIUS+.025){
+      c={
+        surface:ground,
+        point:new BABYLON.Vector3(worldPos.x,0,worldPos.z),
+        normal:new BABYLON.Vector3(0,1,0)
+      };
+    }
 
     if (h.waitClear && !c) h.waitClear=false;
 
@@ -2638,7 +2766,7 @@
       h.normal=c.normal.clone();
       h.anchor=c.point.add(h.normal.scale(HAND_RADIUS+.008));
       h.plantTrack=trackPos.clone();
-      h.mesh.position.copyFrom(h.anchor);
+      h.mesh.position.copyFrom(safeVisibleHandPosition(h.anchor));
       pulse(h,.35,30);
     }
 
@@ -2648,7 +2776,7 @@
       const outward=BABYLON.Vector3.Dot(fromPlant,n);
 
       // Fast reliable release: lift only ~2 cm away from the surface.
-      if (outward>.020 || BABYLON.Vector3.Distance(worldPos,h.anchor)>.42) {
+      if (outward>.034 || BABYLON.Vector3.Distance(worldPos,h.anchor)>.36) {
         h.contact=false;
         h.waitClear=!!c;
         h.normal=null;
@@ -2662,7 +2790,7 @@
 
         const effective=tangent.add(into.scale(1.18));
         let rigDelta=effective.scale(-PUSH_GAIN);
-        const max=.095;
+        const max=.110;
         if (rigDelta.length()>max) rigDelta=rigDelta.normalize().scale(max);
 
         if (rigDelta.length()>.0012) {
@@ -2670,7 +2798,7 @@
           keepRigAboveFloor();
 
           const impulse=rigDelta.scale(1/Math.max(dt,.008));
-          bodyVelocity=BABYLON.Vector3.Lerp(bodyVelocity,impulse,.22);
+          bodyVelocity=BABYLON.Vector3.Lerp(bodyVelocity,impulse,.18);
           if (bodyVelocity.length()>MAX_PLAYER_SPEED) {
             bodyVelocity=bodyVelocity.normalize().scale(MAX_PLAYER_SPEED);
           }
@@ -2679,11 +2807,11 @@
     }
 
     if (h.contact && h.anchor) {
-      h.mesh.position.copyFrom(h.anchor);
+      h.mesh.position.copyFrom(safeVisibleHandPosition(h.anchor));
     } else {
       const vc=surfaceContact(worldPos);
-      if (vc) h.mesh.position.copyFrom(vc.point.add(vc.normal.scale(HAND_RADIUS+.008)));
-      else h.mesh.position.copyFrom(worldPos);
+      if (vc) h.mesh.position.copyFrom(safeVisibleHandPosition(vc.point.add(vc.normal.scale(HAND_RADIUS+.012))));
+      else h.mesh.position.copyFrom(safeVisibleHandPosition(worldPos));
     }
 
     h.trackLast=trackPos.clone();
@@ -3808,7 +3936,7 @@
       const vel=p.pos.subtract(p.prev).scale(damping);
 
       // Clamp individual point speed to stop solver explosions.
-      const maxStep=active ? .090 : .115;
+      const maxStep=active ? .078 : .100;
       if(vel.length()>maxStep){
         vel.normalize().scaleInPlace(maxStep);
       }
@@ -5863,7 +5991,7 @@
 
         // Lower gravity and much longer air momentum.
         if (!planted) bodyVelocity.y+=PLAYER_GRAVITY*dt;
-        else if (bodyVelocity.y<-.25) bodyVelocity.y=-.25;
+        else if (bodyVelocity.y<-.12) bodyVelocity.y=-.12;
 
         // Knockback/momentum always applies, including while hands are raised.
         xrCamera.position.addInPlace(bodyVelocity.scale(dt));
@@ -5871,7 +5999,7 @@
         const drag=planted?.13:.52;
         bodyVelocity.x*=Math.pow(drag,dt);
         bodyVelocity.z*=Math.pow(drag,dt);
-        bodyVelocity.y*=Math.pow(.72,dt);
+        bodyVelocity.y*=Math.pow(.78,dt);
 
         if (bodyVelocity.length()>MAX_PLAYER_SPEED)
           bodyVelocity=bodyVelocity.normalize().scale(MAX_PLAYER_SPEED);
@@ -5882,7 +6010,7 @@
         xrCamera.position.z=Math.max(-19.05,Math.min(3.65,xrCamera.position.z));
         xrCamera.position.y=Math.min(4.2,xrCamera.position.y);
 
-        updateBodyVisual();
+        updateBodyVisual(dt);
 
         if (batRoot.isEnabled()) {
           const tip=batTip();
