@@ -1,5 +1,5 @@
 (() => {
-  const BUILD_VERSION="0.22";
+  const BUILD_VERSION="0.23";
   const canvas = document.getElementById("renderCanvas");
   const engine = new BABYLON.Engine(canvas, true, { stencil:true });
   const scene = new BABYLON.Scene(engine);
@@ -90,11 +90,134 @@
   const boardMat=mkMat("whiteboard","#f5f7f7");
   const corkMat=mkMat("cork","#aa8057");
 
+  // ------------------------------------------------------------
+  // Lightweight procedural surface textures.
+  // One tiny shared texture per material type keeps the Quest load low.
+  // ------------------------------------------------------------
+  function makeDetailTexture(name,kind,size=96){
+    const tex=new BABYLON.DynamicTexture(name,{width:size,height:size},scene,false);
+    const c=tex.getContext();
+
+    c.fillStyle="#ffffff";
+    c.fillRect(0,0,size,size);
+
+    if(kind==="wood"){
+      c.strokeStyle="rgba(85,48,26,.24)";
+      c.lineWidth=1;
+      for(let y=5;y<size;y+=8){
+        c.beginPath();
+        for(let x=0;x<=size;x+=8){
+          const yy=y+Math.sin((x+y)*.12)*2.2;
+          if(x===0)c.moveTo(x,yy);else c.lineTo(x,yy);
+        }
+        c.stroke();
+      }
+      for(let i=0;i<18;i++){
+        c.fillStyle="rgba(70,40,24,.08)";
+        c.fillRect(Math.random()*size,Math.random()*size,10+Math.random()*24,1);
+      }
+    }else if(kind==="fabric"){
+      c.strokeStyle="rgba(40,40,40,.10)";
+      c.lineWidth=1;
+      for(let i=0;i<size;i+=5){
+        c.beginPath();c.moveTo(i,0);c.lineTo(i,size);c.stroke();
+        c.beginPath();c.moveTo(0,i);c.lineTo(size,i);c.stroke();
+      }
+    }else if(kind==="skin"){
+      for(let i=0;i<165;i++){
+        const a=.018+Math.random()*.035;
+        c.fillStyle=`rgba(72,34,22,${a})`;
+        const r=.45+Math.random()*.8;
+        c.beginPath();
+        c.arc(Math.random()*size,Math.random()*size,r,0,Math.PI*2);
+        c.fill();
+      }
+    }else if(kind==="wall"){
+      for(let i=0;i<260;i++){
+        const v=210+Math.floor(Math.random()*30);
+        c.fillStyle=`rgba(${v},${v},${v},.13)`;
+        c.fillRect(Math.random()*size,Math.random()*size,1,1);
+      }
+    }else if(kind==="metal"){
+      c.strokeStyle="rgba(60,70,78,.12)";
+      for(let y=1;y<size;y+=3){
+        c.beginPath();c.moveTo(0,y);c.lineTo(size,y);c.stroke();
+      }
+    }else if(kind==="floor"){
+      c.strokeStyle="rgba(55,64,72,.18)";
+      c.lineWidth=1;
+      for(let i=0;i<=size;i+=24){
+        c.beginPath();c.moveTo(i,0);c.lineTo(i,size);c.stroke();
+        c.beginPath();c.moveTo(0,i);c.lineTo(size,i);c.stroke();
+      }
+      for(let i=0;i<100;i++){
+        c.fillStyle="rgba(40,48,54,.035)";
+        c.fillRect(Math.random()*size,Math.random()*size,2,2);
+      }
+    }else if(kind==="hair"){
+      c.strokeStyle="rgba(25,14,10,.18)";
+      for(let i=0;i<70;i++){
+        const x=Math.random()*size;
+        c.beginPath();
+        c.moveTo(x,0);
+        c.lineTo(x-4+Math.random()*8,size);
+        c.stroke();
+      }
+    }
+
+    tex.update(false);
+    tex.wrapU=BABYLON.Texture.WRAP_ADDRESSMODE;
+    tex.wrapV=BABYLON.Texture.WRAP_ADDRESSMODE;
+    return tex;
+  }
+
+  const DETAIL_TEX={
+    wood:makeDetailTexture("texWood","wood"),
+    fabric:makeDetailTexture("texFabric","fabric"),
+    skin:makeDetailTexture("texSkin","skin"),
+    wall:makeDetailTexture("texWall","wall"),
+    metal:makeDetailTexture("texMetal","metal"),
+    floor:makeDetailTexture("texFloor","floor"),
+    hair:makeDetailTexture("texHair","hair")
+  };
+
+  DETAIL_TEX.wood.uScale=2.4;DETAIL_TEX.wood.vScale=2.4;
+  DETAIL_TEX.fabric.uScale=4;DETAIL_TEX.fabric.vScale=4;
+  DETAIL_TEX.skin.uScale=3;DETAIL_TEX.skin.vScale=3;
+  DETAIL_TEX.wall.uScale=5;DETAIL_TEX.wall.vScale=5;
+  DETAIL_TEX.metal.uScale=4;DETAIL_TEX.metal.vScale=4;
+  DETAIL_TEX.floor.uScale=5;DETAIL_TEX.floor.vScale=5;
+  DETAIL_TEX.hair.uScale=4;DETAIL_TEX.hair.vScale=4;
+
+  officeFloorMat.diffuseTexture=DETAIL_TEX.floor;
+  officeWallMat.diffuseTexture=DETAIL_TEX.wall;
+  deskMat.diffuseTexture=DETAIL_TEX.wood;
+  deskMetalMat.diffuseTexture=DETAIL_TEX.metal;
+  chairMat.diffuseTexture=DETAIL_TEX.fabric;
+  monitorMat.diffuseTexture=DETAIL_TEX.metal;
+  keyboardMat.diffuseTexture=DETAIL_TEX.metal;
+  trimMat.diffuseTexture=DETAIL_TEX.wall;
+  darkTrimMat.diffuseTexture=DETAIL_TEX.metal;
+  corkMat.diffuseTexture=DETAIL_TEX.wood;
+
   const glassMat=new BABYLON.StandardMaterial("officeGlass",scene);
   glassMat.diffuseColor=new BABYLON.Color3(.45,.72,.86);
   glassMat.specularColor=new BABYLON.Color3(.9,.95,1);
   glassMat.alpha=.27;
   glassMat.backFaceCulling=false;
+
+  officeWallMat.specularColor=new BABYLON.Color3(.025,.025,.025);
+  officeWallMat.specularPower=8;
+  officeFloorMat.specularColor=new BABYLON.Color3(.04,.04,.04);
+  officeFloorMat.specularPower=12;
+  deskMat.specularColor=new BABYLON.Color3(.13,.08,.045);
+  deskMat.specularPower=22;
+  deskMetalMat.specularColor=new BABYLON.Color3(.42,.44,.46);
+  deskMetalMat.specularPower=58;
+  chairMat.specularColor=new BABYLON.Color3(.045,.045,.05);
+  chairMat.specularPower=10;
+  monitorMat.specularColor=new BABYLON.Color3(.20,.22,.24);
+  monitorMat.specularPower=45;
 
   function addCollision(mesh){
     mesh.checkCollisions=true;
@@ -2523,14 +2646,15 @@
     const lang=(v.lang||"").toLowerCase();
     let s=0;
 
-    if(lang.startsWith("en-us")) s+=22;
-    else if(lang.startsWith("en-gb")) s+=18;
-    else if(lang.startsWith("en")) s+=12;
+    if(lang.startsWith("en-us")) s+=26;
+    else if(lang.startsWith("en-gb")) s+=21;
+    else if(lang.startsWith("en")) s+=13;
 
     const preferred=[
-      ["natural",40],["neural",40],["premium",34],["enhanced",32],
-      ["siri",30],["samantha",26],["daniel",24],["alex",22],
-      ["google",20],["microsoft",20],["ava",18],["allison",16]
+      ["samantha",70],["aaron",66],["daniel",64],["ava",62],
+      ["allison",58],["tom",56],["susan",54],
+      ["natural",50],["neural",50],["premium",46],["enhanced",44],
+      ["siri",42],["microsoft",28],["google",20]
     ];
     for(const [key,value] of preferred){
       if(name.includes(key)) s+=value;
@@ -2538,13 +2662,13 @@
 
     const avoid=[
       "compact","novelty","whisper","bells","bad news","good news",
-      "cellos","zarvox","trinoids","boing","organ","bubbles","robot"
+      "cellos","zarvox","trinoids","boing","organ","bubbles","robot",
+      "eddy","flo","grandma","grandpa"
     ];
     for(const key of avoid){
-      if(name.includes(key)) s-=70;
+      if(name.includes(key)) s-=100;
     }
 
-    if(v.localService) s+=4;
     return s;
   }
 
@@ -2658,26 +2782,26 @@
       if(selectedVoice) u.voice=selectedVoice;
 
       // Keep volume and pitch in a restrained human range.
-      u.volume=.88;
+      u.volume=.84;
 
       if(kind==="furious"){
-        u.rate=.98+Math.random()*.025;
-        u.pitch=.92+Math.random()*.025;
+        u.rate=.97+Math.random()*.018;
+        u.pitch=.96+Math.random()*.015;
       }else if(kind==="angry"){
-        u.rate=.96+Math.random()*.025;
-        u.pitch=.95+Math.random()*.025;
+        u.rate=.96+Math.random()*.018;
+        u.pitch=.97+Math.random()*.015;
       }else if(kind==="scared"){
-        u.rate=1.00+Math.random()*.03;
-        u.pitch=1.01+Math.random()*.025;
+        u.rate=.99+Math.random()*.02;
+        u.pitch=1.00+Math.random()*.015;
       }else if(kind==="hurt"){
-        u.rate=.98+Math.random()*.03;
-        u.pitch=.99+Math.random()*.025;
+        u.rate=.97+Math.random()*.02;
+        u.pitch=.99+Math.random()*.015;
       }else if(kind==="attack"){
-        u.rate=.99+Math.random()*.025;
-        u.pitch=.97+Math.random()*.025;
+        u.rate=.98+Math.random()*.018;
+        u.pitch=.98+Math.random()*.015;
       }else{
-        u.rate=.94+Math.random()*.025;
-        u.pitch=.99+Math.random()*.02;
+        u.rate=.95+Math.random()*.018;
+        u.pitch=.99+Math.random()*.012;
       }
 
       // Avoid overlapping dialogue.
@@ -3001,7 +3125,35 @@
     const rd=npc.ragdoll;
     const base=rd.points[name].base.clone();
 
-    if(npc.dead) return base;
+    if(npc.dead){
+      if(npc.deathPhase==="stagger"){
+        const t=BABYLON.Scalar.Clamp(1-npc.deathTimer/.48,0,1);
+        const side=BABYLON.Scalar.Clamp(npc.angular.y*.08,-.18,.18);
+
+        if(name==="chest"){
+          base.x+=side*t;
+          base.y-=.06*t;
+          base.z-=.08*t;
+        }else if(name==="spineLow"){
+          base.x+=side*.60*t;
+          base.y-=.035*t;
+        }else if(name==="head"){
+          base.x+=side*1.25*t;
+          base.y-=.055*t;
+          base.z-=.055*t;
+        }else if(name==="lKnee"){
+          base.y-=.06*t;
+          base.z+=.05*t;
+        }else if(name==="rKnee"){
+          base.y-=.085*t;
+          base.z-=.04*t;
+        }else if(name==="lHand" || name==="rHand"){
+          base.y-=.10*t;
+        }
+        return base;
+      }
+      return base;
+    }
 
     const walking=npc.walkingNow ? 1 : 0;
     const phase=npc.walkPhase;
@@ -3138,7 +3290,8 @@
     const damping=active ? .925 : .975;
 
     let strength=.155;
-    if(npc.stun>0) strength=.010;
+    if(npc.dead && npc.deathPhase==="stagger") strength=.038;
+    else if(npc.stun>0) strength=.010;
     else if(npc.recentlyHit>0) strength=.024;
     else if(npc.emotion==="angry") strength=.185;
     else if(npc.emotion==="scared") strength=.125;
@@ -3217,8 +3370,8 @@
     const mesh=BABYLON.MeshBuilder.CreateTube(name,{
       path,
       radiusFunction:tubeRadiusFunction(radii),
-      tessellation:18,
-      cap:BABYLON.Mesh.CAP_ALL,
+      tessellation:20,
+      cap:BABYLON.Mesh.NO_CAP,
       updatable:true
     },scene);
     mesh.parent=parent;
@@ -3364,6 +3517,12 @@
   }
 
   function createNpc() {
+    // v0.23 no longer uses detached death pieces.
+    while(deathParts.length){
+      const old=deathParts.pop();
+      old?.mesh?.dispose?.();
+    }
+
     const root=new BABYLON.TransformNode("npcRoot",scene);
     root.position=new BABYLON.Vector3(0,0,1.8);
 
@@ -3391,6 +3550,15 @@
     const pupilMat=mkMat("npcPupil"+Math.random(),"#090909");
     const hairMat=mkMat("npcHair"+Math.random(),"#30231c");
     const teethMat=mkMat("npcTeeth"+Math.random(),"#f4eee5");
+
+    skinMat.diffuseTexture=DETAIL_TEX.skin;
+    skinDarkMat.diffuseTexture=DETAIL_TEX.skin;
+    shirtMat.diffuseTexture=DETAIL_TEX.fabric;
+    shirtDarkMat.diffuseTexture=DETAIL_TEX.fabric;
+    pantsMat.diffuseTexture=DETAIL_TEX.fabric;
+    pantsDarkMat.diffuseTexture=DETAIL_TEX.fabric;
+    shoeMat.diffuseTexture=DETAIL_TEX.metal;
+    hairMat.diffuseTexture=DETAIL_TEX.hair;
 
     function capsule(name,radius,material){
       const m=BABYLON.MeshBuilder.CreateCapsule(name,{
@@ -3542,14 +3710,16 @@
     pantsMat.specularPower=10;
 
     // Head + all face detail parented to the head so it tilts with the neck.
-    const head=jointSphere("npcHead",.435,skinMat);
-    head.scaling.set(.84,1.07,.79);
-
-    // Separate lower face/jaw shape makes the head less like one round ball.
-    const jaw=jointSphere("npcJaw",.31,skinMat);
-    jaw.parent=head;
-    jaw.position.set(0,-.145,.008);
-    jaw.scaling.set(.88,.58,.76);
+    // One continuous oval head: no separate chin/jaw ball.
+    const head=BABYLON.MeshBuilder.CreateCapsule("npcHead",{
+      height:.405,
+      radius:.178,
+      tessellation:22
+    },scene);
+    head.parent=visual;
+    head.material=skinMat;
+    head.scaling.set(.93,1,.86);
+    head.rotationQuaternion=BABYLON.Quaternion.Identity();
 
     function faceSphere(name,diam,pos,mat,scale=[1,1,1]){
       const m=BABYLON.MeshBuilder.CreateSphere(name,{diameter:diam,segments:11},scene);
@@ -3596,10 +3766,10 @@
     teeth.parent=head;teeth.position.set(0,-.102,.196);teeth.material=teethMat;
 
     // No separate chin sphere: the jaw mesh above forms the chin naturally.
-    const cheekL=BABYLON.MeshBuilder.CreateSphere("npcCheekL",{diameter:.060,segments:10},scene);
+    const cheekL=BABYLON.MeshBuilder.CreateSphere("npcCheekL",{diameter:.046,segments:10},scene);
     cheekL.parent=head;
-    cheekL.position.set(-.090,-.045,.145);
-    cheekL.scaling.set(1.0,.42,.32);
+    cheekL.position.set(-.085,-.040,.145);
+    cheekL.scaling.set(1.0,.30,.22);
     cheekL.material=skinMat;
 
     const cheekR=cheekL.clone("npcCheekR");
@@ -3784,7 +3954,7 @@
       bodyShell,shoulderBridge,neckShell,leftSleeveShell,rightSleeveShell,
       leftArmShell,rightArmShell,leftLegShell,rightLegShell,
       abdomen,torso,neck,chestPlate,pelvis,spineJoint,neckJoint,
-      head,jaw,nose,leftEar,rightEar,leftEyeWhite,rightEyeWhite,leftEye,rightEye,leftPupil,rightPupil,
+      head,nose,leftEar,rightEar,leftEyeWhite,rightEyeWhite,leftEye,rightEye,leftPupil,rightPupil,
       mouth,upperLip,lowerLip,teeth,cheekL,cheekR,eyebrowL,eyebrowR,hair,
       leftUpperArm,leftLowerArm,leftShoulderJoint,leftElbowJoint,leftWristJoint,leftHand,leftSleeve,
       rightUpperArm,rightLowerArm,rightShoulderJoint,rightElbowJoint,rightWristJoint,rightHand,rightSleeve,
@@ -3796,7 +3966,7 @@
         bodyShell,shoulderBridge,neckShell,leftSleeveShell,rightSleeveShell,
         leftArmShell,rightArmShell,leftLegShell,rightLegShell,
         abdomen,torso,neck,chestPlate,pelvis,spineJoint,neckJoint,
-        head,jaw,nose,leftEar,rightEar,leftEyeWhite,rightEyeWhite,leftEye,rightEye,leftPupil,rightPupil,
+        head,nose,leftEar,rightEar,leftEyeWhite,rightEyeWhite,leftEye,rightEye,leftPupil,rightPupil,
         mouth,upperLip,lowerLip,teeth,cheekL,cheekR,eyebrowL,eyebrowR,hair,
         leftUpperArm,leftLowerArm,leftShoulderJoint,leftElbowJoint,leftWristJoint,leftHand,leftSleeve,
         rightUpperArm,rightLowerArm,rightShoulderJoint,rightElbowJoint,rightWristJoint,rightHand,rightSleeve,
@@ -3807,7 +3977,7 @@
 
       skinParts:[
         leftArmShell,rightArmShell,neckShell,
-        neck,neckJoint,head,jaw,nose,leftEar,rightEar,cheekL,cheekR,upperLip,lowerLip,
+        neck,neckJoint,head,nose,leftEar,rightEar,cheekL,cheekR,upperLip,lowerLip,
         leftUpperArm,leftLowerArm,leftElbowJoint,leftWristJoint,leftHand,
         rightUpperArm,rightLowerArm,rightElbowJoint,rightWristJoint,rightHand
       ],
@@ -3826,7 +3996,7 @@
       flashParts:[
         bodyShell,shoulderBridge,leftSleeveShell,rightSleeveShell,
         leftArmShell,rightArmShell,leftLegShell,rightLegShell,
-        neckShell,pelvis,head,jaw,leftHand,rightHand,
+        neckShell,pelvis,head,leftHand,rightHand,
         leftShoe,rightShoe
       ],
 
@@ -3863,10 +4033,12 @@
       recentlyHit:0,
       respawnTimer:0,
       greeted:false,
-      deathExplodeTimer:0,
-      deathExploded:false,
+      deathPhase:"alive",
+      deathTimer:0,
+      deathTotalTimer:0,
       deathDir:new BABYLON.Vector3(0,1,0),
-      deathForce:0,
+      deathHitPos:new BABYLON.Vector3(),
+      deathSpeed:0,
       ragdoll:null
     };
 
@@ -3912,8 +4084,7 @@
     npc.neckShell.material=npc.skinMat;
     npc.pelvis.material=npc.pantsMat;
     npc.head.material=npc.skinMat;
-    npc.jaw.material=npc.skinMat;
-    npc.leftHand.material=npc.skinMat;
+        npc.leftHand.material=npc.skinMat;
     npc.rightHand.material=npc.skinMat;
     npc.leftShoe.material=npc.shoeMat;
     npc.rightShoe.material=npc.shoeMat;
@@ -4286,71 +4457,37 @@
     npc.dead=true;
     npc.hpValue=0;
     recordKill();
-    npc.hp.plane.setEnabled(false);
-    npc.speech.plane.setEnabled(false);
-    npc.ragdoll.dead=true;
-    npc.respawnTimer=5.6;
+    npc.hpFlashTimer=.22;
+    updateNpcLabel();
 
-    // First: fully connected limp ragdoll absorbs the finishing hit.
-    npc.deathExplodeTimer=.20;
-    npc.deathExploded=false;
+    // Keep the health bar for a short instant, then hide it during collapse.
+    npc.deathPhase="stagger";
+    npc.deathTimer=.48;
+    npc.deathTotalTimer=0;
+    npc.ragdoll.dead=false;
+    npc.respawnTimer=6.1;
     npc.deathDir=dir.clone();
-    npc.deathForce=Math.min(14.8,6.2+speed*.60);
+    npc.deathHitPos=hitPos.clone();
+    npc.deathSpeed=speed;
 
+    // Last hit carries real linear momentum.
+    const force=Math.min(9.4,2.1+speed*.66);
+    npc.velocity.addInPlace(dir.scale(force));
+    npc.velocity.y+=Math.max(.25,dir.y*.9+.35);
+
+    // Off-center last hits create visible realistic spin.
+    applyNpcSpinKnockback(hitPos,dir,speed,1.65);
+
+    // Local body reaction starts at the actual hit point.
     applyNpcRagdollImpulse(
       hitPos,
-      dir.scale(npc.deathForce).add(new BABYLON.Vector3(0,2.0,0)),
-      2.7
+      dir.scale(1.25+speed*.48).add(new BABYLON.Vector3(0,.45,0)),
+      .88
     );
 
-    // Small first impact; the large blood/explosion happens after the
-    // connected body has actually reacted to the hit.
-    spawnBloodExplosion(
-      npcLocalToWorld(npc.ragdoll.points.chest.pos),
-      dir,
-      .48
-    );
-    pulse(hands.right,1,150);
-    simpleHitSound(true);
+    pulse(hands.right,1,145);
+    playImpactSound("body",1.1);
   }
-  function classifyNpcHit(hitWorld){
-    if(!npc?.ragdoll) return {zone:"torso",mult:1};
-    const groups=[
-      {zone:"head",names:["head","neckBase"],mult:1.42},
-      {zone:"torso",names:["chest","spineLow","pelvis"],mult:1.00},
-      {zone:"rightArm",names:["rShoulder","rElbow","rWrist","rHand"],mult:.72},
-      {zone:"leftArm",names:["lShoulder","lElbow","lWrist","lHand"],mult:.72},
-      {zone:"rightLeg",names:["rHip","rKnee","rAnkle","rFoot"],mult:.80},
-      {zone:"leftLeg",names:["lHip","lKnee","lAnkle","lFoot"],mult:.80}
-    ];
-    let best={zone:"torso",mult:1,dist:Infinity};
-    for(const g of groups){
-      for(const name of g.names){
-        const p=npc.ragdoll.points[name]; if(!p) continue;
-        const dist=BABYLON.Vector3.Distance(hitWorld,npcLocalToWorld(p.pos));
-        if(dist<best.dist) best={zone:g.zone,mult:g.mult,dist};
-      }
-    }
-    return best;
-  }
-
-  function applyInjury(zone,damage,speed){
-    if(!npc?.injuries) return;
-    const amount=damage*(.65+Math.min(1,speed*.06));
-    if(zone==="head"){
-      npc.injuries.head=Math.min(100,npc.injuries.head+amount*1.4);
-      npc.stun=Math.max(npc.stun,.13+Math.min(.35,damage*.012));
-    }else if(zone==="rightArm" || zone==="leftArm"){
-      npc.injuries[zone]=Math.min(100,npc.injuries[zone]+amount);
-      npc.stun=Math.max(npc.stun,.06);
-    }else if(zone==="rightLeg" || zone==="leftLeg"){
-      npc.injuries[zone]=Math.min(100,npc.injuries[zone]+amount*1.15);
-      npc.stun=Math.max(npc.stun,.08+Math.min(.20,damage*.008));
-    }else{
-      npc.injuries.torso=Math.min(100,npc.injuries.torso+amount*.55);
-    }
-  }
-
   function swingDamage(speed) {
     // Much lower continuous damage in v0.14.
     // Soft hits can do 1-3, normal swings around the middle,
@@ -4396,6 +4533,8 @@
       hitPos,dir.scale((.9+speed*.34)*boost),
       hit.zone==="head"?.72:.95
     );
+
+    applyNpcSpinKnockback(hitPos,dir,speed,1);
 
     playImpactSound("body",Math.min(1.2,.25+speed*.055));
 
@@ -4725,7 +4864,13 @@
             npc.weaponRoot.rotation.y=0;
           }
 
-          npc.walkingNow=walking;
+          // Hard off-center hits can spin the standing NPC too.
+        npc.root.rotation.x+=npc.angular.x*dt;
+        npc.root.rotation.y+=npc.angular.y*dt;
+        npc.root.rotation.z+=npc.angular.z*dt;
+        npc.angular.scaleInPlace(Math.pow(.16,dt));
+
+        npc.walkingNow=walking;
           if(walking){
             npc.walkPhase+=dt*8.5;
             const stepIndex=Math.floor(npc.walkPhase/Math.PI);
@@ -4743,30 +4888,51 @@
         }
       } else {
         npc.respawnTimer-=dt;
+        npc.deathTotalTimer+=dt;
         npc.walkingNow=false;
 
-        if(!npc.deathExploded){
-          // True limp, connected ragdoll phase.
-          updateNpcRagdoll(dt,false);
+        // Linear + angular momentum continue through the whole death.
+        npc.velocity.y-=2.8*dt;
+        moveNpc(npc.velocity.scale(dt));
 
-          npc.deathExplodeTimer-=dt;
-          if(npc.deathExplodeTimer<=0){
-            npc.deathExploded=true;
+        npc.root.rotation.x+=npc.angular.x*dt;
+        npc.root.rotation.y+=npc.angular.y*dt;
+        npc.root.rotation.z+=npc.angular.z*dt;
 
-            const chestWorld=npcLocalToWorld(npc.ragdoll.points.chest.pos);
-            spawnDeathRagdollFromCurrent(npc.deathDir,npc.deathForce);
+        npc.velocity.x*=Math.pow(.34,dt);
+        npc.velocity.z*=Math.pow(.34,dt);
+        npc.angular.scaleInPlace(Math.pow(.18,dt));
 
-            spawnBloodExplosion(
-              chestWorld,
-              npc.deathDir,
-              1.12
+        if(npc.deathPhase==="stagger"){
+          npc.deathTimer-=dt;
+
+          // Still partially active for a split second: knees/torso try to
+          // recover, so the final hit reads as an animation instead of
+          // instantly turning into spaghetti.
+          updateNpcRagdoll(dt,true);
+
+          // Add a subtle backwards/sideways wobble while active.
+          const phase=BABYLON.Scalar.Clamp(1-npc.deathTimer/.48,0,1);
+          const wobble=Math.sin(phase*Math.PI)*.07;
+          npc.ragdoll.points.chest.pos.x+=Math.sin(npc.root.rotation.y)*wobble*dt;
+          npc.ragdoll.points.pelvis.pos.z-=wobble*.45*dt;
+
+          if(npc.deathTimer<=0){
+            npc.deathPhase="collapse";
+            npc.ragdoll.dead=true;
+            npc.hp.plane.setEnabled(false);
+
+            // A second smaller impulse starts the collapse through the knees.
+            const p=npc.ragdoll.points;
+            p.lKnee.prev.y+=.025;
+            p.rKnee.prev.y+=.035;
+            p.chest.prev.subtractInPlace(
+              worldVectorToNpcLocal(npc.deathDir.scale(.020+.003*npc.deathSpeed))
             );
-            spawnDeathJointBlood(npc.deathDir);
-            coolDeathBurst(chestWorld);
-
-            npc.visual.setEnabled(false);
-            npc.weaponRoot.setEnabled(false);
           }
+        }else{
+          // Fully connected limp ragdoll. No explosion, no detached body parts.
+          updateNpcRagdoll(dt,false);
         }
 
         if (npc.respawnTimer<=0) {
@@ -4782,26 +4948,7 @@
       }
     }
 
-    // Exploded ragdoll pieces remain fully physical and can smash windows.
-    for(let i=deathParts.length-1;i>=0;i--){
-      const r=deathParts[i];
-      r.life-=dt;
-      r.vel.y-=7.2*dt;
-      moveDeathPart(r,dt);
-
-      r.mesh.rotation.x+=r.spin.x*dt;
-      r.mesh.rotation.y+=r.spin.y*dt;
-      r.mesh.rotation.z+=r.spin.z*dt;
-
-      r.vel.x*=Math.pow(.72,dt);
-      r.vel.z*=Math.pow(.72,dt);
-      r.spin.scaleInPlace(Math.pow(.50,dt));
-
-      if(r.life<=0 || r.mesh.position.y<-5.4){
-        r.mesh.dispose();
-        deathParts.splice(i,1);
-      }
-    }
+    // Death stays as one connected ragdoll.
 
     updateOfficePhysics(dt);
 
