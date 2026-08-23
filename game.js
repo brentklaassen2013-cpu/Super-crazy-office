@@ -1,5 +1,5 @@
 (() => {
-  const BUILD_VERSION="0.24.2";
+  const BUILD_VERSION="0.24.3";
   const canvas = document.getElementById("renderCanvas");
   const engine = new BABYLON.Engine(canvas, true, { stencil:true });
   const scene = new BABYLON.Scene(engine);
@@ -61,7 +61,7 @@
   const PERF={
     maxFx:320,
     maxBloodSplats:140,
-    maxDeathParts:14,
+    maxDeathParts:10,
     propSleepSpeed:.055,
     propSleepSeconds:1.15
   };
@@ -1481,6 +1481,8 @@
   }
 
   function spawnBloodExplosion(origin,hitDir,strength=1){
+    // v0.24.3: blood removed
+    return;
     const dir=hitDir.clone();
     if(dir.lengthSquared()<.001) dir.set(0,1,0);
     dir.normalize();
@@ -1648,24 +1650,24 @@
       const dz=oz-cz;
 
       // Close enough to be sitting on the desk surface.
-      if(Math.abs(dx)<=1.02 && Math.abs(dz)<=.62 && other.root.position.y>.78){
+      if(Math.abs(dx)<=1.18 && Math.abs(dz)<=.82 && other.root.position.y>.74){
         other.loose=true;
         other.sleepTimer=0;
+        other.minY=0;
 
         const slide = new BABYLON.Vector3(
-          dx*1.8 + dir.x*(hard ? .9 : .45),
-          .18 + Math.min(.55, speed*.05),
-          dz*1.8 + dir.z*(hard ? .9 : .45)
+          dx*2.9 + dir.x*(hard ? 1.60 : .85),
+          .36 + Math.min(.95, speed*.10),
+          dz*2.9 + dir.z*(hard ? 1.60 : .85)
         );
 
         other.vel.addInPlace(slide);
         other.ang.addInPlace(new BABYLON.Vector3(
-          (Math.random()-.5)*(hard ? 4.6 : 2.6),
-          (Math.random()-.5)*(hard ? 3.4 : 2.0),
-          (Math.random()-.5)*(hard ? 4.6 : 2.6)
+          (Math.random()-.5)*(hard ? 6.6 : 3.8),
+          (Math.random()-.5)*(hard ? 4.8 : 2.6),
+          (Math.random()-.5)*(hard ? 6.6 : 3.8)
         ));
 
-        // A very hard desk hit can also crack fragile things.
         if(hard && other.type==="monitor" && !other.broken){
           breakMonitor(
             other,
@@ -1705,10 +1707,16 @@
   function destroyOfficeProp(prop,hitPos,dir,speed){
     if(!prop || prop.broken) return;
     prop.broken=true;prop.loose=false;
-    prop.hitMeshes.forEach(m=>m?.setEnabled?.(false));
+    prop.hitMeshes.forEach(m=>{
+      if(m){
+        removeCollision(m);
+        m.setEnabled?.(false);
+      }
+    });
 
     const center=prop.root.getAbsolutePosition?.()?.clone?.() || prop.root.position.clone();
     const d=dir.clone(); if(d.lengthSquared()<.001) d.set(0,1,0); d.normalize();
+    prop.root.setEnabled?.(false);
     const base=d.scale(Math.min(6,1.4+speed*.35)).add(new BABYLON.Vector3(0,.6+Math.random()*1.2,0));
 
     const chunk=(off,size,mat,scatter=1)=>{
@@ -1780,8 +1788,8 @@
 
     let dir=swingVel.clone(); if(dir.lengthSquared()<.001) dir.set(0,1,0); dir.normalize();
 
-    if(prop.type==="desk" && speed>=1.0){
-      loosenDeskContents(prop,dir,speed,false);
+    if(prop.type==="desk" && speed>=0.60){
+      loosenDeskContents(prop,dir,Math.max(speed,2.1),true);
     }
 
     const power=Math.min(5,(speed*1.8)/Math.max(.55,prop.mass));
@@ -1846,7 +1854,7 @@
       p.cooldown=Math.max(0,p.cooldown-dt);
       if(!p.loose || p.broken) continue;
 
-      p.vel.y-=7.8*dt;
+      p.vel.y-=8.8*dt;
       p.root.position.addInPlace(p.vel.scale(dt));
       p.root.rotation.x+=p.ang.x*dt;
       p.root.rotation.y+=p.ang.y*dt;
@@ -2093,6 +2101,14 @@
   const hudPlane = BABYLON.MeshBuilder.CreatePlane("playerHud",{width:.86,height:.20},scene);
   hudPlane.setEnabled(false);
   const hudTex = BABYLON.GUI.AdvancedDynamicTexture.CreateForMesh(hudPlane,900,420);
+  hudPlane.isPickable=false;
+  hudPlane.alwaysSelectAsActiveMesh=true;
+  hudPlane.renderingGroupId=3;
+  if(hudPlane.material){
+    hudPlane.material.backFaceCulling=false;
+    hudPlane.material.disableDepthWrite=true;
+    hudPlane.material.disableLighting=true;
+  }
 
   const hudBg = new BABYLON.GUI.Rectangle();
   hudBg.cornerRadius=16;
@@ -2143,6 +2159,14 @@
   const damageFlash = BABYLON.MeshBuilder.CreatePlane("damageFlash",{width:3.4,height:2.0},scene);
   damageFlash.setEnabled(false);
   const flashTex = BABYLON.GUI.AdvancedDynamicTexture.CreateForMesh(damageFlash,800,450);
+  damageFlash.isPickable=false;
+  damageFlash.alwaysSelectAsActiveMesh=true;
+  damageFlash.renderingGroupId=3;
+  if(damageFlash.material){
+    damageFlash.material.backFaceCulling=false;
+    damageFlash.material.disableDepthWrite=true;
+    damageFlash.material.disableLighting=true;
+  }
   const flashRect = new BABYLON.GUI.Rectangle();
   flashRect.thickness=24;
   flashRect.color="#ff3030";
@@ -2154,6 +2178,14 @@
   const deathPlane = BABYLON.MeshBuilder.CreatePlane("deathPlane",{width:2.7,height:1.2},scene);
   deathPlane.setEnabled(false);
   const deathTex = BABYLON.GUI.AdvancedDynamicTexture.CreateForMesh(deathPlane,1000,460);
+  deathPlane.isPickable=false;
+  deathPlane.alwaysSelectAsActiveMesh=true;
+  deathPlane.renderingGroupId=3;
+  if(deathPlane.material){
+    deathPlane.material.backFaceCulling=false;
+    deathPlane.material.disableDepthWrite=true;
+    deathPlane.material.disableLighting=true;
+  }
   const deathBg = new BABYLON.GUI.Rectangle();
   deathBg.background="#220000EE";
   deathBg.color="#ff6666";
@@ -2170,6 +2202,14 @@
   const blockPlane=BABYLON.MeshBuilder.CreatePlane("blockPlane",{width:1.1,height:.42},scene);
   blockPlane.setEnabled(false);
   const blockTex=BABYLON.GUI.AdvancedDynamicTexture.CreateForMesh(blockPlane,700,250);
+  blockPlane.isPickable=false;
+  blockPlane.alwaysSelectAsActiveMesh=true;
+  blockPlane.renderingGroupId=3;
+  if(blockPlane.material){
+    blockPlane.material.backFaceCulling=false;
+    blockPlane.material.disableDepthWrite=true;
+    blockPlane.material.disableLighting=true;
+  }
   const blockRect=new BABYLON.GUI.Rectangle();
   blockRect.background="#0f172aDD";
   blockRect.color="#67e8f9";
@@ -2297,33 +2337,8 @@
   chestRoot.setEnabled(false);
 
   function updateBodyVisual() {
-    if (!xrCamera || playerDead) {
-      chestRoot.setEnabled(false);
-      return;
-    }
-    chestRoot.setEnabled(true);
-
-    const head=xrCamera.globalPosition.clone();
-    let f=xrCamera.getForwardRay(1).direction.clone();
-    f.y=0;
-    if (f.lengthSquared()<.001) f.set(0,0,1);
-    f.normalize();
-
-    // Minimal chest-only torso: tiny marker that ends at the chest
-    // and stays clearly below the face/camera.
-    const topY=Math.max(.84,head.y-.165);
-    const bottomY=Math.max(.79,head.y-.225);
-    const bodyMid=(topY+bottomY)*.5;
-
-    chestRoot.position.set(
-      head.x - f.x*.030,
-      bodyMid - .018,
-      head.z - f.z*.030
-    );
-    chestRoot.rotation.y=Math.atan2(f.x,f.z);
-
-    const bodyHeight=Math.max(.045,topY-bottomY);
-    chest.scaling.y=Math.min(.42,bodyHeight/.060);
+    // v0.24.3: torso hidden completely
+    chestRoot.setEnabled(false);
   }
   function keepRigAboveFloor() {
     if (!xrCamera) return;
@@ -3750,8 +3765,8 @@
 
     const rd=npc.ragdoll;
     const frame=Math.min(1.4,dt*60);
-    const gravity=active ? -4.8 : -7.1;
-    const damping=active ? .925 : .975;
+    const gravity=active ? -5.4 : -7.1;
+    const damping=active ? .900 : .970;
 
     let strength=.155;
     if(npc.dead && npc.deathPhase==="stagger") strength=.038;
@@ -3783,7 +3798,7 @@
     }
 
     // More iterations = tighter joints. Five is a good Quest 2 compromise.
-    for(let iteration=0;iteration<11;iteration++){
+    for(let iteration=0;iteration<13;iteration++){
       for(const c of rd.constraints) solveRagConstraint(c);
       for(const p of rd.list) collideNpcRagdollPoint(p,dt);
     }
@@ -4810,6 +4825,8 @@
   }
 
   function spawnDeathJointBlood(dir){
+    // v0.24.3: blood removed
+    return;
     if(!npc?.ragdoll) return;
     const p=npc.ragdoll.points;
     const joints=[
@@ -4855,7 +4872,7 @@
       const outward=mesh.position.subtract(chestCenter);
       if(outward.lengthSquared()>.0001){
         outward.normalize();
-        vel.addInPlace(outward.scale(.20+Math.random()*.24));
+        vel.addInPlace(outward.scale(.10+Math.random()*.12));
       }
 
       const maxPieceSpeed=7.2;
@@ -4867,7 +4884,7 @@
         mesh,
         vel,
         radius,
-        life:3.0,
+        life:2.2,
         age:0,
         sleepTimer:0,
         sleeping:false,
@@ -5501,7 +5518,7 @@
 
           // Start a real weapon swing, but distance alone does NOT deal damage.
           if (
-            d<=2.25 &&
+            d<=2.55 &&
             npcIsFullyUpright() &&
             npc.stun<=0 &&
             npc.attackAnim<=0 &&
@@ -5618,13 +5635,13 @@
             // Real swept hitbox against head/chest/hips.
             if (!npc.attackBlocked && !npc.attackHasHit && progress>.38) {
               const hit=playerHitSpheres().some(s=>
-                segmentSphereHit(prev,tip,s.center,s.radius+.085)
+                segmentSphereHit(prev,tip,s.center,s.radius+.12)
               );
 
               if(hit){
                 npc.attackHasHit=true;
                 const armWeak=BABYLON.Scalar.Clamp(1-npc.injuries.rightArm*.004,.62,1);
-                hurtPlayer(Math.max(1,Math.round(npc.weaponCfg.damage*(npc.archetype?.attackMul||1)*armWeak)),npc.root.position);
+                hurtPlayer(Math.max(2,Math.round(npc.weaponCfg.damage*(npc.archetype?.attackMul||1)*armWeak*1.08)),npc.root.position);
 
                 let away=playerWorldPos().subtract(npc.root.position);
                 away.y=0;
@@ -5719,7 +5736,7 @@
             // Break the ragdoll apart from its CURRENT physical pose.
             spawnDeathRagdollFromCurrent(
               npc.deathDir,
-              Math.min(6.6,3.4+npc.deathSpeed*.20)
+              Math.min(4.8,2.6+npc.deathSpeed*.12)
             );
 
             // Very heavy stylized blood burst.
@@ -5756,7 +5773,7 @@
       r.age+=dt;
 
       if(!r.sleeping){
-        r.vel.y-=4.8*dt;
+        r.vel.y-=4.1*dt;
 
         // Extra substeps reduce tunnelling through desks/walls/floor.
         moveDeathPart(r,dt);
@@ -5765,9 +5782,9 @@
         r.mesh.rotation.y+=r.spin.y*dt;
         r.mesh.rotation.z+=r.spin.z*dt;
 
-        r.vel.x*=Math.pow(.34,dt);
-        r.vel.z*=Math.pow(.34,dt);
-        r.spin.scaleInPlace(Math.pow(.14,dt));
+        r.vel.x*=Math.pow(.24,dt);
+        r.vel.z*=Math.pow(.24,dt);
+        r.spin.scaleInPlace(Math.pow(.09,dt));
 
         const motion=r.vel.length()+r.spin.length()*.06;
         if(r.age>.65 && motion<.32){
