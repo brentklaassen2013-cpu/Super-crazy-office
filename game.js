@@ -1,5 +1,5 @@
 (() => {
-  const BUILD_VERSION="0.24.6";
+  const BUILD_VERSION="0.24.7";
   const canvas = document.getElementById("renderCanvas");
   const engine = new BABYLON.Engine(canvas, true, { stencil:true });
   const scene = new BABYLON.Scene(engine);
@@ -1722,6 +1722,12 @@
 
   function destroyOfficeProp(prop,hitPos,dir,speed){
     if(!prop || prop.broken) return;
+
+    // Direction must exist before any desk cleanup uses it.
+    const d=dir?.clone?.() || new BABYLON.Vector3(0,1,0);
+    if(d.lengthSquared()<.001) d.set(0,1,0);
+    d.normalize();
+
     prop.broken=true;prop.loose=false;
     prop.hitMeshes.forEach(m=>{
       if(m){
@@ -1729,6 +1735,7 @@
         m.setEnabled?.(false);
       }
     });
+
     if(prop.type==="desk"){
       // Safety sweep: no hidden desk collider may remain after destruction.
       for(const s of [...collisionSurfaces]){
@@ -1743,7 +1750,6 @@
     }
 
     const center=prop.root.getAbsolutePosition?.()?.clone?.() || prop.root.position.clone();
-    const d=dir.clone(); if(d.lengthSquared()<.001) d.set(0,1,0); d.normalize();
     prop.root.setEnabled?.(false);
     const base=d.scale(Math.min(6,1.4+speed*.35)).add(new BABYLON.Vector3(0,.6+Math.random()*1.2,0));
 
@@ -2130,9 +2136,11 @@
   let bodyVelocity=new BABYLON.Vector3(0,0,0);
 
   // Much lighter than previous versions.
-  const PLAYER_GRAVITY = -2.85;
-  const PUSH_GAIN = 1.52;
+  const PLAYER_GRAVITY = -2.35;
+  const PUSH_GAIN = 1.64;
   const MAX_PLAYER_SPEED = 8.8;
+  const FLOOR_FORWARD_BOOST = 1.42;
+  const FLOOR_SIDE_BOOST = 1.08;
 
   // ------------------------------------------------------------
   // Camera-fixed player HUD: always shows your own HP.
@@ -2377,14 +2385,14 @@
   // Big potato butt cheeks. These are visual only and never affect collisions.
   const buttRoot=new BABYLON.TransformNode("potatoButtRoot",scene);
   buttRoot.parent=chestRoot;
-  buttRoot.position.set(0,-.25,.16);
+  buttRoot.position.set(0,-.24,-.24);
 
   const buttL=BABYLON.MeshBuilder.CreateSphere("potatoButtL",{
     diameter:.34,segments:18
   },scene);
   buttL.parent=buttRoot;
   buttL.position.set(-.13,0,.05);
-  buttL.scaling.set(1.00,.88,.95);
+  buttL.scaling.set(1.00,.88,.82);
   buttL.material=potatoLightMat;
 
   const buttR=buttL.clone("potatoButtR");
@@ -2415,9 +2423,9 @@
 
     // Stay clearly below the headset so the potato never fills your face.
     const bodyPos=new BABYLON.Vector3(
-      head.x - f.x*.075,
-      Math.max(.80,head.y-.58),
-      head.z - f.z*.075
+      head.x - f.x*.18,
+      Math.max(.76,head.y-.66),
+      head.z - f.z*.18
     );
 
     chestRoot.position.copyFrom(bodyPos);
@@ -2742,7 +2750,7 @@
     const p=pos.clone();
 
     // Office floor top is around y=0. Never render the potato hand below it.
-    const floorSafeY=HAND_RADIUS+.012;
+    const floorSafeY=HAND_RADIUS+.020;
     if(p.y<floorSafeY) p.y=floorSafeY;
 
     return p;
@@ -2764,7 +2772,7 @@
     if (!h.contact && c && !h.waitClear) {
       h.contact=true;
       h.normal=c.normal.clone();
-      h.anchor=c.point.add(h.normal.scale(HAND_RADIUS+.008));
+      h.anchor=c.point.add(h.normal.scale(HAND_RADIUS+.014));
       h.plantTrack=trackPos.clone();
       h.mesh.position.copyFrom(safeVisibleHandPosition(h.anchor));
       pulse(h,.35,30);
@@ -2776,7 +2784,7 @@
       const outward=BABYLON.Vector3.Dot(fromPlant,n);
 
       // Fast reliable release: lift only ~2 cm away from the surface.
-      if (outward>.034 || BABYLON.Vector3.Distance(worldPos,h.anchor)>.36) {
+      if (outward>.030 || BABYLON.Vector3.Distance(worldPos,h.anchor)>.34) {
         h.contact=false;
         h.waitClear=!!c;
         h.normal=null;
@@ -2790,10 +2798,32 @@
 
         const effective=tangent.add(into.scale(1.18));
         let rigDelta=effective.scale(-PUSH_GAIN);
-        const max=.110;
+
+        // Floor pushes get a forward-biased assist.
+        // Pulling your planted hand backward now moves you forward more easily.
+        if(n.y>.60 && xrCamera){
+          let forward=xrCamera.getForwardRay(1).direction.clone();
+          forward.y=0;
+          if(forward.lengthSquared()>.001){
+            forward.normalize();
+
+            const forwardAmount=BABYLON.Vector3.Dot(rigDelta,forward);
+            const forwardPart=forward.scale(forwardAmount);
+            const sidePart=rigDelta.subtract(forwardPart);
+
+            if(forwardAmount>0){
+              rigDelta=forwardPart.scale(FLOOR_FORWARD_BOOST)
+                .add(sidePart.scale(FLOOR_SIDE_BOOST));
+            }else{
+              rigDelta=forwardPart.add(sidePart.scale(FLOOR_SIDE_BOOST));
+            }
+          }
+        }
+
+        const max=.135;
         if (rigDelta.length()>max) rigDelta=rigDelta.normalize().scale(max);
 
-        if (rigDelta.length()>.0012) {
+        if (rigDelta.length()>.0010) {
           xrCamera.position.addInPlace(rigDelta);
           keepRigAboveFloor();
 
@@ -2802,6 +2832,9 @@
           if (bodyVelocity.length()>MAX_PLAYER_SPEED) {
             bodyVelocity=bodyVelocity.normalize().scale(MAX_PLAYER_SPEED);
           }
+          bodyVelocity.x=BABYLON.Scalar.Clamp(bodyVelocity.x,-7.2,7.2);
+          bodyVelocity.y=BABYLON.Scalar.Clamp(bodyVelocity.y,-5.0,5.0);
+          bodyVelocity.z=BABYLON.Scalar.Clamp(bodyVelocity.z,-7.2,7.2);
         }
       }
     }
