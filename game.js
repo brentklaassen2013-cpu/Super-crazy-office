@@ -1,5 +1,5 @@
 (() => {
-  const BUILD_VERSION="0.18.1";
+  const BUILD_VERSION="0.19";
   const canvas = document.getElementById("renderCanvas");
   const engine = new BABYLON.Engine(canvas, true, { stencil:true });
   const scene = new BABYLON.Scene(engine);
@@ -2280,18 +2280,58 @@
   }
 
   function hpLabel(root) {
-    const p=BABYLON.MeshBuilder.CreatePlane("npcHP",{width:1.0,height:.26},scene);
+    const p=BABYLON.MeshBuilder.CreatePlane("npcHP",{width:1.12,height:.24},scene);
     p.parent=root;
-    p.position.y=2.10;
+    p.position.y=2.15;
     p.billboardMode=BABYLON.Mesh.BILLBOARDMODE_ALL;
-    const t=BABYLON.GUI.AdvancedDynamicTexture.CreateForMesh(p,650,180);
-    const r=new BABYLON.GUI.Rectangle();
-    r.background="#111827EE";r.color="white";r.thickness=4;r.cornerRadius=28;
-    t.addControl(r);
+
+    const t=BABYLON.GUI.AdvancedDynamicTexture.CreateForMesh(p,760,165);
+
+    const frame=new BABYLON.GUI.Rectangle();
+    frame.width="100%";
+    frame.height="100%";
+    frame.background="#09110dEE";
+    frame.color="#d9ffe5";
+    frame.thickness=5;
+    frame.cornerRadius=24;
+    t.addControl(frame);
+
+    const inner=new BABYLON.GUI.Rectangle();
+    inner.width="94%";
+    inner.height="62%";
+    inner.background="#162019";
+    inner.color="transparent";
+    inner.thickness=0;
+    inner.cornerRadius=17;
+    frame.addControl(inner);
+
+    const bar=new BABYLON.GUI.Rectangle();
+    bar.horizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
+    bar.verticalAlignment=BABYLON.GUI.Control.VERTICAL_ALIGNMENT_CENTER;
+    bar.width="100%";
+    bar.height="100%";
+    bar.background="#22c55e";
+    bar.color="transparent";
+    bar.thickness=0;
+    bar.cornerRadius=16;
+    inner.addControl(bar);
+
     const tx=new BABYLON.GUI.TextBlock();
-    tx.text="160 HP";tx.color="white";tx.fontSize=68;tx.fontWeight="900";
-    r.addControl(tx);
-    return {plane:p,text:tx};
+    tx.text="160 / 160 HP";
+    tx.color="white";
+    tx.fontSize=50;
+    tx.fontWeight="900";
+    tx.outlineColor="#08130d";
+    tx.outlineWidth=5;
+    frame.addControl(tx);
+
+    return {
+      plane:p,
+      text:tx,
+      bar,
+      frame,
+      flashTimer:0
+    };
   }
 
   const NPC_WEAPONS=[
@@ -2725,65 +2765,103 @@
     }
   }
 
+  function tubeRadiusFunction(radii){
+    return (i)=>{
+      if(!radii?.length) return .1;
+      return radii[Math.min(i,radii.length-1)];
+    };
+  }
+
+  function createSmoothNpcTube(name,path,radii,material,parent){
+    const mesh=BABYLON.MeshBuilder.CreateTube(name,{
+      path,
+      radiusFunction:tubeRadiusFunction(radii),
+      tessellation:18,
+      cap:BABYLON.Mesh.CAP_ALL,
+      updatable:true
+    },scene);
+    mesh.parent=parent;
+    mesh.material=material;
+    return mesh;
+  }
+
+  function updateSmoothNpcTube(mesh,path,radii){
+    BABYLON.MeshBuilder.CreateTube(null,{
+      path,
+      radiusFunction:tubeRadiusFunction(radii),
+      instance:mesh
+    },scene);
+  }
+
   function updateNpcRagdollMeshes(){
     if(!npc?.ragdoll) return;
     const p=npc.ragdoll.points;
 
-    // Core body is now a connected pelvis -> abdomen -> chest -> neck -> head.
-    setSegment(npc.abdomen,p.pelvis.pos,p.spineLow.pos,1);
-    setSegment(npc.torso,p.spineLow.pos,p.chest.pos,1);
+    // The actual physics skeleton is still made of points/joints,
+    // but the player now sees continuous smooth body surfaces.
+    updateSmoothNpcTube(
+      npc.bodyShell,
+      [p.pelvis.pos,p.spineLow.pos,p.chest.pos],
+      [.205,.235,.285]
+    );
+
+    updateSmoothNpcTube(
+      npc.leftArmShell,
+      [p.lShoulder.pos,p.lElbow.pos,p.lWrist.pos,p.lHand.pos],
+      [.102,.091,.075,.063]
+    );
+    updateSmoothNpcTube(
+      npc.rightArmShell,
+      [p.rShoulder.pos,p.rElbow.pos,p.rWrist.pos,p.rHand.pos],
+      [.102,.091,.075,.063]
+    );
+
+    updateSmoothNpcTube(
+      npc.leftLegShell,
+      [p.lHip.pos,p.lKnee.pos,p.lAnkle.pos],
+      [.118,.108,.091]
+    );
+    updateSmoothNpcTube(
+      npc.rightLegShell,
+      [p.rHip.pos,p.rKnee.pos,p.rAnkle.pos],
+      [.118,.108,.091]
+    );
+
+    // Smooth neck overlaps both shirt and head.
     setSegment(npc.neck,p.neckBase.pos,p.head.pos,1);
 
-    npc.chestPlate.position.copyFrom(p.chest.pos);
     npc.pelvis.position.copyFrom(p.pelvis.pos);
-    npc.spineJoint.position.copyFrom(p.spineLow.pos);
-    npc.neckJoint.position.copyFrom(p.neckBase.pos);
-
     npc.head.position.copyFrom(p.head.pos);
     setRotationAlong(npc.head,p.neckBase.pos,p.head.pos);
 
-    // Arms include wrist joints, so there are no floating gaps.
-    setSegment(npc.leftUpperArm,p.lShoulder.pos,p.lElbow.pos,1);
-    setSegment(npc.leftLowerArm,p.lElbow.pos,p.lWrist.pos,1);
-    npc.leftShoulderJoint.position.copyFrom(p.lShoulder.pos);
-    npc.leftElbowJoint.position.copyFrom(p.lElbow.pos);
-    npc.leftWristJoint.position.copyFrom(p.lWrist.pos);
+    // Sleeves overlap the continuous arm tubes at the shoulders.
+    npc.leftSleeve.position.copyFrom(p.lShoulder.pos);
+    npc.rightSleeve.position.copyFrom(p.rShoulder.pos);
+
+    // Hands overlap the end of the tube so there is no wrist gap.
     npc.leftHand.position.copyFrom(p.lHand.pos);
-    npc.leftHand.rotationQuaternion=npc.leftLowerArm.rotationQuaternion?.clone() || BABYLON.Quaternion.Identity();
-
-    setSegment(npc.rightUpperArm,p.rShoulder.pos,p.rElbow.pos,1);
-    setSegment(npc.rightLowerArm,p.rElbow.pos,p.rWrist.pos,1);
-    npc.rightShoulderJoint.position.copyFrom(p.rShoulder.pos);
-    npc.rightElbowJoint.position.copyFrom(p.rElbow.pos);
-    npc.rightWristJoint.position.copyFrom(p.rWrist.pos);
     npc.rightHand.position.copyFrom(p.rHand.pos);
-    npc.rightHand.rotationQuaternion=npc.rightLowerArm.rotationQuaternion?.clone() || BABYLON.Quaternion.Identity();
+    npc.leftHand.rotationQuaternion=
+      BABYLON.Quaternion.Identity();
+    npc.rightHand.rotationQuaternion=
+      BABYLON.Quaternion.Identity();
 
-    // Legs include ankle joints and rounded feet.
-    setSegment(npc.leftUpperLeg,p.lHip.pos,p.lKnee.pos,1);
-    setSegment(npc.leftLowerLeg,p.lKnee.pos,p.lAnkle.pos,1);
+    // Shoes overlap the leg tubes at the ankles.
     setSegment(npc.leftShoe,p.lAnkle.pos,p.lFoot.pos,.31);
-    npc.leftHipJoint.position.copyFrom(p.lHip.pos);
-    npc.leftKneeJoint.position.copyFrom(p.lKnee.pos);
-    npc.leftAnkleJoint.position.copyFrom(p.lAnkle.pos);
-
-    setSegment(npc.rightUpperLeg,p.rHip.pos,p.rKnee.pos,1);
-    setSegment(npc.rightLowerLeg,p.rKnee.pos,p.rAnkle.pos,1);
     setSegment(npc.rightShoe,p.rAnkle.pos,p.rFoot.pos,.31);
-    npc.rightHipJoint.position.copyFrom(p.rHip.pos);
-    npc.rightKneeJoint.position.copyFrom(p.rKnee.pos);
-    npc.rightAnkleJoint.position.copyFrom(p.rAnkle.pos);
 
-    // Clothing details follow the spine/pelvis.
+    // Clothing transition details.
     npc.belt.position.copyFrom(p.pelvis.pos.add(p.spineLow.pos).scale(.5));
     setRotationAlong(npc.belt,p.pelvis.pos,p.spineLow.pos);
 
     npc.collar.position.copyFrom(p.neckBase.pos);
     setRotationAlong(npc.collar,p.chest.pos,p.neckBase.pos);
 
-    // Weapon stays connected to the physical right hand.
+    // Weapon follows the physical right hand.
     npc.weaponRoot.position.copyFrom(p.rHand.pos);
-    npc.weaponRoot.rotationQuaternion=npc.rightHand.rotationQuaternion?.clone() || BABYLON.Quaternion.Identity();
+    npc.weaponRoot.rotationQuaternion=
+      npc.rightHand.rotationQuaternion?.clone() ||
+      BABYLON.Quaternion.Identity();
   }
   function applyNpcRagdollImpulse(hitWorld,impulseWorld,radius=1.0){
     if(!npc?.ragdoll) return;
@@ -2845,7 +2923,71 @@
       return m;
     }
 
-    // Connected core.
+    // Smooth visible body. The old segmented meshes stay as invisible
+    // helpers only; these tubes are what the player actually sees.
+    const bodyShell=createSmoothNpcTube(
+      "npcSmoothBody",
+      [
+        new BABYLON.Vector3(0,.67,0),
+        new BABYLON.Vector3(0,.91,0),
+        new BABYLON.Vector3(0,1.22,0)
+      ],
+      [.205,.235,.285],
+      shirtMat,
+      visual
+    );
+
+    const leftArmShell=createSmoothNpcTube(
+      "npcSmoothLeftArm",
+      [
+        new BABYLON.Vector3(-.31,1.34,0),
+        new BABYLON.Vector3(-.48,1.08,.01),
+        new BABYLON.Vector3(-.51,.87,.035),
+        new BABYLON.Vector3(-.52,.77,.065)
+      ],
+      [.102,.091,.075,.063],
+      skinMat,
+      visual
+    );
+
+    const rightArmShell=createSmoothNpcTube(
+      "npcSmoothRightArm",
+      [
+        new BABYLON.Vector3(.31,1.34,0),
+        new BABYLON.Vector3(.48,1.08,.01),
+        new BABYLON.Vector3(.51,.87,.035),
+        new BABYLON.Vector3(.52,.77,.065)
+      ],
+      [.102,.091,.075,.063],
+      skinMat,
+      visual
+    );
+
+    const leftLegShell=createSmoothNpcTube(
+      "npcSmoothLeftLeg",
+      [
+        new BABYLON.Vector3(-.15,.64,0),
+        new BABYLON.Vector3(-.15,.36,.02),
+        new BABYLON.Vector3(-.15,.13,.055)
+      ],
+      [.118,.108,.091],
+      pantsMat,
+      visual
+    );
+
+    const rightLegShell=createSmoothNpcTube(
+      "npcSmoothRightLeg",
+      [
+        new BABYLON.Vector3(.15,.64,0),
+        new BABYLON.Vector3(.15,.36,.02),
+        new BABYLON.Vector3(.15,.13,.055)
+      ],
+      [.118,.108,.091],
+      pantsMat,
+      visual
+    );
+
+    // Connected core helper meshes (hidden after creation).
     const abdomen=capsule("npcAbdomen",.225,shirtDarkMat);
     const torso=capsule("npcTorso",.285,shirtMat);
     const neck=capsule("npcNeck",.075,skinMat);
@@ -2854,12 +2996,20 @@
     chestPlate.scaling.set(1,.70,.72);
 
     const pelvis=jointSphere("npcPelvis",.44,pantsMat);
-    pelvis.scaling.set(1,.64,.90);
+    pelvis.scaling.set(1.10,.52,.84);
 
     const spineJoint=jointSphere("npcSpineJoint",.31,shirtDarkMat);
     spineJoint.scaling.set(1,.72,.80);
 
     const neckJoint=jointSphere("npcNeckJoint",.17,skinMat);
+
+    // Give skin/clothes softer highlights instead of a toy-like plastic shine.
+    skinMat.specularColor=new BABYLON.Color3(.14,.09,.07);
+    skinMat.specularPower=20;
+    shirtMat.specularColor=new BABYLON.Color3(.07,.05,.04);
+    shirtMat.specularPower=12;
+    pantsMat.specularColor=new BABYLON.Color3(.04,.05,.07);
+    pantsMat.specularPower=10;
 
     // Head + all face detail parented to the head so it tilts with the neck.
     const head=jointSphere("npcHead",.49,skinMat);
@@ -2962,9 +3112,9 @@
 
     // Shirt sleeve cuffs overlap the arm/shoulder connection.
     const leftSleeve=jointSphere("leftSleeve",.205,shirtMat);
-    leftSleeve.scaling.set(.92,.82,.92);
+    leftSleeve.scaling.set(1.02,.86,1.02);
     const rightSleeve=jointSphere("rightSleeve",.205,shirtMat);
-    rightSleeve.scaling.set(.92,.82,.92);
+    rightSleeve.scaling.set(1.02,.86,1.02);
 
     // Legs with visible hip/knee/ankle joints.
     const leftUpperLeg=capsule("leftUpperLeg",.110,pantsMat);
@@ -2981,6 +3131,16 @@
 
     const leftShoe=capsule("leftShoe",.105,shoeMat);
     const rightShoe=capsule("rightShoe",.105,shoeMat);
+
+    // These pieces still receive updates for compatibility, but are hidden.
+    // The continuous tube shells above replace their segmented appearance.
+    [
+      abdomen,torso,chestPlate,spineJoint,neckJoint,
+      leftUpperArm,leftLowerArm,leftShoulderJoint,leftElbowJoint,leftWristJoint,
+      rightUpperArm,rightLowerArm,rightShoulderJoint,rightElbowJoint,rightWristJoint,
+      leftUpperLeg,leftLowerLeg,leftHipJoint,leftKneeJoint,leftAnkleJoint,
+      rightUpperLeg,rightLowerLeg,rightHipJoint,rightKneeJoint,rightAnkleJoint
+    ].forEach(m=>m.setEnabled(false));
 
     const leftSole=BABYLON.MeshBuilder.CreateBox("leftSole",{
       width:.19,height:.035,depth:.31
@@ -3036,6 +3196,7 @@
 
     npc={
       root,visual,
+      bodyShell,leftArmShell,rightArmShell,leftLegShell,rightLegShell,
       abdomen,torso,neck,chestPlate,pelvis,spineJoint,neckJoint,
       head,nose,leftEar,rightEar,leftEyeWhite,rightEyeWhite,leftEye,rightEye,leftPupil,rightPupil,
       mouth,teeth,chin,eyebrowL,eyebrowR,hair,
@@ -3046,6 +3207,7 @@
       belt,collar,badge,badgeStripe,
 
       parts:[
+        bodyShell,leftArmShell,rightArmShell,leftLegShell,rightLegShell,
         abdomen,torso,neck,chestPlate,pelvis,spineJoint,neckJoint,
         head,nose,leftEar,rightEar,leftEyeWhite,rightEyeWhite,leftEye,rightEye,leftPupil,rightPupil,
         mouth,teeth,chin,eyebrowL,eyebrowR,hair,
@@ -3057,19 +3219,28 @@
       ],
 
       skinParts:[
+        leftArmShell,rightArmShell,
         neck,neckJoint,head,nose,leftEar,rightEar,chin,
         leftUpperArm,leftLowerArm,leftElbowJoint,leftWristJoint,leftHand,
         rightUpperArm,rightLowerArm,rightElbowJoint,rightWristJoint,rightHand
       ],
       shirtParts:[
+        bodyShell,
         abdomen,torso,chestPlate,spineJoint,leftShoulderJoint,rightShoulderJoint,
         leftSleeve,rightSleeve,collar
       ],
       pantsParts:[
+        leftLegShell,rightLegShell,
         pelvis,leftUpperLeg,leftLowerLeg,leftHipJoint,leftKneeJoint,leftAnkleJoint,
         rightUpperLeg,rightLowerLeg,rightHipJoint,rightKneeJoint,rightAnkleJoint,belt
       ],
       shoeParts:[leftShoe,rightShoe],
+
+      flashParts:[
+        bodyShell,leftArmShell,rightArmShell,leftLegShell,rightLegShell,
+        neck,pelvis,head,leftHand,rightHand,leftSleeve,rightSleeve,
+        leftShoe,rightShoe
+      ],
 
       skinMat,skinDarkMat,shirtMat,shirtDarkMat,pantsMat,pantsDarkMat,shoeMat,
       eyeMat,eyeWhiteMat,pupilMat,hairMat,
@@ -3082,6 +3253,7 @@
       velocity:new BABYLON.Vector3(0,0,0),
       angular:new BABYLON.Vector3(0,0,0),
       hitCooldown:0,
+      hpFlashTimer:0,
       attackCooldown:.35,
       attackAnim:0,
       attackDuration:.48,
@@ -3110,34 +3282,57 @@
     };
 
     npc.ragdoll=makeNpcRagdoll();
-    npc.hp.text.text="160 HP";
+    updateNpcLabel();
     updateNpcRagdollMeshes();
   }
   // IMPORTANT: spawn the first NPC immediately when the scene loads.
   createNpc();
 
   function updateNpcLabel() {
-    if (npc) npc.hp.text.text=`${Math.max(0,Math.ceil(npc.hpValue))} HP`;
+    if(!npc?.hp) return;
+
+    const hp=Math.max(0,Math.ceil(npc.hpValue));
+    const max=Math.max(1,npc.maxHp||160);
+    const pct=BABYLON.Scalar.Clamp(hp/max,0,1);
+
+    npc.hp.text.text=`${hp} / ${max} HP`;
+    npc.hp.bar.width=`${Math.max(0.01,pct)*100}%`;
+
+    // Every successful hit makes the HP bar flash red.
+    npc.hp.bar.background=
+      npc.hpFlashTimer>0 ? "#ef4444" : "#22c55e";
+
+    npc.hp.frame.color=
+      npc.hpFlashTimer>0 ? "#ffb4b4" : "#d9ffe5";
   }
 
   function setNpcMaterial() {
     if (!npc || npc.dead) return;
 
     if(npc.recentlyHit>0){
-      npc.skinParts.forEach(p=>p.material=MAT.npcHit);
-      npc.shirtParts.forEach(p=>p.material=MAT.npcHit);
-      npc.pantsParts.forEach(p=>p.material=MAT.npcHit);
+      // Whole visible character flashes red, not only one body section.
+      npc.flashParts.forEach(p=>{
+        if(p?.isEnabled?.() !== false) p.material=MAT.npcHit;
+      });
     }else{
-      npc.skinParts.forEach(p=>p.material=npc.skinMat);
-      npc.shirtParts.forEach(p=>p.material=npc.shirtMat);
-      npc.pantsParts.forEach(p=>p.material=npc.pantsMat);
-      npc.shoeParts.forEach(p=>p.material=npc.shoeMat);
+      npc.bodyShell.material=npc.shirtMat;
+      npc.leftArmShell.material=npc.skinMat;
+      npc.rightArmShell.material=npc.skinMat;
+      npc.leftLegShell.material=npc.pantsMat;
+      npc.rightLegShell.material=npc.pantsMat;
 
-      if(npc.emotion==="angry") npc.chestPlate.material=MAT.npcAngry;
-      else if(npc.emotion==="scared") npc.chestPlate.material=MAT.npcScared;
+      npc.neck.material=npc.skinMat;
+      npc.pelvis.material=npc.pantsMat;
+      npc.head.material=npc.skinMat;
+      npc.leftHand.material=npc.skinMat;
+      npc.rightHand.material=npc.skinMat;
+      npc.leftSleeve.material=npc.shirtMat;
+      npc.rightSleeve.material=npc.shirtMat;
+      npc.leftShoe.material=npc.shoeMat;
+      npc.rightShoe.material=npc.shoeMat;
     }
 
-    // Face detail keeps its proper materials even during body hit flash.
+    // Eyes, teeth and hair stay readable during the red hit flash.
     npc.leftEyeWhite.material=npc.eyeWhiteMat;
     npc.rightEyeWhite.material=npc.eyeWhiteMat;
     npc.leftEye.material=npc.eyeMat;
@@ -3480,7 +3675,8 @@
 
     npc.hpValue-=damage;
     npc.hitCooldown=.18;
-    npc.recentlyHit=.28;
+    npc.recentlyHit=.24;
+    npc.hpFlashTimer=.20;
     npc.stun=Math.max(npc.stun,Math.min(.30,Math.max(0,speed-2)*.035));
     applyInjury(hit.zone,damage,speed);
 
@@ -3489,10 +3685,7 @@
       return;
     }
 
-    const label={
-      head:"HEAD",torso:"BODY",rightArm:"R ARM",leftArm:"L ARM",rightLeg:"R LEG",leftLeg:"L LEG"
-    }[hit.zone] || "BODY";
-    npc.hp.text.text=`${Math.max(0,Math.ceil(npc.hpValue))} HP  ${label} -${damage}`;
+    updateNpcLabel();
 
     let dir=swingVel.clone();
     if(dir.lengthSquared()<.001) dir=npc.root.position.subtract(hitPos);
@@ -3624,6 +3817,8 @@
     // NPC
     if (npc) {
       npc.hitCooldown=Math.max(0,npc.hitCooldown-dt);
+      npc.hpFlashTimer=Math.max(0,npc.hpFlashTimer-dt);
+      updateNpcLabel();
       npc.attackCooldown=Math.max(0,npc.attackCooldown-dt);
       npc.attackAnim=Math.max(0,npc.attackAnim-dt);
       npc.recentlyHit=Math.max(0,npc.recentlyHit-dt);
