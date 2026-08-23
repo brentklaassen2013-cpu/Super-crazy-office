@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#07111f">
-  <title>VR Bat Brawl — v0.17</title>
+  <title>VR Bat Brawl — v0.18</title>
   <style>
     html, body { width:100%; height:100%; margin:0; overflow:hidden; background:#07111f; font-family:system-ui,-apple-system,sans-serif; }
     #renderCanvas { width:100%; height:100%; display:block; touch-action:none; }
@@ -15,11 +15,49 @@
       pointer-events:none; backdrop-filter:blur(8px);
     }
     #info b { font-size:15px; }
+
+    #gameStats {
+      position:fixed; right:12px; top:12px; z-index:5;
+      color:white; background:rgba(0,0,0,.62);
+      border-radius:14px; padding:10px 12px;
+      font-size:12px; line-height:1.35;
+      min-width:150px; pointer-events:none;
+      backdrop-filter:blur(8px);
+    }
+    #testPanel {
+      position:fixed; left:10px; right:10px; bottom:10px; z-index:10;
+      display:flex; flex-wrap:wrap; gap:7px; justify-content:center;
+      padding:9px; border-radius:15px;
+      background:rgba(4,10,20,.78);
+      backdrop-filter:blur(9px);
+    }
+    #testPanel button {
+      border:0; border-radius:11px; padding:9px 11px;
+      font-weight:800; font-size:12px; color:white;
+      background:#27364c; touch-action:manipulation;
+    }
+    #testPanel button:active { transform:scale(.97); }
+    #testPanel .danger { background:#7f1d1d; }
+    #testPanel .accent { background:#0e7490; }
+    @media (min-width:900px) {
+      #testPanel { left:50%; right:auto; transform:translateX(-50%); max-width:850px; }
+    }
   </style>
 </head>
 <body>
 <canvas id="renderCanvas"></canvas>
-<div id="info"><b>VR BAT BRAWL v0.17</b><br>Connected Human Ragdoll + Detailed Office build.</div>
+<div id="info"><b>VR BAT BRAWL v0.18</b><br>Systems + Destruction + Test Mode build.</div>
+<div id="gameStats">Loading...</div>
+<div id="testPanel">
+  <button data-test="soft">SOFT HIT</button>
+  <button data-test="medium">MEDIUM HIT</button>
+  <button data-test="hard">HARD HIT</button>
+  <button data-test="kill" class="danger">FINISH NPC</button>
+  <button data-test="glass">BREAK WINDOW</button>
+  <button data-test="prop">SMASH OBJECT</button>
+  <button data-test="ai" class="accent">AI: OFF</button>
+  <button data-test="reset">RESET NPC</button>
+</div>
 <script src="https://cdn.babylonjs.com/babylon.js"></script>
 <script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
 <script src="./game.js"></script>

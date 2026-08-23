@@ -1,4 +1,5 @@
 (() => {
+  const BUILD_VERSION="0.18";
   const canvas = document.getElementById("renderCanvas");
   const engine = new BABYLON.Engine(canvas, true, { stencil:true });
   const scene = new BABYLON.Scene(engine);
@@ -41,6 +42,21 @@
   const officeProps = [];
   const fxBodies = [];
   const bloodSplats = [];
+
+  const PERF={
+    maxFx:120,
+    maxBloodSplats:52,
+    maxDeathParts:48,
+    propSleepSpeed:.055,
+    propSleepSeconds:1.15
+  };
+
+  function trimFxBodies(){
+    while(fxBodies.length>PERF.maxFx){
+      const f=fxBodies.shift();
+      f?.mesh?.dispose?.();
+    }
+  }
 
   const officeFloorMat=mkMat("officeFloor","#7c858f");
   const officeWallMat=mkMat("officeWall","#d8dde3");
@@ -206,7 +222,27 @@
       cooldown:0,
       loose:false,
       broken:false,
-      screen:opts.screen||null
+      screen:opts.screen||null,
+      hp:opts.hp ?? (
+        opts.type==="desk" ? 44 :
+        opts.type==="chair" ? 24 :
+        opts.type==="monitor" ? 12 :
+        opts.type==="keyboard" ? 8 :
+        opts.type==="plant" ? 10 :
+        opts.type==="mug" ? 5 :
+        opts.type==="phone" ? 9 : 12
+      ),
+      maxHp:opts.hp ?? (
+        opts.type==="desk" ? 44 :
+        opts.type==="chair" ? 24 :
+        opts.type==="monitor" ? 12 :
+        opts.type==="keyboard" ? 8 :
+        opts.type==="plant" ? 10 :
+        opts.type==="mug" ? 5 :
+        opts.type==="phone" ? 9 : 12
+      ),
+      sleepTimer:0,
+      destructionRewarded:false
     };
     officeProps.push(p);
     return p;
@@ -382,9 +418,30 @@
     const root=new BABYLON.TransformNode(name,scene);
     root.position.set(x,.82,z);
     root.rotation.y=rot;
-    const key=childBox(name+"Body",root,new BABYLON.Vector3(0,.015,0),new BABYLON.Vector3(.48,.035,.17),keyboardMat,false);
-    return registerProp(root,[key],{
-      type:"keyboard",mass:.35,radius:.24,minY:.04,breakThreshold:5
+
+    const body=childBox(name+"Body",root,new BABYLON.Vector3(0,.018,0),new BABYLON.Vector3(.49,.035,.18),keyboardMat,false);
+    const keys=[body];
+
+    for(let row=0;row<3;row++){
+      for(let col=0;col<9;col++){
+        keys.push(childBox(
+          name+"Key"+row+"_"+col,root,
+          new BABYLON.Vector3(-.205+col*.051,.041,-.052+row*.052),
+          new BABYLON.Vector3(.039,.015,.038),
+          darkTrimMat,false
+        ));
+      }
+    }
+
+    keys.push(childBox(
+      name+"Space",root,
+      new BABYLON.Vector3(0,.041,.105),
+      new BABYLON.Vector3(.19,.015,.032),
+      darkTrimMat,false
+    ));
+
+    return registerProp(root,keys,{
+      type:"keyboard",mass:.35,radius:.25,minY:.04,breakThreshold:4.2,hp:8
     });
   }
 
@@ -451,6 +508,12 @@
       d[1]+(facing===0?-.72:.72),
       facing
     );
+  });
+
+  deskLayout.forEach((d,i)=>{
+    const cable=BABYLON.MeshBuilder.CreateTorus("monitorCable"+i,{diameter:.28,thickness:.012,tessellation:14},scene);
+    cable.position.set(d[0]+.30,.53,d[1]+.25);
+    cable.rotation.x=Math.PI/2;cable.material=darkTrimMat;
   });
 
   createBin("binA",-4.15,-2.7);
@@ -672,6 +735,19 @@
   tapBlue.parent=coolerRoot;tapBlue.position.set(-.07,.58,-.19);tapBlue.material=blueMat;
   const tapRed=tapBlue.clone("tapRed");tapRed.parent=coolerRoot;tapRed.position.x=.07;tapRed.material=redMat;
 
+  registerProp(doorRoot,[door,handle],{
+    type:"door",mass:8.5,radius:.82,minY:0,breakThreshold:7.8,hp:32
+  });
+  registerProp(whiteboardRoot,[whiteboard],{
+    type:"whiteboard",mass:4.5,radius:1.0,minY:.45,breakThreshold:8.5,hp:24
+  });
+  registerProp(printerRoot,[printerBody,printerTop,printerScreen,paperTray],{
+    type:"printer",mass:5.5,radius:.45,minY:.70,breakThreshold:5.8,hp:22
+  });
+  registerProp(coolerRoot,[coolerBody,bottle,tapBlue,tapRed],{
+    type:"cooler",mass:4.0,radius:.42,minY:0,breakThreshold:5.5,hp:20
+  });
+
   // Fire extinguisher.
   const extinguisher=BABYLON.MeshBuilder.CreateCylinder("extinguisher",{
     height:.62,diameter:.20,tessellation:16
@@ -693,6 +769,71 @@
         trimMat,false
       );
     }
+  }
+
+
+  // Extra detail in the SAME office footprint.
+  function makeMousePad(name,x,z,rot=0){
+    const root=new BABYLON.TransformNode(name,scene);
+    root.position.set(x,.833,z);root.rotation.y=rot;
+    const pad=childBox(name+"Pad",root,new BABYLON.Vector3(),new BABYLON.Vector3(.30,.008,.24),darkTrimMat,false);
+    return registerProp(root,[pad],{type:"mousepad",mass:.08,radius:.17,minY:.01,breakThreshold:20,hp:5});
+  }
+
+  function makePenCup(name,x,z){
+    const root=new BABYLON.TransformNode(name,scene);
+    root.position.set(x,.84,z);
+    const cup=BABYLON.MeshBuilder.CreateCylinder(name+"Cup",{height:.14,diameter:.10,tessellation:14},scene);
+    cup.parent=root;cup.position.y=.07;cup.material=deskMetalMat;
+    const parts=[cup];
+    for(let i=0;i<4;i++){
+      const pen=BABYLON.MeshBuilder.CreateCylinder(name+"Pen"+i,{height:.20,diameter:.012,tessellation:7},scene);
+      pen.parent=root;pen.position.set((i-1.5)*.015,.15,(i%2)*.018-.009);
+      pen.rotation.z=(i-1.5)*.08;pen.material=i%2?blueMat:redMat;parts.push(pen);
+    }
+    return registerProp(root,parts,{type:"pencup",mass:.22,radius:.11,minY:.02,breakThreshold:5,hp:6});
+  }
+
+  function makeStapler(name,x,z,rot=0){
+    const root=new BABYLON.TransformNode(name,scene);
+    root.position.set(x,.84,z);root.rotation.y=rot;
+    const base=childBox(name+"Base",root,new BABYLON.Vector3(0,.018,0),new BABYLON.Vector3(.16,.03,.055),darkTrimMat,false);
+    const top=childBox(name+"Top",root,new BABYLON.Vector3(0,.045,-.005),new BABYLON.Vector3(.15,.035,.05),deskMetalMat,false);
+    top.rotation.x=-.12;
+    return registerProp(root,[base,top],{type:"stapler",mass:.18,radius:.10,minY:.02,breakThreshold:7,hp:7});
+  }
+
+  deskLayout.forEach((d,i)=>{
+    const facing=d[2], f=facing===0?-1:1;
+    makeMousePad("mousePad"+i,d[0]+.38,d[1]+f*.22,facing);
+    makePenCup("penCup"+i,d[0]-.58,d[1]-f*.18);
+    if(i%2===0) makeStapler("stapler"+i,d[0]+.55,d[1]-f*.18,facing);
+  });
+
+  for(const [x,z,ry] of [
+    [-4.87,-2.8,Math.PI/2],[-4.87,1.9,Math.PI/2],
+    [4.87,-2.5,-Math.PI/2],[4.87,2.0,-Math.PI/2]
+  ]){
+    const outlet=box("wallOutlet"+x+z,new BABYLON.Vector3(x,.34,z),new BABYLON.Vector3(.08,.12,.018),paperMat,false);
+    outlet.rotation.y=ry;
+  }
+
+  const smoke=BABYLON.MeshBuilder.CreateCylinder("smokeDetector",{height:.045,diameter:.24,tessellation:20},scene);
+  smoke.position.set(0,2.93,-2.2);smoke.material=trimMat;
+
+  const camRoot=new BABYLON.TransformNode("securityCamera",scene);
+  camRoot.position.set(4.55,2.48,-3.45);camRoot.rotation.y=-2.25;
+  childBox("securityCamBody",camRoot,new BABYLON.Vector3(),new BABYLON.Vector3(.26,.14,.16),trimMat,false);
+  const lens=BABYLON.MeshBuilder.CreateCylinder("securityCamLens",{height:.055,diameter:.08,tessellation:14},scene);
+  lens.parent=camRoot;lens.position.set(0,0,-.11);lens.rotation.x=Math.PI/2;lens.material=darkTrimMat;
+
+  for(let i=0;i<9;i++){
+    const p=box(
+      "floorPaper"+i,
+      new BABYLON.Vector3(-3.5+(i%5)*1.55,.012,-2.75+Math.floor(i/5)*5.15),
+      new BABYLON.Vector3(.23,.006,.17),paperMat,false
+    );
+    p.rotation.y=(i-4)*.19;
   }
 
   function surfaceSphereHit(surface,center,radius){
@@ -763,7 +904,7 @@
     splat.isPickable=false;
 
     bloodSplats.push(splat);
-    while(bloodSplats.length>70){
+    while(bloodSplats.length>PERF.maxBloodSplats){
       const old=bloodSplats.shift();
       old?.dispose();
     }
@@ -801,6 +942,8 @@
         life:2.1+Math.random()*1.2
       });
     }
+
+    trimFxBodies();
 
     // Immediate nearby floor splats make the finishing hit feel heavier.
     for(let i=0;i<8;i++){
@@ -849,6 +992,7 @@
         life:2.2+Math.random()*1.2
       });
     }
+    trimFxBodies();
   }
 
   function breakWindow(mesh,hitPos,velocity){
@@ -863,13 +1007,13 @@
       velocity||new BABYLON.Vector3(0,0,2),
       24
     );
-    simpleHitSound(true);
+    playImpactSound("glass",1.0);
+    recordDestruction();
     return true;
   }
 
   function breakMonitor(prop,hitPos,velocity){
-    if(prop.broken) return;
-    prop.broken=true;
+    if(prop.screen && !prop.screen.isEnabled()) return;
 
     if(prop.screen) prop.screen.setEnabled(false);
     spawnGlassBurst(hitPos,velocity,12);
@@ -905,33 +1049,104 @@
     return false;
   }
 
+  function spawnDebrisBox(pos,size,material,vel,life=4.2){
+    const m=BABYLON.MeshBuilder.CreateBox("debris",{width:size.x,height:size.y,depth:size.z},scene);
+    m.position.copyFrom(pos);m.material=material;
+    fxBodies.push({
+      mesh:m,kind:"debris",
+      radius:Math.max(size.x,size.y,size.z)*.35,
+      vel:vel.clone(),
+      spin:new BABYLON.Vector3((Math.random()-.5)*9,(Math.random()-.5)*9,(Math.random()-.5)*9),
+      life
+    });
+    trimFxBodies();
+  }
+
+  function destroyOfficeProp(prop,hitPos,dir,speed){
+    if(!prop || prop.broken) return;
+    prop.broken=true;prop.loose=false;
+    prop.hitMeshes.forEach(m=>m?.setEnabled?.(false));
+
+    const center=prop.root.getAbsolutePosition?.()?.clone?.() || prop.root.position.clone();
+    const d=dir.clone(); if(d.lengthSquared()<.001) d.set(0,1,0); d.normalize();
+    const base=d.scale(Math.min(6,1.4+speed*.35)).add(new BABYLON.Vector3(0,.6+Math.random()*1.2,0));
+
+    const chunk=(off,size,mat,scatter=1)=>{
+      spawnDebrisBox(
+        center.add(off),size,mat,
+        base.add(new BABYLON.Vector3((Math.random()-.5)*scatter,Math.random()*scatter,(Math.random()-.5)*scatter)),
+        4+Math.random()*1.8
+      );
+    };
+
+    if(prop.type==="desk"){
+      chunk(new BABYLON.Vector3(0,.72,0),new BABYLON.Vector3(.70,.07,.32),deskMat,1.8);
+      chunk(new BABYLON.Vector3(.36,.55,.12),new BABYLON.Vector3(.28,.45,.25),deskMat,1.6);
+      for(const sx of [-1,1]) chunk(new BABYLON.Vector3(sx*.52,.33,.18),new BABYLON.Vector3(.06,.60,.06),deskMetalMat,2.2);
+    }else if(prop.type==="chair"){
+      chunk(new BABYLON.Vector3(0,.48,0),new BABYLON.Vector3(.42,.09,.42),chairMat,2.5);
+      chunk(new BABYLON.Vector3(0,.80,.18),new BABYLON.Vector3(.42,.42,.07),chairMat,2.5);
+      for(let i=0;i<4;i++) chunk(new BABYLON.Vector3((Math.random()-.5)*.38,.08,(Math.random()-.5)*.38),new BABYLON.Vector3(.10,.05,.10),deskMetalMat,3);
+    }else if(prop.type==="keyboard"){
+      for(let i=0;i<16;i++) chunk(new BABYLON.Vector3((Math.random()-.5)*.34,.05,(Math.random()-.5)*.13),new BABYLON.Vector3(.04,.018,.038),darkTrimMat,3.5);
+      chunk(new BABYLON.Vector3(),new BABYLON.Vector3(.32,.025,.12),keyboardMat,2.4);
+    }else if(prop.type==="mug"){
+      for(let i=0;i<8;i++) chunk(new BABYLON.Vector3((Math.random()-.5)*.10,.06+Math.random()*.08,(Math.random()-.5)*.10),new BABYLON.Vector3(.045,.035,.018),mugMat,3.2);
+      playImpactSound("ceramic",1);
+    }else if(prop.type==="plant"){
+      for(let i=0;i<7;i++) chunk(new BABYLON.Vector3((Math.random()-.5)*.20,.10+Math.random()*.55,(Math.random()-.5)*.20),new BABYLON.Vector3(.10,.035,.07),i<3?potMat:plantMat,2.8);
+    }else if(prop.type==="monitor"){
+      chunk(new BABYLON.Vector3(0,.28,0),new BABYLON.Vector3(.45,.28,.05),monitorMat,2);
+      chunk(new BABYLON.Vector3(0,.08,.02),new BABYLON.Vector3(.07,.23,.06),deskMetalMat,2);
+      spawnGlassBurst(hitPos,d.scale(4),18);
+    }else if(prop.type==="door"){
+      for(let i=0;i<5;i++) chunk(new BABYLON.Vector3((Math.random()-.5)*.80,.35+Math.random()*1.55,0),new BABYLON.Vector3(.32,.48,.055),deskMat,2.2);
+    }else if(prop.type==="printer" || prop.type==="cooler"){
+      for(let i=0;i<6;i++) chunk(new BABYLON.Vector3((Math.random()-.5)*.35,.20+Math.random()*.45,(Math.random()-.5)*.30),new BABYLON.Vector3(.18,.15,.15),i%2?trimMat:darkTrimMat,2.4);
+      if(prop.type==="printer") spawnGlassBurst(hitPos,d.scale(3),8);
+    }else if(prop.type==="whiteboard"){
+      for(let i=0;i<7;i++) chunk(new BABYLON.Vector3((Math.random()-.5)*.8,(Math.random()-.5)*.4,0),new BABYLON.Vector3(.28,.22,.025),i%3?boardMat:darkTrimMat,2.2);
+    }else{
+      chunk(new BABYLON.Vector3(),new BABYLON.Vector3(.20,.14,.18),darkTrimMat,2.5);
+      chunk(new BABYLON.Vector3(.08,.06,.03),new BABYLON.Vector3(.14,.10,.12),trimMat,2.7);
+    }
+
+    playImpactSound(propSoundType(prop.type),1);
+    if(!prop.destructionRewarded){
+      prop.destructionRewarded=true;
+      recordDestruction();
+    }
+  }
+
   function hitOfficeProp(prop,hitPos,swingVel,speed){
-    if(prop.cooldown>0) return;
-    prop.cooldown=.16;
-    prop.loose=true;
+    if(prop.cooldown>0 || prop.broken) return;
+    prop.cooldown=.14;prop.loose=true;prop.sleepTimer=0;
 
-    let dir=swingVel.clone();
-    if(dir.lengthSquared()<.001) dir.set(0,1,0);
-    dir.normalize();
+    let dir=swingVel.clone(); if(dir.lengthSquared()<.001) dir.set(0,1,0); dir.normalize();
 
-    const power=Math.min(5.0,(speed*1.8)/Math.max(.55,prop.mass));
+    const power=Math.min(5,(speed*1.8)/Math.max(.55,prop.mass));
     prop.vel.addInPlace(dir.scale(power));
-    prop.vel.y+=Math.min(1.3,speed*.08);
-
+    prop.vel.y+=Math.min(1.15,speed*.07);
     prop.ang.addInPlace(new BABYLON.Vector3(
-      (Math.random()-.5)*power*2.0,
-      (Math.random()-.5)*power*1.6,
-      (Math.random()-.5)*power*2.0
+      (Math.random()-.5)*power*1.7,(Math.random()-.5)*power*1.4,(Math.random()-.5)*power*1.7
     ));
 
-    if(prop.type==="monitor" && speed>=prop.breakThreshold){
+    const hitDamage=Math.max(1,Math.round(.7+Math.pow(speed,1.28)*.55));
+    prop.hp-=hitDamage;
+
+    if(prop.type==="monitor" && speed>=prop.breakThreshold && !prop.broken){
       breakMonitor(prop,hitPos,swingVel);
+      prop.hp=Math.min(prop.hp,1);
+    }
+
+    if(prop.hp<=0 || speed>=prop.breakThreshold*1.55){
+      destroyOfficeProp(prop,hitPos,dir,speed);
+    }else{
+      playImpactSound(propSoundType(prop.type),Math.min(1,speed*.095));
     }
 
     pulse(hands.right,Math.min(.75,.12+speed*.055),28+Math.min(45,speed*3));
-    simpleHitSound(false);
   }
-
   function handleBatOfficeHit(prev,tip,vel,speed){
     if(speed<.55) return;
 
@@ -961,57 +1176,53 @@
   function updateOfficePhysics(dt){
     for(const p of officeProps){
       p.cooldown=Math.max(0,p.cooldown-dt);
-      if(!p.loose) continue;
+      if(!p.loose || p.broken) continue;
 
       p.vel.y-=5.8*dt;
       p.root.position.addInPlace(p.vel.scale(dt));
-
       p.root.rotation.x+=p.ang.x*dt;
       p.root.rotation.y+=p.ang.y*dt;
       p.root.rotation.z+=p.ang.z*dt;
-
       p.vel.x*=Math.pow(.46,dt);
       p.vel.z*=Math.pow(.46,dt);
       p.ang.scaleInPlace(Math.pow(.32,dt));
 
       if(p.root.position.y<p.minY){
         p.root.position.y=p.minY;
-        if(p.vel.y<0) p.vel.y*=-.12;
-        p.vel.x*=.78;
-        p.vel.z*=.78;
+        if(p.vel.y<0) p.vel.y*=-.10;
+        p.vel.x*=.76;p.vel.z*=.76;
       }
+
+      const motion=p.vel.length()+p.ang.length()*.08;
+      if(motion<PERF.propSleepSpeed && p.root.position.y<=p.minY+.015){
+        p.sleepTimer+=dt;
+        if(p.sleepTimer>PERF.propSleepSeconds){
+          p.loose=false;p.vel.set(0,0,0);p.ang.set(0,0,0);
+        }
+      }else p.sleepTimer=0;
     }
+
+    trimFxBodies();
 
     for(let i=fxBodies.length-1;i>=0;i--){
       const f=fxBodies[i];
-      f.life-=dt;
-      f.vel.y-=7.4*dt;
-      f.mesh.position.addInPlace(f.vel.scale(dt));
-
+      f.life-=dt;f.vel.y-=7.4*dt;f.mesh.position.addInPlace(f.vel.scale(dt));
       if(f.spin){
-        f.mesh.rotation.x+=f.spin.x*dt;
-        f.mesh.rotation.y+=f.spin.y*dt;
-        f.mesh.rotation.z+=f.spin.z*dt;
+        f.mesh.rotation.x+=f.spin.x*dt;f.mesh.rotation.y+=f.spin.y*dt;f.mesh.rotation.z+=f.spin.z*dt;
       }
-
       const hit=findSurfaceCollision(f.mesh.position,f.radius||.02);
       if(hit){
         if(f.kind==="blood"){
           createBloodSplat(hit,.7+Math.random()*.75);
-          f.mesh.dispose();
-          fxBodies.splice(i,1);
-          continue;
+          f.mesh.dispose();fxBodies.splice(i,1);continue;
         }
-
         f.mesh.position.addInPlace(hit.correction);
         const vn=BABYLON.Vector3.Dot(f.vel,hit.normal);
-        if(vn<0) f.vel.subtractInPlace(hit.normal.scale(vn*1.35));
-        f.vel.scaleInPlace(f.kind==="glass"?.48:.35);
+        if(vn<0) f.vel.subtractInPlace(hit.normal.scale(vn*1.30));
+        f.vel.scaleInPlace(f.kind==="glass"?.46:.32);
       }
-
       if(f.life<=0 || f.mesh.position.y<-5.2){
-        f.mesh.dispose();
-        fxBodies.splice(i,1);
+        f.mesh.dispose();fxBodies.splice(i,1);
       }
     }
   }
@@ -1019,7 +1230,135 @@
   const previewCamera = new BABYLON.UniversalCamera("preview",new BABYLON.Vector3(0,1.65,-3.15),scene);
   previewCamera.setTarget(new BABYLON.Vector3(0,1.25,.7));
   previewCamera.minZ=.04;
+  previewCamera.speed=.20;
+  previewCamera.angularSensibility=3200;
   scene.activeCamera=previewCamera;
+  previewCamera.attachControl(canvas,true);
+
+  let testAIEnabled=false;
+
+  function isInXR(){
+    return !!(xr && xr.baseExperience?.state===BABYLON.WebXRState.IN_XR);
+  }
+
+  function playerWorldPos(){
+    if(xrCamera && isInXR()) return xrCamera.globalPosition.clone();
+    return previewCamera.globalPosition?.clone?.() || previewCamera.position.clone();
+  }
+
+  // ------------------------------------------------------------
+  // Coins, XP, levels, KOs + 3 daily missions
+  // ------------------------------------------------------------
+  const SAVE_KEY="vrBatBrawl_v018";
+  const todayKey=()=>new Date().toISOString().slice(0,10);
+
+  let gameState={
+    coins:0,xp:0,level:1,kills:0,destroyed:0,blocks:0,
+    dailyDate:todayKey(),
+    daily:{
+      kill:{goal:2,progress:0,reward:30,claimed:false},
+      destroy:{goal:5,progress:0,reward:25,claimed:false},
+      block:{goal:3,progress:0,reward:25,claimed:false}
+    }
+  };
+
+  function xpNeeded(level){ return 80+(level-1)*45; }
+
+  function updateStatsUI(){
+    const el=document.getElementById("gameStats");
+    if(!el) return;
+    const d=gameState.daily;
+    el.innerHTML=
+      `<b>LEVEL ${gameState.level}</b><br>`+
+      `🪙 ${gameState.coins} &nbsp; XP ${gameState.xp}/${xpNeeded(gameState.level)}<br>`+
+      `KOs ${gameState.kills} &nbsp; Broken ${gameState.destroyed}<br>`+
+      `KO ${d.kill.progress}/${d.kill.goal} • BREAK ${d.destroy.progress}/${d.destroy.goal} • BLOCK ${d.block.progress}/${d.block.goal}`;
+  }
+
+  function saveGame(){
+    try{localStorage.setItem(SAVE_KEY,JSON.stringify(gameState));}catch(_){}
+    updateStatsUI();
+  }
+
+  function loadGame(){
+    try{
+      const raw=localStorage.getItem(SAVE_KEY);
+      if(raw){
+        const saved=JSON.parse(raw);
+        gameState={...gameState,...saved,daily:{...gameState.daily,...(saved.daily||{})}};
+      }
+    }catch(_){}
+
+    if(gameState.dailyDate!==todayKey()){
+      gameState.dailyDate=todayKey();
+      gameState.daily={
+        kill:{goal:2,progress:0,reward:30,claimed:false},
+        destroy:{goal:5,progress:0,reward:25,claimed:false},
+        block:{goal:3,progress:0,reward:25,claimed:false}
+      };
+      saveGame();
+    }
+  }
+
+  function checkLevelUps(){
+    let needed=xpNeeded(gameState.level);
+    while(gameState.xp>=needed){
+      gameState.xp-=needed;
+      gameState.level++;
+      gameState.coins+=20;
+      needed=xpNeeded(gameState.level);
+    }
+  }
+
+  function addXP(amount){
+    gameState.xp+=Math.max(0,Math.round(amount));
+    checkLevelUps();
+    saveGame();
+  }
+
+  function progressDaily(kind,amount=1){
+    const d=gameState.daily[kind];
+    if(!d) return;
+    d.progress=Math.min(d.goal,d.progress+amount);
+    if(d.progress>=d.goal && !d.claimed){
+      d.claimed=true;
+      gameState.coins+=d.reward;
+      gameState.xp+=15;
+      checkLevelUps();
+    }
+    saveGame();
+  }
+
+  function recordKill(){
+    gameState.kills++;
+    gameState.coins+=12;
+    gameState.xp+=36;
+    checkLevelUps();
+    progressDaily("kill",1);
+  }
+
+  function recordDestruction(){
+    gameState.destroyed++;
+    gameState.coins+=2;
+    gameState.xp+=2;
+    checkLevelUps();
+    progressDaily("destroy",1);
+  }
+
+  function recordBlock(){
+    gameState.blocks++;
+    gameState.xp+=3;
+    checkLevelUps();
+    progressDaily("block",1);
+  }
+
+  function missionShort(){
+    const d=gameState.daily;
+    return `KO ${d.kill.progress}/${d.kill.goal} • BREAK ${d.destroy.progress}/${d.destroy.goal} • BLOCK ${d.block.progress}/${d.block.goal}`;
+  }
+
+  loadGame();
+  updateStatsUI();
 
   // ------------------------------------------------------------
   // Player / XR globals
@@ -1040,9 +1379,9 @@
   // ------------------------------------------------------------
   // Camera-fixed player HUD: always shows your own HP.
   // ------------------------------------------------------------
-  const hudPlane = BABYLON.MeshBuilder.CreatePlane("playerHud",{width:1.05,height:.32},scene);
+  const hudPlane = BABYLON.MeshBuilder.CreatePlane("playerHud",{width:1.05,height:.48},scene);
   hudPlane.setEnabled(false);
-  const hudTex = BABYLON.GUI.AdvancedDynamicTexture.CreateForMesh(hudPlane,900,280);
+  const hudTex = BABYLON.GUI.AdvancedDynamicTexture.CreateForMesh(hudPlane,900,420);
 
   const hudBg = new BABYLON.GUI.Rectangle();
   hudBg.cornerRadius=35;
@@ -1080,6 +1419,15 @@
   hpBar.cornerRadius=20;
   hpBar.background="#22c55e";
   hpBarBg.addControl(hpBar);
+
+  const gameInfoText=new BABYLON.GUI.TextBlock();
+  gameInfoText.text="LV 1 • 0 COINS";
+  gameInfoText.color="#dbeafe";gameInfoText.fontSize=35;gameInfoText.fontWeight="700";gameInfoText.height="58px";
+  hudStack.addControl(gameInfoText);
+
+  const missionText=new BABYLON.GUI.TextBlock();
+  missionText.text="";missionText.color="#cbd5e1";missionText.fontSize=24;missionText.height="48px";
+  hudStack.addControl(missionText);
 
   const damageFlash = BABYLON.MeshBuilder.CreatePlane("damageFlash",{width:3.4,height:2.0},scene);
   damageFlash.setEnabled(false);
@@ -1131,6 +1479,9 @@
     youHpText.text=`YOU ${Math.max(0,Math.ceil(playerHP))} HP`;
     hpBar.width=Math.max(.001,playerHP/PLAYER_MAX_HP);
     hpBar.background = playerHP>55 ? "#22c55e" : playerHP>25 ? "#f59e0b" : "#ef4444";
+    gameInfoText.text=`LV ${gameState.level} • ${gameState.coins} COINS • XP ${gameState.xp}/${xpNeeded(gameState.level)}`;
+    missionText.text=missionShort();
+    updateStatsUI();
   }
 
   function attachHud() {
@@ -1155,13 +1506,13 @@
   }
 
   function hurtPlayer(amount, fromWorldPos) {
-    if (playerDead || playerInvuln>0 || !xrCamera) return;
+    if (playerDead || playerInvuln>0) return;
     playerHP=Math.max(0,playerHP-amount);
     playerInvuln=.42;
     damageFlashTimer=.18;
-    damageFlash.setEnabled(true);
+    if(isInXR()) damageFlash.setEnabled(true);
 
-    let away=xrCamera.globalPosition.subtract(fromWorldPos);
+    let away=playerWorldPos().subtract(fromWorldPos);
     away.y=0;
     if (away.lengthSquared()<.001) away.set(0,0,-1);
     away.normalize();
@@ -1177,8 +1528,10 @@
     if (playerHP<=0) {
       playerDead=true;
       deathTimer=3.0;
-      deathPlane.setEnabled(true);
-      hudPlane.setEnabled(false);
+      if(isInXR()){
+        deathPlane.setEnabled(true);
+        hudPlane.setEnabled(false);
+      }
       chestRoot.setEnabled(false);
     }
   }
@@ -1313,8 +1666,7 @@
   }
 
   function playerHitSpheres() {
-    if (!xrCamera) return [];
-    const h=xrCamera.globalPosition.clone();
+    const h=playerWorldPos();
     return [
       {name:"head",center:h.clone(),radius:.135},
       {name:"chest",center:h.add(new BABYLON.Vector3(0,-.38,0)),radius:.23},
@@ -1684,16 +2036,90 @@
     );
   }
 
-  function simpleHitSound(strong=false) {
-    try {
-      const ac=simpleHitSound.ctx||(simpleHitSound.ctx=new (window.AudioContext||window.webkitAudioContext)());
-      const o=ac.createOscillator(),g=ac.createGain();
-      o.type=strong?"sawtooth":"triangle";
-      o.frequency.value=strong?70:125;
-      g.gain.setValueAtTime(strong?.11:.055,ac.currentTime);
-      g.gain.exponentialRampToValueAtTime(.001,ac.currentTime+(strong?.18:.08));
-      o.connect(g);g.connect(ac.destination);o.start();o.stop(ac.currentTime+(strong?.18:.08));
-    } catch(_) {}
+  function audioCtx(){
+    try{
+      return playImpactSound.ctx || (
+        playImpactSound.ctx=new (window.AudioContext||window.webkitAudioContext)()
+      );
+    }catch(_){return null;}
+  }
+
+  function noiseBuffer(ac,duration=.16){
+    const len=Math.max(1,Math.floor(ac.sampleRate*duration));
+    const b=ac.createBuffer(1,len,ac.sampleRate);
+    const d=b.getChannelData(0);
+    for(let i=0;i<len;i++) d[i]=Math.random()*2-1;
+    return b;
+  }
+
+  function playImpactSound(kind="body",strength=.5){
+    const ac=audioCtx(); if(!ac) return;
+    strength=Math.max(.05,Math.min(1.3,strength));
+    try{
+      if(ac.state==="suspended") ac.resume();
+      const now=ac.currentTime;
+
+      if(kind==="body"){
+        const o=ac.createOscillator(),g=ac.createGain();
+        o.type="sine";o.frequency.setValueAtTime(105,now);
+        o.frequency.exponentialRampToValueAtTime(48,now+.11);
+        g.gain.setValueAtTime(.001,now);g.gain.exponentialRampToValueAtTime(.10*strength,now+.006);
+        g.gain.exponentialRampToValueAtTime(.001,now+.14);
+        o.connect(g);g.connect(ac.destination);o.start(now);o.stop(now+.15);
+      }else if(kind==="wood" || kind==="plastic"){
+        const src=ac.createBufferSource(),filter=ac.createBiquadFilter(),g=ac.createGain();
+        src.buffer=noiseBuffer(ac,kind==="wood"?.11:.07);
+        filter.type=kind==="wood"?"bandpass":"highpass";
+        filter.frequency.value=kind==="wood"?440:900;
+        g.gain.setValueAtTime((kind==="wood"?.10:.05)*strength,now);
+        g.gain.exponentialRampToValueAtTime(.001,now+(kind==="wood"?.11:.07));
+        src.connect(filter);filter.connect(g);g.connect(ac.destination);src.start(now);
+      }else if(kind==="metal" || kind==="block"){
+        for(const f of (kind==="block"?[520,880,1320]:[430,760,1150])){
+          const o=ac.createOscillator(),g=ac.createGain();
+          o.type="sine";o.frequency.value=f*(.93+Math.random()*.14);
+          g.gain.setValueAtTime(.04*strength,now);
+          g.gain.exponentialRampToValueAtTime(.001,now+(kind==="block"?.22:.16));
+          o.connect(g);g.connect(ac.destination);o.start(now);o.stop(now+.24);
+        }
+      }else if(kind==="glass"){
+        for(let i=0;i<5;i++){
+          const o=ac.createOscillator(),g=ac.createGain(),delay=Math.random()*.045;
+          o.type="sine";o.frequency.value=1500+Math.random()*2700;
+          g.gain.setValueAtTime(.025*strength,now+delay);
+          g.gain.exponentialRampToValueAtTime(.001,now+delay+.19);
+          o.connect(g);g.connect(ac.destination);o.start(now+delay);o.stop(now+delay+.20);
+        }
+      }else if(kind==="ceramic"){
+        const o=ac.createOscillator(),g=ac.createGain();
+        o.type="triangle";o.frequency.value=780;
+        g.gain.setValueAtTime(.075*strength,now);g.gain.exponentialRampToValueAtTime(.001,now+.15);
+        o.connect(g);g.connect(ac.destination);o.start(now);o.stop(now+.16);
+      }else if(kind==="whoosh"){
+        const src=ac.createBufferSource(),filter=ac.createBiquadFilter(),g=ac.createGain();
+        src.buffer=noiseBuffer(ac,.16);filter.type="bandpass";filter.frequency.value=700;filter.Q.value=.5;
+        g.gain.setValueAtTime(.001,now);g.gain.linearRampToValueAtTime(.035*strength,now+.06);
+        g.gain.exponentialRampToValueAtTime(.001,now+.16);
+        src.connect(filter);filter.connect(g);g.connect(ac.destination);src.start(now);
+      }else if(kind==="step"){
+        const o=ac.createOscillator(),g=ac.createGain();
+        o.type="sine";o.frequency.value=70;
+        g.gain.setValueAtTime(.045*strength,now);g.gain.exponentialRampToValueAtTime(.001,now+.06);
+        o.connect(g);g.connect(ac.destination);o.start(now);o.stop(now+.07);
+      }
+    }catch(_){}
+  }
+
+  function simpleHitSound(strong=false){
+    playImpactSound(strong?"metal":"body",strong?1:.55);
+  }
+
+  function propSoundType(type){
+    if(["desk","door","whiteboard"].includes(type)) return "wood";
+    if(["chair","bin","printer","cooler","stapler","pencup"].includes(type)) return "metal";
+    if(type==="mug") return "ceramic";
+    if(["keyboard","mouse","mousepad","phone"].includes(type)) return "plastic";
+    return "wood";
   }
 
   // ------------------------------------------------------------
@@ -2134,12 +2560,12 @@
     }
 
     // Right arm actively reaches toward the player's current body.
-    if(npc.attackAnim>0 && xrCamera){
+    if(npc.attackAnim>0 && (isInXR() || testAIEnabled)){
       const progress=1-(npc.attackAnim/npc.attackDuration);
       const shoulder=rd.points.rShoulder.base.clone();
 
       const spheres=playerHitSpheres();
-      const targetWorld=(spheres[1]?.center || xrCamera.globalPosition).clone();
+      const targetWorld=(spheres[1]?.center || playerWorldPos()).clone();
       const target=npcWorldToLocalPoint(targetWorld);
 
       let reach=target.subtract(shoulder);
@@ -2260,6 +2686,39 @@
     }
 
     updateNpcRagdollMeshes();
+  }
+
+  function updateNpcFace(dt){
+    if(!npc || npc.dead) return;
+
+    npc.faceBlink-=dt;
+    if(npc.faceBlink<=0){
+      npc.faceBlink=1.7+Math.random()*3;
+      npc.faceBlinkAmount=1;
+    }
+    npc.faceBlinkAmount=Math.max(0,npc.faceBlinkAmount-dt*11);
+    const blink=npc.faceBlinkAmount>0?.18:1;
+    npc.leftEyeWhite.scaling.y=.78*blink;
+    npc.rightEyeWhite.scaling.y=.78*blink;
+
+    const target=playerWorldPos();
+    const headWorld=npcLocalToWorld(npc.ragdoll.points.head.pos);
+    const local=worldVectorToNpcLocal(target.subtract(headWorld));
+    const px=BABYLON.Scalar.Clamp(local.x*.025,-.018,.018);
+    const py=BABYLON.Scalar.Clamp(local.y*.012,-.012,.012);
+    npc.leftPupil.position.x=-.085+px;npc.rightPupil.position.x=.085+px;
+    npc.leftPupil.position.y=.075+py;npc.rightPupil.position.y=.075+py;
+
+    if(npc.emotion==="angry"){
+      npc.eyebrowL.rotation.z=-.28;npc.eyebrowR.rotation.z=.28;
+      npc.mouth.scaling.x=1.05;npc.mouth.scaling.y=.75;
+    }else if(npc.emotion==="scared"){
+      npc.eyebrowL.rotation.z=.12;npc.eyebrowR.rotation.z=-.12;
+      npc.mouth.scaling.x=.72;npc.mouth.scaling.y=2.2;
+    }else{
+      npc.eyebrowL.rotation.z=-.08;npc.eyebrowR.rotation.z=.08;
+      npc.mouth.scaling.x=1;npc.mouth.scaling.y=1;
+    }
   }
 
   function updateNpcRagdollMeshes(){
@@ -2632,6 +3091,10 @@
       bubbleTimer:0,
       emotion:"normal",
       anger:0,
+      injuries:{head:0,torso:0,leftArm:0,rightArm:0,leftLeg:0,rightLeg:0},
+      faceBlink:1.2+Math.random()*2.2,
+      faceBlinkAmount:0,
+      lastStepIndex:-1,
       recentlyHit:0,
       respawnTimer:0,
       greeted:false,
@@ -2819,6 +3282,11 @@
           (Math.random()-.5)*9
         )
       });
+
+      while(deathParts.length>PERF.maxDeathParts){
+        const old=deathParts.shift();
+        old?.mesh?.dispose?.();
+      }
     }
 
     function capsulePiece(name,aName,bName,radius,mat){
@@ -2922,6 +3390,7 @@
 
     npc.dead=true;
     npc.hpValue=0;
+    recordKill();
     npc.hp.plane.setEnabled(false);
     npc.speech.plane.setEnabled(false);
     npc.ragdoll.dead=true;
@@ -2949,6 +3418,44 @@
     pulse(hands.right,1,150);
     simpleHitSound(true);
   }
+  function classifyNpcHit(hitWorld){
+    if(!npc?.ragdoll) return {zone:"torso",mult:1};
+    const groups=[
+      {zone:"head",names:["head","neckBase"],mult:1.42},
+      {zone:"torso",names:["chest","spineLow","pelvis"],mult:1.00},
+      {zone:"rightArm",names:["rShoulder","rElbow","rWrist","rHand"],mult:.72},
+      {zone:"leftArm",names:["lShoulder","lElbow","lWrist","lHand"],mult:.72},
+      {zone:"rightLeg",names:["rHip","rKnee","rAnkle","rFoot"],mult:.80},
+      {zone:"leftLeg",names:["lHip","lKnee","lAnkle","lFoot"],mult:.80}
+    ];
+    let best={zone:"torso",mult:1,dist:Infinity};
+    for(const g of groups){
+      for(const name of g.names){
+        const p=npc.ragdoll.points[name]; if(!p) continue;
+        const dist=BABYLON.Vector3.Distance(hitWorld,npcLocalToWorld(p.pos));
+        if(dist<best.dist) best={zone:g.zone,mult:g.mult,dist};
+      }
+    }
+    return best;
+  }
+
+  function applyInjury(zone,damage,speed){
+    if(!npc?.injuries) return;
+    const amount=damage*(.65+Math.min(1,speed*.06));
+    if(zone==="head"){
+      npc.injuries.head=Math.min(100,npc.injuries.head+amount*1.4);
+      npc.stun=Math.max(npc.stun,.13+Math.min(.35,damage*.012));
+    }else if(zone==="rightArm" || zone==="leftArm"){
+      npc.injuries[zone]=Math.min(100,npc.injuries[zone]+amount);
+      npc.stun=Math.max(npc.stun,.06);
+    }else if(zone==="rightLeg" || zone==="leftLeg"){
+      npc.injuries[zone]=Math.min(100,npc.injuries[zone]+amount*1.15);
+      npc.stun=Math.max(npc.stun,.08+Math.min(.20,damage*.008));
+    }else{
+      npc.injuries.torso=Math.min(100,npc.injuries.torso+amount*.55);
+    }
+  }
+
   function swingDamage(speed) {
     // Much lower continuous damage in v0.14.
     // Soft hits can do 1-3, normal swings around the middle,
@@ -2962,56 +3469,54 @@
   function damageNpc(hitPos,swingVel,speed) {
     if (!npc || npc.dead || npc.hitCooldown>0) return;
 
-    const damage=swingDamage(speed);
-    if (damage<=0) return;
+    const hit=classifyNpcHit(hitPos);
+    const baseDamage=swingDamage(speed);
+    if(baseDamage<=0) return;
+    const damage=Math.max(1,Math.round(baseDamage*hit.mult));
 
     npc.hpValue-=damage;
     npc.hitCooldown=.18;
     npc.recentlyHit=.28;
-    npc.stun=Math.max(
-      npc.stun,
-      Math.min(.30,Math.max(0,speed-2.0)*.035)
-    );
+    npc.stun=Math.max(npc.stun,Math.min(.30,Math.max(0,speed-2)*.035));
+    applyInjury(hit.zone,damage,speed);
 
-    if (npc.hpValue<=0) {
+    if(npc.hpValue<=0){
       finishNpc(hitPos,swingVel,speed);
       return;
     }
 
-    npc.hp.text.text=`${Math.max(0,Math.ceil(npc.hpValue))} HP   -${damage}`;
+    const label={
+      head:"HEAD",torso:"BODY",rightArm:"R ARM",leftArm:"L ARM",rightLeg:"R LEG",leftLeg:"L LEG"
+    }[hit.zone] || "BODY";
+    npc.hp.text.text=`${Math.max(0,Math.ceil(npc.hpValue))} HP  ${label} -${damage}`;
 
     let dir=swingVel.clone();
-    if (dir.lengthSquared()<.001) dir=npc.root.position.subtract(hitPos);
+    if(dir.lengthSquared()<.001) dir=npc.root.position.subtract(hitPos);
     dir.normalize();
 
-    const force=Math.min(4.4,.32 + speed*.27);
+    const force=Math.min(4.4,.32+speed*.27);
     npc.velocity.addInPlace(dir.scale(force*.62));
     npc.velocity.y+=Math.max(0,dir.y)*.85;
 
-    // The exact body area you hit now bends/wobbles physically.
+    const boost=hit.zone==="head"?1.22:hit.zone.includes("Leg")?1.05:1;
     applyNpcRagdollImpulse(
-      hitPos,
-      dir.scale(.9 + speed*.34),
-      .95
+      hitPos,dir.scale((.9+speed*.34)*boost),
+      hit.zone==="head"?.72:.95
     );
 
-    npc.anger=Math.min(100,npc.anger + 12 + damage*.9);
+    playImpactSound("body",Math.min(1.2,.25+speed*.055));
 
-    if (npc.hpValue<=30) {
-      npc.emotion="scared";
-      speakNpc(Math.random()<.55?"scared":"angry",true);
-    } else if (npc.anger>=55) {
-      npc.emotion="angry";
-      speakNpc(Math.random()<.62?"furious":"angry",true);
-    } else {
-      npc.emotion="angry";
-      speakNpc(speed>3.0?"angry":"hurt",true);
+    npc.anger=Math.min(100,npc.anger+12+damage*.9);
+    if(npc.hpValue<=30){
+      npc.emotion="scared";speakNpc(Math.random()<.55?"scared":"angry",true);
+    }else if(npc.anger>=55){
+      npc.emotion="angry";speakNpc(Math.random()<.62?"furious":"angry",true);
+    }else{
+      npc.emotion="angry";speakNpc(speed>3?"angry":"hurt",true);
     }
 
     pulse(hands.right,Math.min(1,.22+speed*.09),35+Math.min(75,speed*5));
-    simpleHitSound(false);
   }
-
   // ------------------------------------------------------------
   // XR
   // ------------------------------------------------------------
@@ -3064,6 +3569,8 @@
 
       xr.baseExperience.onStateChangedObservable.add(state=>{
         if (state===BABYLON.WebXRState.IN_XR) {
+          const tp=document.getElementById("testPanel");if(tp) tp.style.display="none";
+          const gs=document.getElementById("gameStats");if(gs) gs.style.display="none";
           attachHud();
           updatePlayerHud();
           chestRoot.setEnabled(true);
@@ -3076,6 +3583,9 @@
             hands[side].waitClear=false;
           }
           chooseVoice();
+        }else if(state===BABYLON.WebXRState.NOT_IN_XR){
+          const tp=document.getElementById("testPanel");if(tp) tp.style.display="flex";
+          const gs=document.getElementById("gameStats");if(gs) gs.style.display="block";
         }
       });
     } catch(e) {
@@ -3119,6 +3629,7 @@
 
       if (!npc.dead) {
         setNpcMaterial();
+        updateNpcFace(dt);
         npc.stun=Math.max(0,npc.stun-dt);
 
         npc.velocity.y+=NPC_GRAVITY*dt;
@@ -3126,8 +3637,9 @@
         npc.velocity.x*=Math.pow(.10,dt);
         npc.velocity.z*=Math.pow(.10,dt);
 
-        if (xrCamera && !playerDead) {
-          const toPlayer=xrCamera.globalPosition.subtract(npc.root.position);
+        if ((isInXR() || testAIEnabled) && !playerDead) {
+          const playerPos=playerWorldPos();
+          const toPlayer=playerPos.subtract(npc.root.position);
           toPlayer.y=0;
           const d=toPlayer.length();
           let walking=false;
@@ -3148,6 +3660,9 @@
             if (npc.emotion==="angry") speed=1.72;
             if (npc.emotion==="scared") speed=1.18;
 
+            const legDamage=Math.max(npc.injuries.leftLeg,npc.injuries.rightLeg);
+            speed*=BABYLON.Scalar.Clamp(1-legDamage*.0042,.57,1);
+
             moveNpc(dir.scale(speed*dt));
 
             if (npc.speechCooldown<=0 && Math.random()<.014) {
@@ -3161,12 +3676,14 @@
 
           // Start a real weapon swing, but distance alone does NOT deal damage.
           if (d<=2.25 && npc.stun<=0 && npc.attackAnim<=0 && npc.attackCooldown<=0) {
-            npc.attackCooldown=.38;
-            npc.attackAnim=npc.attackDuration;
+            const armPenalty=BABYLON.Scalar.Clamp(npc.injuries.rightArm/100,0,.7);
+            npc.attackCooldown=.38+armPenalty*.42;
+            npc.attackAnim=npc.attackDuration*(1+armPenalty*.34);
             npc.attackHasHit=false;
             npc.attackBlocked=false;
             npc.weaponPrevTip=npc.weaponTip.getAbsolutePosition().clone();
             speakNpc(npc.anger>=60 && Math.random()<.45 ? "furious" : "attack",true);
+            playImpactSound("whoosh",.55);
           }
 
           // Animate a weapon swing that continuously aims at the player's
@@ -3176,7 +3693,7 @@
             npc.attackAnim=Math.max(0,npc.attackAnim-dt);
 
             // Turn toward the player during the entire swing.
-            const liveTarget=xrCamera.globalPosition.subtract(npc.root.position);
+            const liveTarget=playerWorldPos().subtract(npc.root.position);
             liveTarget.y=0;
 
             if(liveTarget.lengthSquared()>.001){
@@ -3191,7 +3708,7 @@
             // Aim weapon height toward current chest/head height.
             const playerSpheres=playerHitSpheres();
             const targetSphere=playerSpheres[1] || playerSpheres[0];
-            const targetWorld=(targetSphere?.center || xrCamera.globalPosition).clone();
+            const targetWorld=(targetSphere?.center || playerWorldPos()).clone();
             const weaponWorld=npc.weaponRoot.getAbsolutePosition();
             const aim=targetWorld.subtract(weaponWorld);
 
@@ -3249,7 +3766,7 @@
                 npc.attackAnim=0;
                 npc.stun=.62;
 
-                let push=npc.root.position.subtract(xrCamera.globalPosition);
+                let push=npc.root.position.subtract(playerWorldPos());
                 push.y=0;
                 if(push.lengthSquared()<.001) push.set(0,0,1);
                 push.normalize();
@@ -3259,7 +3776,8 @@
                 // Strong feedback so the player knows it was a successful block.
                 pulse(hands.right,1,135);
                 pulse(hands.left,.35,55);
-                simpleHitSound(true);
+                playImpactSound("block",1);
+                recordBlock();
 
                 npc.anger=Math.min(100,npc.anger+14);
                 speakNpc("block",true);
@@ -3274,9 +3792,10 @@
 
               if(hit){
                 npc.attackHasHit=true;
-                hurtPlayer(npc.weaponCfg.damage,npc.root.position);
+                const armWeak=BABYLON.Scalar.Clamp(1-npc.injuries.rightArm*.004,.62,1);
+                hurtPlayer(Math.max(1,Math.round(npc.weaponCfg.damage*armWeak)),npc.root.position);
 
-                let away=xrCamera.globalPosition.subtract(npc.root.position);
+                let away=playerWorldPos().subtract(npc.root.position);
                 away.y=0;
                 if(away.lengthSquared()<.001) away.set(0,0,-1);
                 away.normalize();
@@ -3294,7 +3813,14 @@
           }
 
           npc.walkingNow=walking;
-          if (walking) npc.walkPhase+=dt*8.5;
+          if(walking){
+            npc.walkPhase+=dt*8.5;
+            const stepIndex=Math.floor(npc.walkPhase/Math.PI);
+            if(stepIndex!==npc.lastStepIndex){
+              npc.lastStepIndex=stepIndex;
+              playImpactSound("step",.55);
+            }
+          }
 
           // The active ragdoll produces walking/arm motion physically.
           updateNpcRagdoll(dt,true);
@@ -3432,6 +3958,74 @@
       }
     }
   });
+
+  // ------------------------------------------------------------
+  // iPhone / desktop TEST MODE
+  // ------------------------------------------------------------
+  function testHit(speed){
+    if(!npc || npc.dead) return;
+    const targets=[
+      npc.ragdoll.points.head,npc.ragdoll.points.chest,
+      npc.ragdoll.points.rShoulder,npc.ragdoll.points.lKnee
+    ];
+    const p=targets[Math.floor(Math.random()*targets.length)];
+    const hitPos=npcLocalToWorld(p.pos);
+    let dir=npc.root.position.subtract(playerWorldPos());
+    dir.y=.15;if(dir.lengthSquared()<.001) dir.set(0,.2,1);dir.normalize();
+    damageNpc(hitPos,dir.scale(speed),speed);
+  }
+
+  function resetNpcNow(){
+    if(npc?.root) npc.root.dispose();
+    createNpc();npc.root.position=new BABYLON.Vector3(0,0,1);
+    playerHP=PLAYER_MAX_HP;playerDead=false;playerInvuln=0;
+    updatePlayerHud();
+  }
+
+  function breakNearestWindowTest(){
+    const w=breakableWindows.find(x=>!x.metadata?.broken && x.isEnabled());
+    if(w) breakWindow(w,w.getAbsolutePosition(),new BABYLON.Vector3(0,.4,4));
+  }
+
+  function smashRandomPropTest(){
+    const candidates=officeProps.filter(p=>!p.broken);
+    if(!candidates.length) return;
+    const p=candidates[Math.floor(Math.random()*candidates.length)];
+    p.hp=0;
+    destroyOfficeProp(
+      p,p.root.getAbsolutePosition?.()?.clone?.()||p.root.position.clone(),
+      new BABYLON.Vector3((Math.random()-.5)*.4,.25,1),8
+    );
+  }
+
+  function bindTestControls(){
+    const panel=document.getElementById("testPanel");if(!panel) return;
+    panel.addEventListener("click",e=>{
+      const b=e.target.closest("button[data-test]");if(!b) return;
+      try{audioCtx()?.resume?.();}catch(_){}
+      const a=b.dataset.test;
+
+      if(a==="soft") testHit(1.2);
+      else if(a==="medium") testHit(3.3);
+      else if(a==="hard") testHit(6.2);
+      else if(a==="kill"){
+        if(npc && !npc.dead){
+          const p=npcLocalToWorld(npc.ragdoll.points.chest.pos);
+          npc.hpValue=1;damageNpc(p,new BABYLON.Vector3(0,.6,8),8);
+        }
+      }else if(a==="glass") breakNearestWindowTest();
+      else if(a==="prop") smashRandomPropTest();
+      else if(a==="reset") resetNpcNow();
+      else if(a==="ai"){
+        testAIEnabled=!testAIEnabled;
+        b.textContent=`AI: ${testAIEnabled?"ON":"OFF"}`;
+      }
+      updatePlayerHud();
+    });
+  }
+
+  bindTestControls();
+  updatePlayerHud();
 
   engine.runRenderLoop(()=>scene.render());
   addEventListener("resize",()=>engine.resize());
