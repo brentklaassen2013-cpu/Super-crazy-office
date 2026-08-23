@@ -1,5 +1,5 @@
 (() => {
-  const BUILD_VERSION="0.23.8";
+  const BUILD_VERSION="0.24.0";
   const canvas = document.getElementById("renderCanvas");
   const engine = new BABYLON.Engine(canvas, true, { stencil:true });
   const scene = new BABYLON.Scene(engine);
@@ -340,8 +340,8 @@
   // while NPC/body pieces can fall four metres outside the windows.
   const ground=box(
     "officeFloor",
-    new BABYLON.Vector3(0,-.12,-3.6),
-    new BABYLON.Vector3(15.8,.24,18.8),
+    new BABYLON.Vector3(0,-.12,-6.5),
+    new BABYLON.Vector3(22.5,.24,26.0),
     officeFloorMat,
     true
   );
@@ -355,9 +355,9 @@
   );
 
   // Ceiling + side walls.
-  box("officeCeiling",new BABYLON.Vector3(0,4.0,-3.6),new BABYLON.Vector3(15.8,.18,18.8));
-  box("officeLeftWall",new BABYLON.Vector3(-7.9,1.95,-3.6),new BABYLON.Vector3(.20,4.0,18.8));
-  box("officeRightWall",new BABYLON.Vector3(7.9,1.95,-3.6),new BABYLON.Vector3(.20,4.0,18.8));
+  box("officeCeiling",new BABYLON.Vector3(0,4.80,-6.5),new BABYLON.Vector3(22.5,.18,26.0));
+  box("officeLeftWall",new BABYLON.Vector3(-11.25,2.35,-6.5),new BABYLON.Vector3(.20,4.8,26.0));
+  box("officeRightWall",new BABYLON.Vector3(11.25,2.35,-6.5),new BABYLON.Vector3(.20,4.8,26.0));
 
   // Front wall with an open doorway.
   box("frontWallL",new BABYLON.Vector3(-5.0,1.95,-5.2),new BABYLON.Vector3(5.95,4.0,.20));
@@ -365,7 +365,7 @@
   box("frontWallTop",new BABYLON.Vector3(0,3.45,-5.2),new BABYLON.Vector3(3.9,1.08,.20));
 
   // New rear exterior wall: the old wall at z=-4 is now an interior divider.
-  box("rearOuterWall",new BABYLON.Vector3(0,1.95,-12.9),new BABYLON.Vector3(15.8,4.0,.20));
+  box("rearOuterWall",new BABYLON.Vector3(0,2.35,-19.5),new BABYLON.Vector3(22.5,4.8,.20));
 
   // Window wall: sill, header and columns create three real openings.
   box("windowSill",new BABYLON.Vector3(0,.32,4),new BABYLON.Vector3(15.8,.64,.20));
@@ -1276,6 +1276,41 @@
   createMonitor("rearMonitorB",3.45,-5.03,0);
   createKeyboard("rearKeyboardB",3.45,-5.38,0);
   createChair("rearChairB",3.45,-5.88,0);
+
+  createDesk("wideDeskL",-6.45,-9.55,0);
+  createMonitor("wideMonitorL",-6.45,-9.43,0);
+  createKeyboard("wideKeyboardL",-6.45,-9.78,0);
+  createChair("wideChairL",-6.45,-10.28,0);
+
+  createDesk("wideDeskR",6.45,-9.55,0);
+  createMonitor("wideMonitorR",6.45,-9.43,0);
+  createKeyboard("wideKeyboardR",6.45,-9.78,0);
+  createChair("wideChairR",6.45,-10.28,0);
+
+  createDesk("deepDeskL",-5.0,-13.0,Math.PI);
+  createMonitor("deepMonitorL",-5.0,-13.12,Math.PI);
+  createKeyboard("deepKeyboardL",-5.0,-12.77,Math.PI);
+  createChair("deepChairL",-5.0,-12.20,Math.PI);
+
+  createDesk("deepDeskR",5.0,-13.0,Math.PI);
+  createMonitor("deepMonitorR",5.0,-13.12,Math.PI);
+  createKeyboard("deepKeyboardR",5.0,-12.77,Math.PI);
+  createChair("deepChairR",5.0,-12.20,Math.PI);
+
+  createDesk("farDeskL",-7.3,-16.2,0);
+  createMonitor("farMonitorL",-7.3,-16.08,0);
+  createKeyboard("farKeyboardL",-7.3,-16.43,0);
+  createChair("farChairL",-7.3,-16.93,0);
+
+  createDesk("farDeskC",0,-16.2,0);
+  createMonitor("farMonitorC",0,-16.08,0);
+  createKeyboard("farKeyboardC",0,-16.43,0);
+  createChair("farChairC",0,-16.93,0);
+
+  createDesk("farDeskR",7.3,-16.2,0);
+  createMonitor("farMonitorR",7.3,-16.08,0);
+  createKeyboard("farKeyboardR",7.3,-16.43,0);
+  createChair("farChairR",7.3,-16.93,0);
 
 
   // ------------------------------------------------------------
@@ -2768,6 +2803,8 @@
   chooseVoice();
   if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged=chooseVoice;
 
+  const HUMAN_VOICE_FILES_AVAILABLE=false;
+
   const NPC_VOICE_CLIPS={
     hurt:["voice/hurt1.mp3","voice/hurt2.mp3","voice/hurt3.mp3"],
     angry:["voice/angry1.mp3","voice/angry2.mp3"],
@@ -2782,6 +2819,7 @@
   let failedVoiceFiles=new Set();
 
   function tryPlayHumanVoice(kind){
+    if(!HUMAN_VOICE_FILES_AVAILABLE) return false;
     const list=NPC_VOICE_CLIPS[kind];
     if(!list?.length) return false;
 
@@ -2870,15 +2908,15 @@
     // Even when code asks for a line, most ordinary reactions stay silent.
     if(!force){
       const chance={
-        chase:.10,
-        angry:.16,
-        furious:.24,
-        hurt:.14,
-        scared:.18,
-        attack:.12,
-        block:.16,
+        chase:.012,
+        angry:.030,
+        furious:.050,
+        hurt:.040,
+        scared:.035,
+        attack:.020,
+        block:.030,
         death:1
-      }[kind] ?? .12;
+      }[kind] ?? .025;
 
       if(Math.random()>chance) return;
       if(npc.speechCooldown>0) return;
@@ -2895,7 +2933,7 @@
     // Long quiet gaps between lines.
     npc.speechCooldown=
       kind==="death" ? 0 :
-      4.6+Math.random()*3.8;
+      12+Math.random()*7;
 
     npc.bubbleTimer=1.65;
     npc.speech.text.text=line;
@@ -2908,26 +2946,28 @@
       if(selectedVoice) u.voice=selectedVoice;
 
       // Keep volume and pitch in a restrained human range.
-      u.volume=.84;
+      u.volume=1.0;
+      u.rate=Math.max(.88,Math.min(1.02,u.rate||.94));
+      u.lang=selectedVoice?.lang || "en-US";
 
       if(kind==="furious"){
-        u.rate=.97+Math.random()*.018;
-        u.pitch=.96+Math.random()*.015;
+        u.rate=.93+Math.random()*.012;
+        u.pitch=.98+Math.random()*.010;
       }else if(kind==="angry"){
-        u.rate=.96+Math.random()*.018;
-        u.pitch=.97+Math.random()*.015;
+        u.rate=.92+Math.random()*.012;
+        u.pitch=.99+Math.random()*.010;
       }else if(kind==="scared"){
-        u.rate=.99+Math.random()*.02;
-        u.pitch=1.00+Math.random()*.015;
+        u.rate=.94+Math.random()*.012;
+        u.pitch=1.00+Math.random()*.010;
       }else if(kind==="hurt"){
-        u.rate=.97+Math.random()*.02;
-        u.pitch=.99+Math.random()*.015;
+        u.rate=.91+Math.random()*.015;
+        u.pitch=1.00+Math.random()*.010;
       }else if(kind==="attack"){
-        u.rate=.98+Math.random()*.018;
-        u.pitch=.98+Math.random()*.015;
+        u.rate=.94+Math.random()*.012;
+        u.pitch=.99+Math.random()*.010;
       }else{
-        u.rate=.95+Math.random()*.018;
-        u.pitch=.99+Math.random()*.012;
+        u.rate=.92+Math.random()*.012;
+        u.pitch=1.00+Math.random()*.008;
       }
 
       // Avoid overlapping dialogue.
@@ -3072,6 +3112,46 @@
       attackRate:.42,
       throwRate:1.25,
       preferredEmotion:"angry"
+    },
+    {
+      name:"Guard",
+      maxHp:205,
+      speed:1.18,
+      attackMul:1.18,
+      knockbackMul:1.12,
+      attackRate:.40,
+      throwRate:.85,
+      preferredEmotion:"angry"
+    },
+    {
+      name:"Manager",
+      maxHp:145,
+      speed:1.24,
+      attackMul:.92,
+      knockbackMul:.92,
+      attackRate:.46,
+      throwRate:1.35,
+      preferredEmotion:"normal"
+    },
+    {
+      name:"Heavy Guard",
+      maxHp:255,
+      speed:.88,
+      attackMul:1.35,
+      knockbackMul:1.28,
+      attackRate:.58,
+      throwRate:.80,
+      preferredEmotion:"angry"
+    },
+    {
+      name:"Fast Worker",
+      maxHp:112,
+      speed:1.95,
+      attackMul:.78,
+      knockbackMul:.82,
+      attackRate:.30,
+      throwRate:.65,
+      preferredEmotion:"normal"
     }
   ];
 
@@ -3841,10 +3921,10 @@
     visual.parent=root;
 
     const npcPalettes=[
-      {skin:"#c98b68",skinDark:"#a86c50",shirt:"#486b8f",shirtDark:"#304c69"},
-      {skin:"#d2a17e",skinDark:"#b37f60",shirt:"#5e6948",shirtDark:"#3d4931"},
-      {skin:"#a96f50",skinDark:"#86543c",shirt:"#7a4d57",shirtDark:"#52333b"},
-      {skin:"#e0b18b",skinDark:"#bf8968",shirt:"#4c6079",shirtDark:"#303e50"}
+      {skin:"#d39a74",skinDark:"#b77959",shirt:"#577da3",shirtDark:"#3d5c7b"},
+      {skin:"#deb18d",skinDark:"#bb8465",shirt:"#71805b",shirtDark:"#4b5a3c"},
+      {skin:"#b98261",skinDark:"#936047",shirt:"#8b5c67",shirtDark:"#62404a"},
+      {skin:"#e6ba96",skinDark:"#c78f6d",shirt:"#5b718f",shirtDark:"#3e5068"}
     ];
     const look=npcPalettes[Math.floor(Math.random()*npcPalettes.length)];
     const archetype=NPC_ARCHETYPES[Math.floor(Math.random()*NPC_ARCHETYPES.length)];
@@ -3870,6 +3950,12 @@
     // v0.23.7 smoother NPC beard: no noisy diffuse texture;
     const teethMat=mkMat("npcTeeth"+Math.random(),"#f4eee5");
 
+    skinMat.emissiveColor=skinMat.diffuseColor.scale(.055);
+    skinDarkMat.emissiveColor=skinDarkMat.diffuseColor.scale(.045);
+    shirtMat.emissiveColor=shirtMat.diffuseColor.scale(.025);
+    shirtDarkMat.emissiveColor=shirtDarkMat.diffuseColor.scale(.018);
+    pantsMat.emissiveColor=pantsMat.diffuseColor.scale(.014);
+
     // clean v0.23.3: skinMat.diffuseTexture=DETAIL_TEX.skin;
     // clean v0.23.3: skinDarkMat.diffuseTexture=DETAIL_TEX.skin;
     // clean v0.23.3: shirtMat.diffuseTexture=DETAIL_TEX.fabric;
@@ -3879,13 +3965,6 @@
     // clean v0.23.3: shoeMat.diffuseTexture=DETAIL_TEX.metal;
     // clean v0.23.3: hairMat.diffuseTexture=DETAIL_TEX.hair;
     // Give the NPC the same clean material style as the office.
-    skinMat.diffuseTexture=DETAIL_TEX.skin;skinMat.diffuseTexture.level=.35;
-    skinDarkMat.diffuseTexture=DETAIL_TEX.skin;skinDarkMat.diffuseTexture.level=.28;
-    shirtMat.diffuseTexture=DETAIL_TEX.wall;shirtMat.diffuseTexture.level=.22;
-    shirtDarkMat.diffuseTexture=DETAIL_TEX.wall;shirtDarkMat.diffuseTexture.level=.18;
-    pantsMat.diffuseTexture=DETAIL_TEX.fabric;pantsMat.diffuseTexture.level=.14;
-    pantsDarkMat.diffuseTexture=DETAIL_TEX.fabric;pantsDarkMat.diffuseTexture.level=.10;
-    hairMat.diffuseTexture=DETAIL_TEX.hair;hairMat.diffuseTexture.level=.12;
 
     // v0.23.6 clean realism: no dotted skin bump
     // v0.23.6 clean realism: no dotted skinDark bump
@@ -4128,23 +4207,45 @@
     eyebrowL.parent=head;eyebrowL.position.set(-.085,.145,.236);eyebrowL.rotation.z=-.08;eyebrowL.material=hairMat;
     const eyebrowR=eyebrowL.clone("npcEyebrowR");eyebrowR.parent=head;eyebrowR.position.x=.085;eyebrowR.rotation.z=.08;
 
+    const hairStyle=Math.floor(Math.random()*5);
+
     const hair=BABYLON.MeshBuilder.CreateSphere("npcHair",{
       diameter:.425,segments:18
     },scene);
     hair.parent=head;
-    hair.position.set(0,.135,-.055);
-    hair.scaling.set(.74,.27,.80);
     hair.material=hairMat;
 
-    // Receding/thinning hairline for a less cartoon-like silhouette.
-    const templeL=faceSphere("npcTempleHairL",.115,[-.155,.095,-.075],hairMat,[.50,.95,.45]);
-    const templeR=faceSphere("npcTempleHairR",.115,[.155,.095,-.075],hairMat,[.50,.95,.45]);
+    if(hairStyle===0){
+      // Short/receding
+      hair.position.set(0,.135,-.055);
+      hair.scaling.set(.74,.27,.80);
+    }else if(hairStyle===1){
+      // Fuller short hair
+      hair.position.set(0,.145,-.030);
+      hair.scaling.set(.86,.38,.88);
+    }else if(hairStyle===2){
+      // Flat crop
+      hair.position.set(0,.155,-.045);
+      hair.scaling.set(.82,.20,.88);
+    }else if(hairStyle===3){
+      // Taller/messier top
+      hair.position.set(0,.175,-.035);
+      hair.scaling.set(.72,.48,.78);
+    }else{
+      // Nearly shaved
+      hair.position.set(0,.135,-.045);
+      hair.scaling.set(.87,.13,.90);
+    }
 
-    // Small side hair patches.
-    for(const sx of [-1,1]){
-      const side=faceSphere(
-        "npcSideHair"+sx,.18,[sx*.19,.105,-.08],hairMat,[.55,1,.55]
-      );
+    if(hairStyle!==4){
+      const templeL=faceSphere("npcTempleHairL",.095,[-.155,.095,-.075],hairMat,[.45,.80,.40]);
+      const templeR=faceSphere("npcTempleHairR",.095,[.155,.095,-.075],hairMat,[.45,.80,.40]);
+
+      if(hairStyle===1 || hairStyle===3){
+        for(const sx of [-1,1]){
+          faceSphere("npcSideHair"+sx,.16,[sx*.19,.11,-.08],hairMat,[.48,.88,.50]);
+        }
+      }
     }
 
     // Arms with visible overlapping joints.
@@ -4611,14 +4712,14 @@
 
       const vn=BABYLON.Vector3.Dot(r.vel,hit.normal);
       if(vn<0){
-        r.vel.subtractInPlace(hit.normal.scale(vn*1.06));
-        r.vel.scaleInPlace(.58);
+        r.vel.subtractInPlace(hit.normal.scale(vn*1.02));
+        r.vel.scaleInPlace(.44);
       }
     }
   }
   function moveDeathPart(r,dt) {
     const delta=r.vel.scale(dt);
-    const steps=Math.max(1,Math.ceil(delta.length()/.032));
+    const steps=Math.max(1,Math.ceil(delta.length()/.022));
     const step=delta.scale(1/steps);
     for(let i=0;i<steps;i++){
       r.mesh.position.addInPlace(step);
@@ -4672,14 +4773,22 @@
       const outward=mesh.position.subtract(chestCenter);
       if(outward.lengthSquared()>.0001){
         outward.normalize();
-        vel.addInPlace(outward.scale(.75+Math.random()*1.05));
+        vel.addInPlace(outward.scale(.55+Math.random()*.72));
+      }
+
+      const maxPieceSpeed=7.2;
+      if(vel.length()>maxPieceSpeed){
+        vel.normalize().scaleInPlace(maxPieceSpeed);
       }
 
       deathParts.push({
         mesh,
         vel,
         radius,
-        life:5.9,
+        life:5.6,
+        age:0,
+        sleepTimer:0,
+        sleeping:false,
         spin:new BABYLON.Vector3(
           (Math.random()-.5)*4.0,
           (Math.random()-.5)*4.0,
@@ -4878,7 +4987,7 @@
     // Keep the health bar for a short instant, then hide it during collapse.
     npc.deathPhase="stagger";
     npc.deathExploded=false;
-    npc.deathTimer=.40;
+    npc.deathTimer=.08;
     npc.deathTotalTimer=0;
     npc.ragdoll.dead=false;
     npc.respawnTimer=6.9;
@@ -5009,6 +5118,14 @@
     );
   }
 
+  function hitStrengthName(speed){
+    if(speed<1.45) return "SOFT";
+    if(speed<2.45) return "SOFT-MED";
+    if(speed<3.65) return "MEDIUM";
+    if(speed<5.20) return "MED-HARD";
+    return "HARD";
+  }
+
   function swingDamage(speed) {
     // Much lower continuous damage in v0.14.
     // Soft hits can do 1-3, normal swings around the middle,
@@ -5068,7 +5185,7 @@
       npc.emotion="angry";speakNpc(speed>3?"angry":"hurt",false);
     }
 
-    pulse(hands.right,Math.min(1,.22+speed*.09),35+Math.min(75,speed*5));
+    pulse(hands.right,Math.min(1,.12+speed*.12),28+Math.min(105,speed*8));
   }
   // ------------------------------------------------------------
   // XR
@@ -5249,7 +5366,7 @@
 
           if (!npc.greeted && d<5.5) {
             npc.greeted=true;
-            speakNpc("chase",true);
+            speakNpc("chase",false);
           }
 
           // Even when scared, NPC never runs away. Fear only changes voice,
@@ -5503,7 +5620,7 @@
 
           if(npc.deathTimer<=0){
             npc.deathPhase="collapse";
-            npc.deathTimer=.28;
+            npc.deathTimer=.07;
             npc.ragdoll.dead=true;
             npc.hp.plane.setEnabled(false);
           }
@@ -5520,7 +5637,7 @@
             // Break the ragdoll apart from its CURRENT physical pose.
             spawnDeathRagdollFromCurrent(
               npc.deathDir,
-              Math.min(12.5,5.8+npc.deathSpeed*.48)
+              Math.min(10.5,5.0+npc.deathSpeed*.38)
             );
 
             // Very heavy stylized blood burst.
@@ -5550,19 +5667,38 @@
     }
 
     // Detached death parts after the finishing explosion.
+    // They now settle and sleep instead of jittering forever.
     for(let i=deathParts.length-1;i>=0;i--){
       const r=deathParts[i];
       r.life-=dt;
-      r.vel.y-=7.2*dt;
-      moveDeathPart(r,dt);
+      r.age+=dt;
 
-      r.mesh.rotation.x+=r.spin.x*dt;
-      r.mesh.rotation.y+=r.spin.y*dt;
-      r.mesh.rotation.z+=r.spin.z*dt;
+      if(!r.sleeping){
+        r.vel.y-=6.4*dt;
 
-      r.vel.x*=Math.pow(.72,dt);
-      r.vel.z*=Math.pow(.72,dt);
-      r.spin.scaleInPlace(Math.pow(.50,dt));
+        // Extra substeps reduce tunnelling through desks/walls/floor.
+        moveDeathPart(r,dt);
+
+        r.mesh.rotation.x+=r.spin.x*dt;
+        r.mesh.rotation.y+=r.spin.y*dt;
+        r.mesh.rotation.z+=r.spin.z*dt;
+
+        r.vel.x*=Math.pow(.60,dt);
+        r.vel.z*=Math.pow(.60,dt);
+        r.spin.scaleInPlace(Math.pow(.34,dt));
+
+        const motion=r.vel.length()+r.spin.length()*.06;
+        if(r.age>.65 && motion<.32){
+          r.sleepTimer+=dt;
+          if(r.sleepTimer>.32){
+            r.sleeping=true;
+            r.vel.set(0,0,0);
+            r.spin.set(0,0,0);
+          }
+        }else{
+          r.sleepTimer=0;
+        }
+      }
 
       if(r.life<=0 || r.mesh.position.y<-5.4){
         r.mesh.dispose();
@@ -5571,6 +5707,7 @@
     }
 
 
+    updateExtraNpcs(dt);
     updateOfficePhysics(dt);
 
     // XR player / hands / bat
@@ -5605,8 +5742,8 @@
 
         keepRigAboveFloor();
         resolvePlayerWorldCollision();
-        xrCamera.position.x=Math.max(-4.70,Math.min(4.70,xrCamera.position.x));
-        xrCamera.position.z=Math.max(-8.65,Math.min(3.65,xrCamera.position.z));
+        xrCamera.position.x=Math.max(-10.85,Math.min(10.85,xrCamera.position.x));
+        xrCamera.position.z=Math.max(-19.05,Math.min(3.65,xrCamera.position.z));
         xrCamera.position.y=Math.min(4.2,xrCamera.position.y);
 
         updateBodyVisual();
@@ -5625,12 +5762,23 @@
                 batTipLast,
                 tip,
                 batBase(),
-                .235
+                .255
               );
 
               if(npcHit){
                 batHitCooldown=.12;
                 damageNpc(npcHit.point,vel,speed);
+              }else{
+                const extraHit=hitExtraNpcSweep(
+                  batTipLast,
+                  tip,
+                  batBase(),
+                  .255
+                );
+                if(extraHit){
+                  batHitCooldown=.12;
+                  damageExtraNpc(extraHit,vel,speed);
+                }
               }
             }
 
@@ -5686,6 +5834,216 @@
   }
 
   // ------------------------------------------------------------
+  // Lightweight extra NPCs
+  // Primary NPC keeps full active-ragdoll physics.
+  // Two extras use lighter physics so Quest 2 can keep a stable framerate.
+  // ------------------------------------------------------------
+  const extraNpcs=[];
+
+  function makeExtraNpc(index){
+    const a=NPC_ARCHETYPES[(index+2)%NPC_ARCHETYPES.length];
+    const root=new BABYLON.TransformNode("extraNpcRoot"+index,scene);
+    root.position.set(index===0?-4.0:4.0,0,-6.5-index*2.4);
+
+    const skin=mkMat("extraSkin"+index,index===0?"#d7a07c":"#b77d5d");
+    const shirt=mkMat("extraShirt"+index,index===0?"#657d57":"#6f587d");
+    const pants=mkMat("extraPants"+index,"#34404e");
+    const hairM=mkMat("extraHair"+index,index===0?"#281e18":"#3a2b22");
+
+    skin.emissiveColor=skin.diffuseColor.scale(.045);
+    shirt.emissiveColor=shirt.diffuseColor.scale(.02);
+
+    const body=BABYLON.MeshBuilder.CreateCapsule("extraBody"+index,{
+      height:1.05,radius:.23,tessellation:16
+    },scene);
+    body.parent=root;body.position.y=.96;body.material=shirt;
+
+    const head=BABYLON.MeshBuilder.CreateCapsule("extraHead"+index,{
+      height:.39,radius:.17,tessellation:18
+    },scene);
+    head.parent=root;head.position.y=1.68;head.material=skin;
+
+    const hair=BABYLON.MeshBuilder.CreateSphere("extraHair"+index,{
+      diameter:.36,segments:14
+    },scene);
+    hair.parent=head;
+    hair.position.set(0,.11,-.035);
+    hair.material=hairM;
+    hair.scaling.set(
+      index===0?.80:.70,
+      index===0?.30:.45,
+      .84
+    );
+
+    const eyeWhite=mkMat("extraEyeWhite"+index,"#f4f4f1");
+    const pupil=mkMat("extraPupil"+index,"#111111");
+    for(const sx of [-1,1]){
+      const e=BABYLON.MeshBuilder.CreateSphere("extraEye"+index+sx,{
+        diameter:.045,segments:8
+      },scene);
+      e.parent=head;e.position.set(sx*.065,.04,.166);e.material=eyeWhite;
+      const p=BABYLON.MeshBuilder.CreateSphere("extraPupil"+index+sx,{
+        diameter:.014,segments:6
+      },scene);
+      p.parent=head;p.position.set(sx*.065,.04,.184);p.material=pupil;
+    }
+
+    const hp=hpLabel(root);
+    hp.plane.position.y=2.12;
+
+    const e={
+      root,body,head,hair,hp,
+      typeName:a.name,
+      archetype:a,
+      hpValue:a.maxHp,
+      maxHp:a.maxHp,
+      dead:false,
+      cooldown:.8+Math.random(),
+      velocity:new BABYLON.Vector3(),
+      respawn:0,
+      hitFlash:0
+    };
+
+    extraNpcs.push(e);
+    return e;
+  }
+
+  makeExtraNpc(0);
+  makeExtraNpc(1);
+
+  function updateExtraNpcLabel(e){
+    const hp=Math.max(0,Math.ceil(e.hpValue));
+    e.hp.text.text=`${e.typeName} • ${hp}/${e.maxHp} HP`;
+    e.hp.bar.width=`${Math.max(.01,hp/e.maxHp)*100}%`;
+    e.hp.bar.background=e.hitFlash>0?"#ef4444":"#22c55e";
+  }
+
+  function hitExtraNpcSweep(prevTip,tip,base,radius=.25){
+    let best=null;
+    let bestD=Infinity;
+
+    for(const e of extraNpcs){
+      if(e.dead) continue;
+
+      const points=[
+        e.root.position.add(new BABYLON.Vector3(0,1.68,0)),
+        e.root.position.add(new BABYLON.Vector3(0,1.15,0)),
+        e.root.position.add(new BABYLON.Vector3(0,.72,0))
+      ];
+
+      for(const w of points){
+        const d=Math.min(
+          pointSegmentDistance(w,prevTip,tip),
+          pointSegmentDistance(w,base,tip)
+        );
+
+        if(d<radius+.22 && d<bestD){
+          bestD=d;
+          best={npc:e,point:w.clone()};
+        }
+      }
+    }
+
+    return best;
+  }
+
+  function damageExtraNpc(hit,swingVel,speed){
+    const e=hit.npc;
+    if(!e || e.dead) return;
+
+    const dmg=Math.max(1,swingDamage(speed));
+    e.hpValue-=dmg;
+    e.hitFlash=.16;
+
+    let dir=swingVel.clone();
+    if(dir.lengthSquared()<.001) dir.set(0,.15,1);
+    dir.normalize();
+
+    e.velocity.addInPlace(
+      dir.scale(.28+speed*.13)
+        .add(new BABYLON.Vector3(0,.12,0))
+    );
+
+    playImpactSound("body",Math.min(1,.3+speed*.06));
+    pulse(hands.right,Math.min(1,.10+speed*.10),25+Math.min(90,speed*7));
+
+    if(e.hpValue<=0){
+      e.dead=true;
+      e.hpValue=0;
+      e.hp.plane.setEnabled(false);
+      e.respawn=5.5;
+
+      // Lightweight bloody death for secondary NPC.
+      spawnBloodExplosion(
+        e.root.position.add(new BABYLON.Vector3(0,1.1,0)),
+        dir,
+        1.25
+      );
+
+      e.body.setEnabled(false);
+      e.head.setEnabled(false);
+      e.hair.setEnabled(false);
+    }
+
+    updateExtraNpcLabel(e);
+  }
+
+  function updateExtraNpcs(dt){
+    const activeAI=(isInXR() || testAIEnabled) && !playerDead;
+    const pp=playerWorldPos();
+
+    for(let i=0;i<extraNpcs.length;i++){
+      const e=extraNpcs[i];
+
+      if(e.dead){
+        e.respawn-=dt;
+        if(e.respawn<=0){
+          e.dead=false;
+          e.hpValue=e.maxHp;
+          e.hp.plane.setEnabled(true);
+          e.body.setEnabled(true);
+          e.head.setEnabled(true);
+          e.hair.setEnabled(true);
+          e.root.position.set(i===0?-4.5:4.5,0,-7.5-i*2.5);
+          e.velocity.set(0,0,0);
+          updateExtraNpcLabel(e);
+        }
+        continue;
+      }
+
+      e.hitFlash=Math.max(0,e.hitFlash-dt);
+      e.cooldown=Math.max(0,e.cooldown-dt);
+      updateExtraNpcLabel(e);
+
+      e.root.position.addInPlace(e.velocity.scale(dt));
+      e.velocity.scaleInPlace(Math.pow(.18,dt));
+
+      if(!activeAI) continue;
+
+      let to=pp.subtract(e.root.position);
+      to.y=0;
+      const d=to.length();
+
+      if(d>.0001){
+        to.normalize();
+        e.root.rotation.y=Math.atan2(to.x,to.z);
+      }
+
+      if(d>1.45 && d<12){
+        const sp=(e.archetype?.speed||1.3)*.82;
+        e.root.position.addInPlace(to.scale(sp*dt));
+      }
+
+      if(d<=1.65 && e.cooldown<=0){
+        e.cooldown=(e.archetype?.attackRate||.45)+.55;
+        const dmg=Math.max(5,Math.round(8*(e.archetype?.attackMul||1)));
+        hurtPlayer(dmg,e.root.position);
+        playImpactSound("body",.55);
+      }
+    }
+  }
+
+  // ------------------------------------------------------------
   // iPhone / desktop TEST MODE
   // ------------------------------------------------------------
   function testHit(speed){
@@ -5731,9 +6089,11 @@
       try{audioCtx()?.resume?.();}catch(_){}
       const a=b.dataset.test;
 
-      if(a==="soft") testHit(1.2);
-      else if(a==="medium") testHit(3.3);
-      else if(a==="hard") testHit(6.2);
+      if(a==="soft") testHit(1.05);
+      else if(a==="softmed") testHit(1.95);
+      else if(a==="medium") testHit(2.95);
+      else if(a==="medhard") testHit(4.45);
+      else if(a==="hard") testHit(6.45);
       else if(a==="kill"){
         if(npc && !npc.dead){
           const p=npcLocalToWorld(npc.ragdoll.points.chest.pos);
