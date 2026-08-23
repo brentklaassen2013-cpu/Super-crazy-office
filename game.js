@@ -224,26 +224,28 @@
   const chestRoot = new BABYLON.TransformNode("playerBodyRoot",scene);
 
   const chest = BABYLON.MeshBuilder.CreateCapsule("playerChest",{
-    height:.52,radius:.24,tessellation:14
+    height:.37,radius:.185,tessellation:14
   },scene);
   chest.parent=chestRoot;
-  chest.position.y=-.37;
+  chest.position.y=-.22;
+  chest.scaling.z=.82;
   chest.material=MAT.accent;
 
-  const belly = BABYLON.MeshBuilder.CreateSphere("playerBelly",{diameter:.42,segments:14},scene);
+  // Very short waist instead of the old large belly.
+  const belly = BABYLON.MeshBuilder.CreateSphere("playerWaist",{diameter:.27,segments:14},scene);
   belly.parent=chestRoot;
-  belly.position.y=-.66;
-  belly.scaling.y=.72;
+  belly.position.y=-.40;
+  belly.scaling.set(1,.48,.76);
   belly.material=MAT.accent;
 
-  const shoulderL = BABYLON.MeshBuilder.CreateSphere("shoulderL",{diameter:.24,segments:12},scene);
+  const shoulderL = BABYLON.MeshBuilder.CreateSphere("shoulderL",{diameter:.17,segments:12},scene);
   shoulderL.parent=chestRoot;
-  shoulderL.position.set(-.22,-.22,0);
+  shoulderL.position.set(-.18,-.10,0);
   shoulderL.material=MAT.accent;
 
   const shoulderR = shoulderL.clone("shoulderR");
   shoulderR.parent=chestRoot;
-  shoulderR.position.x=.22;
+  shoulderR.position.x=.18;
 
   chestRoot.setEnabled(false);
 
@@ -260,23 +262,23 @@
     if (f.lengthSquared()<.001) f.set(0,0,1);
     f.normalize();
 
-    const topY=Math.max(.64,head.y-.16);
-    const bottomY=Math.max(.46,head.y-.56);
+    // Much smaller/high torso: upper chest to high waist only.
+    const topY=Math.max(.72,head.y-.14);
+    const bottomY=Math.max(.58,head.y-.43);
     const bodyMid=(topY+bottomY)*.5;
 
     chestRoot.position.set(
-      head.x + f.x*.08,
-      bodyMid + .27,
-      head.z + f.z*.08
+      head.x + f.x*.07,
+      bodyMid + .14,
+      head.z + f.z*.07
     );
     chestRoot.rotation.y=Math.atan2(f.x,f.z);
 
-    // If the real player crouches extremely low, compress visually rather
-    // than allowing the torso to disappear below the virtual floor.
-    const bodyHeight=Math.max(.28,topY-bottomY);
-    chest.scaling.y=Math.min(.92,bodyHeight/.50);
-    belly.position.y=-Math.min(.48,bodyHeight+.05);
-    belly.scaling.y=.58;
+    // Compress slightly when crouching, but never stretch downward.
+    const bodyHeight=Math.max(.22,topY-bottomY);
+    chest.scaling.y=Math.min(.88,bodyHeight/.36);
+    belly.position.y=-Math.min(.37,bodyHeight+.05);
+    belly.scaling.y=.46;
   }
   function keepRigAboveFloor() {
     if (!xrCamera) return;
@@ -1279,6 +1281,9 @@
     npc.hp.text.text="160 HP";
     updateNpcRagdollMeshes();
   }
+
+  // IMPORTANT: spawn the first NPC immediately when the scene loads.
+  createNpc();
 
   function updateNpcLabel() {
     if (npc) npc.hp.text.text=`${Math.max(0,Math.ceil(npc.hpValue))} HP`;
