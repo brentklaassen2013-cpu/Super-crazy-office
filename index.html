@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#07111f" />
+  <title>VR Bat Brawl — Prototype 0.5</title>
+  <style>
+    html, body { width:100%; height:100%; margin:0; overflow:hidden; background:#07111f; font-family:system-ui,-apple-system,sans-serif; }
+    #renderCanvas { width:100%; height:100%; touch-action:none; display:block; }
+    #info {
+      position:fixed; left:12px; top:12px; right:12px; max-width:520px;
+      padding:10px 12px; border-radius:14px; color:#fff;
+      background:rgba(0,0,0,.58); backdrop-filter:blur(8px);
+      font-size:13px; line-height:1.35; pointer-events:none;
+    }
+    #info b { font-size:15px; }
+    #status { opacity:.85; margin-top:4px; }
+  </style>
+</head>
+<body>
+<canvas id="renderCanvas"></canvas>
+<div id="info">
+  <b>VR BAT BRAWL — prototype 0.5</b>
+  <div id="status">Open this HTTPS page in a WebXR VR headset and press ENTER VR.</div>
+</div>
+
+<script src="https://cdn.babylonjs.com/babylon.js"></script>
+<script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
+<script src="./game.js"></script>
+</body>
+</html>
