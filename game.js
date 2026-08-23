@@ -1,5 +1,5 @@
 (() => {
-  const BUILD_VERSION="0.23.5";
+  const BUILD_VERSION="0.23.6";
   const canvas = document.getElementById("renderCanvas");
   const engine = new BABYLON.Engine(canvas, true, { stencil:true });
   const scene = new BABYLON.Scene(engine);
@@ -193,16 +193,16 @@
     };
 
     if(kind==="skin"){
-      for(let i=0;i<420;i++) dot(Math.random()*size,Math.random()*size,.35+Math.random()*.65,108+Math.floor(Math.random()*45));
+      for(let i=0;i<28;i++) dot(Math.random()*size,Math.random()*size,.25+Math.random()*.30,122+Math.floor(Math.random()*12));
     }else if(kind==="fabric"){
       c.strokeStyle="rgba(105,105,105,.65)";c.lineWidth=1;
-      for(let i=0;i<size;i+=4){
+      for(let i=0;i<size;i+=12){
         c.beginPath();c.moveTo(i,0);c.lineTo(i,size);c.stroke();
         c.beginPath();c.moveTo(0,i);c.lineTo(size,i);c.stroke();
       }
     }else if(kind==="wood"){
       c.strokeStyle="rgba(105,105,105,.65)";c.lineWidth=1;
-      for(let y=4;y<size;y+=7){
+      for(let y=8;y<size;y+=18){
         c.beginPath();
         for(let x=0;x<=size;x+=5){
           const yy=y+Math.sin(x*.16+y)*1.8;
@@ -211,14 +211,14 @@
         c.stroke();
       }
     }else if(kind==="wall" || kind==="floor"){
-      for(let i=0;i<310;i++){
-        const v=118+Math.floor(Math.random()*22);
+      for(let i=0;i<18;i++){
+        const v=124+Math.floor(Math.random()*8);
         c.fillStyle=`rgb(${v},${v},${v})`;
-        c.fillRect(Math.random()*size,Math.random()*size,1+Math.random()*1.5,1+Math.random()*1.5);
+        c.fillRect(Math.random()*size,Math.random()*size,1,1);
       }
     }else if(kind==="metal"){
       c.strokeStyle="rgba(105,105,105,.55)";
-      for(let y=0;y<size;y+=3){c.beginPath();c.moveTo(0,y);c.lineTo(size,y);c.stroke();}
+      for(let y=0;y<size;y+=10){c.beginPath();c.moveTo(0,y);c.lineTo(size,y);c.stroke();}
     }
     tex.update(false);
     tex.wrapU=BABYLON.Texture.WRAP_ADDRESSMODE;
@@ -234,7 +234,7 @@
     floor:makeBumpTexture("bumpFloor","floor"),
     metal:makeBumpTexture("bumpMetal","metal")
   };
-  Object.values(BUMP_TEX).forEach(t=>{t.uScale=4;t.vScale=4;});
+  Object.values(BUMP_TEX).forEach(t=>{t.uScale=1.35;t.vScale=1.35;});
 
   const DETAIL_TEX={
     wood:makeDetailTexture("texWood","wood"),
@@ -265,13 +265,13 @@
   // v0.23.4 clean material: darkTrimMat.diffuseTexture=DETAIL_TEX.metal;
   // v0.23.4 clean material: corkMat.diffuseTexture=DETAIL_TEX.wood;
 
-  officeFloorMat.bumpTexture=BUMP_TEX.floor;officeFloorMat.bumpTexture.level=.28;
-  officeWallMat.bumpTexture=BUMP_TEX.wall;officeWallMat.bumpTexture.level=.18;
-  deskMat.bumpTexture=BUMP_TEX.wood;deskMat.bumpTexture.level=.32;
-  deskMetalMat.bumpTexture=BUMP_TEX.metal;deskMetalMat.bumpTexture.level=.24;
-  chairMat.bumpTexture=BUMP_TEX.fabric;chairMat.bumpTexture.level=.30;
-  monitorMat.bumpTexture=BUMP_TEX.metal;monitorMat.bumpTexture.level=.18;
-  keyboardMat.bumpTexture=BUMP_TEX.metal;keyboardMat.bumpTexture.level=.14;
+  // v0.23.6 clean realism: no noisy floor bump
+  // v0.23.6 clean realism: no noisy wall bump
+  deskMat.bumpTexture=BUMP_TEX.wood;deskMat.bumpTexture.level=.06;
+  deskMetalMat.bumpTexture=BUMP_TEX.metal;deskMetalMat.bumpTexture.level=.05;
+  // v0.23.6 clean realism: no noisy chair bump
+  monitorMat.bumpTexture=BUMP_TEX.metal;monitorMat.bumpTexture.level=.04;
+  keyboardMat.bumpTexture=BUMP_TEX.metal;keyboardMat.bumpTexture.level=.03;
 
   const glassMat=new BABYLON.StandardMaterial("officeGlass",scene);
   glassMat.diffuseColor=new BABYLON.Color3(.45,.72,.86);
@@ -279,17 +279,17 @@
   glassMat.alpha=.27;
   glassMat.backFaceCulling=false;
 
-  officeWallMat.specularColor=new BABYLON.Color3(.025,.025,.025);
+  officeWallMat.specularColor=new BABYLON.Color3(.018,.018,.018);
   officeWallMat.specularPower=8;
-  officeFloorMat.specularColor=new BABYLON.Color3(.04,.04,.04);
+  officeFloorMat.specularColor=new BABYLON.Color3(.028,.028,.028);
   officeFloorMat.specularPower=12;
-  deskMat.specularColor=new BABYLON.Color3(.13,.08,.045);
+  deskMat.specularColor=new BABYLON.Color3(.10,.07,.045);
   deskMat.specularPower=22;
-  deskMetalMat.specularColor=new BABYLON.Color3(.42,.44,.46);
+  deskMetalMat.specularColor=new BABYLON.Color3(.24,.26,.28);
   deskMetalMat.specularPower=58;
   chairMat.specularColor=new BABYLON.Color3(.045,.045,.05);
   chairMat.specularPower=10;
-  monitorMat.specularColor=new BABYLON.Color3(.20,.22,.24);
+  monitorMat.specularColor=new BABYLON.Color3(.12,.13,.14);
   monitorMat.specularPower=45;
 
   function addCollision(mesh){
@@ -3823,12 +3823,12 @@
     // clean v0.23.3: shoeMat.diffuseTexture=DETAIL_TEX.metal;
     // clean v0.23.3: hairMat.diffuseTexture=DETAIL_TEX.hair;
 
-    skinMat.bumpTexture=BUMP_TEX.skin;skinMat.bumpTexture.level=.34;
-    skinDarkMat.bumpTexture=BUMP_TEX.skin;skinDarkMat.bumpTexture.level=.30;
-    shirtMat.bumpTexture=BUMP_TEX.fabric;shirtMat.bumpTexture.level=.36;
-    shirtDarkMat.bumpTexture=BUMP_TEX.fabric;shirtDarkMat.bumpTexture.level=.32;
-    pantsMat.bumpTexture=BUMP_TEX.fabric;pantsMat.bumpTexture.level=.30;
-    pantsDarkMat.bumpTexture=BUMP_TEX.fabric;pantsDarkMat.bumpTexture.level=.27;
+    // v0.23.6 clean realism: no dotted skin bump
+    // v0.23.6 clean realism: no dotted skinDark bump
+    // v0.23.6 clean realism: no dotted shirt bump
+    // v0.23.6 clean realism: no dotted shirtDark bump
+    // v0.23.6 clean realism: no dotted pants bump
+    // v0.23.6 clean realism: no dotted pantsDark bump
 
     skinMat.specularColor=new BABYLON.Color3(.08,.045,.035);
     skinMat.specularPower=18;
