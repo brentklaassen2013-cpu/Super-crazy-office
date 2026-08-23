@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#07111f">
-  <title>VR Bat Brawl — v0.24.1</title>
+  <title>VR Bat Brawl — v0.24.2</title>
   <style>
     html, body { width:100%; height:100%; margin:0; overflow:hidden; background:#07111f; font-family:system-ui,-apple-system,sans-serif; }
     #renderCanvas { width:100%; height:100%; display:block; touch-action:none; }
@@ -24,7 +24,7 @@
       min-width:150px; pointer-events:none;
       backdrop-filter:blur(8px);
     }
-    #testPanel {
+    #testPanel { display:none;
       position:fixed; left:10px; right:10px; bottom:10px; z-index:10;
       display:flex; flex-wrap:wrap; gap:7px; justify-content:center;
       padding:9px; border-radius:15px;
@@ -46,20 +46,8 @@
 </head>
 <body>
 <canvas id="renderCanvas"></canvas>
-<div id="info"><b>VR BAT BRAWL v0.24.1</b><br>Full Combat + Multi NPC build.</div>
+<div id="info"><b>VR BAT BRAWL v0.24.2</b><br>Full Combat + Multi NPC build.</div>
 <div id="gameStats">Loading...</div>
-<div id="testPanel">
-  <button data-test="soft">SOFT HIT</button>
-  <button data-test="softmed">SOFT-MED HIT</button>
-  <button data-test="medium">MEDIUM HIT</button>
-  <button data-test="medhard">MED-HARD HIT</button>
-  <button data-test="hard">HARD HIT</button>
-  <button data-test="kill" class="danger">FINISH NPC</button>
-  <button data-test="glass">BREAK WINDOW</button>
-  <button data-test="prop">SMASH OBJECT</button>
-  <button data-test="ai" class="accent">AI: OFF</button>
-  <button data-test="reset">RESET NPC</button>
-</div>
 <script>
 (function(){
   function showError(msg){

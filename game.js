@@ -1,5 +1,5 @@
 (() => {
-  const BUILD_VERSION="0.24.1";
+  const BUILD_VERSION="0.24.2";
   const canvas = document.getElementById("renderCanvas");
   const engine = new BABYLON.Engine(canvas, true, { stencil:true });
   const scene = new BABYLON.Scene(engine);
@@ -61,7 +61,7 @@
   const PERF={
     maxFx:320,
     maxBloodSplats:140,
-    maxDeathParts:22,
+    maxDeathParts:14,
     propSleepSpeed:.055,
     propSleepSeconds:1.15
   };
@@ -1634,6 +1634,49 @@
   }
 
 
+  function loosenDeskContents(deskProp,dir,speed,hard=false){
+    const cx=deskProp.root.position.x;
+    const cz=deskProp.root.position.z;
+
+    for(const other of officeProps){
+      if(other===deskProp || other.broken) continue;
+      if(!["monitor","keyboard","mouse","mug","phone","papers"].includes(other.type)) continue;
+
+      const ox=other.root.position.x;
+      const oz=other.root.position.z;
+      const dx=ox-cx;
+      const dz=oz-cz;
+
+      // Close enough to be sitting on the desk surface.
+      if(Math.abs(dx)<=1.02 && Math.abs(dz)<=.62 && other.root.position.y>.78){
+        other.loose=true;
+        other.sleepTimer=0;
+
+        const slide = new BABYLON.Vector3(
+          dx*1.8 + dir.x*(hard ? .9 : .45),
+          .18 + Math.min(.55, speed*.05),
+          dz*1.8 + dir.z*(hard ? .9 : .45)
+        );
+
+        other.vel.addInPlace(slide);
+        other.ang.addInPlace(new BABYLON.Vector3(
+          (Math.random()-.5)*(hard ? 4.6 : 2.6),
+          (Math.random()-.5)*(hard ? 3.4 : 2.0),
+          (Math.random()-.5)*(hard ? 4.6 : 2.6)
+        ));
+
+        // A very hard desk hit can also crack fragile things.
+        if(hard && other.type==="monitor" && !other.broken){
+          breakMonitor(
+            other,
+            other.root.getAbsolutePosition?.()?.clone?.() || other.root.position.clone(),
+            slide
+          );
+        }
+      }
+    }
+  }
+
   function destroyDeskContents(deskProp,dir,speed){
     const cx=deskProp.root.position.x;
     const cz=deskProp.root.position.z;
@@ -1677,7 +1720,7 @@
     };
 
     if(prop.type==="desk"){
-      destroyDeskContents(prop,d,speed);
+      loosenDeskContents(prop,d,Math.max(speed,4.2),true);
       chunk(new BABYLON.Vector3(0,.72,0),new BABYLON.Vector3(.70,.07,.32),deskMat,1.8);
       chunk(new BABYLON.Vector3(.36,.55,.12),new BABYLON.Vector3(.28,.45,.25),deskMat,1.6);
       for(const sx of [-1,1]) chunk(new BABYLON.Vector3(sx*.52,.33,.18),new BABYLON.Vector3(.06,.60,.06),deskMetalMat,2.2);
@@ -1736,6 +1779,10 @@
     prop.cooldown=.14;prop.loose=true;prop.sleepTimer=0;
 
     let dir=swingVel.clone(); if(dir.lengthSquared()<.001) dir.set(0,1,0); dir.normalize();
+
+    if(prop.type==="desk" && speed>=1.0){
+      loosenDeskContents(prop,dir,speed,false);
+    }
 
     const power=Math.min(5,(speed*1.8)/Math.max(.55,prop.mass));
 
@@ -1799,7 +1846,7 @@
       p.cooldown=Math.max(0,p.cooldown-dt);
       if(!p.loose || p.broken) continue;
 
-      p.vel.y-=5.8*dt;
+      p.vel.y-=7.8*dt;
       p.root.position.addInPlace(p.vel.scale(dt));
       p.root.rotation.x+=p.ang.x*dt;
       p.root.rotation.y+=p.ang.y*dt;
@@ -2036,7 +2083,7 @@
   let bodyVelocity=new BABYLON.Vector3(0,0,0);
 
   // Much lighter than previous versions.
-  const PLAYER_GRAVITY = -2.60;
+  const PLAYER_GRAVITY = -4.35;
   const PUSH_GAIN = 1.68;
   const MAX_PLAYER_SPEED = 9.6;
 
@@ -2222,11 +2269,11 @@
   const chestRoot = new BABYLON.TransformNode("playerBodyRoot",scene);
 
   const chest = BABYLON.MeshBuilder.CreateCapsule("playerChest",{
-    height:.090,radius:.040,tessellation:10
+    height:.060,radius:.028,tessellation:8
   },scene);
   chest.parent=chestRoot;
-  chest.position.y=-.046;
-  chest.scaling.z=.52;
+  chest.position.y=-.020;
+  chest.scaling.z=.34;
   chest.material=MAT.accent;
 
   const belly = BABYLON.MeshBuilder.CreateSphere("playerWaist",{diameter:.056,segments:8},scene);
@@ -2234,15 +2281,18 @@
   belly.position.y=-.082;
   belly.scaling.set(1,.22,.42);
   belly.material=MAT.accent;
+  belly.setEnabled(false);
 
   const shoulderL = BABYLON.MeshBuilder.CreateSphere("shoulderL",{diameter:.032,segments:8},scene);
   shoulderL.parent=chestRoot;
   shoulderL.position.set(-.042,-.014,0);
   shoulderL.material=MAT.accent;
+  shoulderL.setEnabled(false);
 
   const shoulderR = shoulderL.clone("shoulderR");
   shoulderR.parent=chestRoot;
-  shoulderR.position.x=.078;
+  shoulderR.position.x=.042;
+  shoulderR.setEnabled(false);
 
   chestRoot.setEnabled(false);
 
@@ -2259,23 +2309,21 @@
     if (f.lengthSquared()<.001) f.set(0,0,1);
     f.normalize();
 
-    // Very tiny torso kept lower and slightly behind the headset
-    // so it does not climb into the screen.
-    const topY=Math.max(.84,head.y-.145);
-    const bottomY=Math.max(.74,head.y-.255);
+    // Minimal chest-only torso: tiny marker that ends at the chest
+    // and stays clearly below the face/camera.
+    const topY=Math.max(.84,head.y-.165);
+    const bottomY=Math.max(.79,head.y-.225);
     const bodyMid=(topY+bottomY)*.5;
 
     chestRoot.position.set(
-      head.x - f.x*.020,
-      bodyMid - .012,
-      head.z - f.z*.020
+      head.x - f.x*.030,
+      bodyMid - .018,
+      head.z - f.z*.030
     );
     chestRoot.rotation.y=Math.atan2(f.x,f.z);
 
-    const bodyHeight=Math.max(.06,topY-bottomY);
-    chest.scaling.y=Math.min(.55,bodyHeight/.090);
-    belly.position.y=-Math.min(.082,bodyHeight*.58);
-    belly.scaling.y=.18;
+    const bodyHeight=Math.max(.045,topY-bottomY);
+    chest.scaling.y=Math.min(.42,bodyHeight/.060);
   }
   function keepRigAboveFloor() {
     if (!xrCamera) return;
@@ -3613,7 +3661,7 @@
     }
 
     // Right arm actively reaches toward the player's current body.
-    if(npc.attackAnim>0 && (isInXR() || testAIEnabled)){
+    if(npc.attackAnim>0 && isInXR()){
       const progress=1-(npc.attackAnim/npc.attackDuration);
       const shoulder=rd.points.rShoulder.base.clone();
 
@@ -4753,7 +4801,7 @@
   }
   function moveDeathPart(r,dt) {
     const delta=r.vel.scale(dt);
-    const steps=Math.max(1,Math.ceil(delta.length()/.022));
+    const steps=Math.max(1,Math.ceil(delta.length()/.016));
     const step=delta.scale(1/steps);
     for(let i=0;i<steps;i++){
       r.mesh.position.addInPlace(step);
@@ -4807,7 +4855,7 @@
       const outward=mesh.position.subtract(chestCenter);
       if(outward.lengthSquared()>.0001){
         outward.normalize();
-        vel.addInPlace(outward.scale(.38+Math.random()*.42));
+        vel.addInPlace(outward.scale(.20+Math.random()*.24));
       }
 
       const maxPieceSpeed=7.2;
@@ -4819,7 +4867,7 @@
         mesh,
         vel,
         radius,
-        life:4.2,
+        life:3.0,
         age:0,
         sleepTimer:0,
         sleeping:false,
@@ -5391,7 +5439,7 @@
         npc.velocity.x*=Math.pow(.10,dt);
         npc.velocity.z*=Math.pow(.10,dt);
 
-        if (!npc.recovering && (isInXR() || testAIEnabled) && !playerDead) {
+        if (!npc.recovering && isInXR() && !playerDead) {
           const playerPos=playerWorldPos();
           const toPlayer=playerPos.subtract(npc.root.position);
           toPlayer.y=0;
@@ -5671,7 +5719,7 @@
             // Break the ragdoll apart from its CURRENT physical pose.
             spawnDeathRagdollFromCurrent(
               npc.deathDir,
-              Math.min(8.8,4.2+npc.deathSpeed*.28)
+              Math.min(6.6,3.4+npc.deathSpeed*.20)
             );
 
             // Very heavy stylized blood burst.
@@ -5708,7 +5756,7 @@
       r.age+=dt;
 
       if(!r.sleeping){
-        r.vel.y-=5.6*dt;
+        r.vel.y-=4.8*dt;
 
         // Extra substeps reduce tunnelling through desks/walls/floor.
         moveDeathPart(r,dt);
@@ -5717,14 +5765,14 @@
         r.mesh.rotation.y+=r.spin.y*dt;
         r.mesh.rotation.z+=r.spin.z*dt;
 
-        r.vel.x*=Math.pow(.46,dt);
-        r.vel.z*=Math.pow(.46,dt);
-        r.spin.scaleInPlace(Math.pow(.24,dt));
+        r.vel.x*=Math.pow(.34,dt);
+        r.vel.z*=Math.pow(.34,dt);
+        r.spin.scaleInPlace(Math.pow(.14,dt));
 
         const motion=r.vel.length()+r.spin.length()*.06;
         if(r.age>.65 && motion<.32){
           r.sleepTimer+=dt;
-          if(r.sleepTimer>.32){
+          if(r.sleepTimer>.20){
             r.sleeping=true;
             r.vel.set(0,0,0);
             r.spin.set(0,0,0);
@@ -6022,7 +6070,7 @@
   }
 
   function updateExtraNpcs(dt){
-    const activeAI=(isInXR() || testAIEnabled) && !playerDead;
+    const activeAI=isInXR() && !playerDead;
     const pp=playerWorldPos();
 
     for(let i=0;i<extraNpcs.length;i++){
