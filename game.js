@@ -34,34 +34,636 @@
   };
 
   // ------------------------------------------------------------
-  // Arena
+  // Destructible OFFICE map
   // ------------------------------------------------------------
   const collisionSurfaces = [];
-  function box(name, pos, size, material=MAT.wall) {
-    const b = BABYLON.MeshBuilder.CreateBox(name,{
+  const breakableWindows = [];
+  const officeProps = [];
+  const fxBodies = [];
+  const bloodSplats = [];
+
+  const officeFloorMat=mkMat("officeFloor","#7c858f");
+  const officeWallMat=mkMat("officeWall","#d8dde3");
+  const deskMat=mkMat("deskWood","#76513b");
+  const deskMetalMat=mkMat("deskMetal","#4b5563");
+  const chairMat=mkMat("chair","#202938");
+  const monitorMat=mkMat("monitor","#181c24");
+  const screenMat=mkMat("screen","#183b55");
+  screenMat.emissiveColor=new BABYLON.Color3(.06,.16,.24);
+  const keyboardMat=mkMat("keyboard","#303640");
+  const plantMat=mkMat("plant","#397449");
+  const potMat=mkMat("pot","#8b5a3c");
+  const bloodMat=mkMat("blood","#7a0710");
+  bloodMat.specularColor=new BABYLON.Color3(.18,.02,.02);
+  const bloodBrightMat=mkMat("bloodBright","#b30b18");
+  const outsideMat=mkMat("outsideGround","#333943");
+
+  const glassMat=new BABYLON.StandardMaterial("officeGlass",scene);
+  glassMat.diffuseColor=new BABYLON.Color3(.45,.72,.86);
+  glassMat.specularColor=new BABYLON.Color3(.9,.95,1);
+  glassMat.alpha=.27;
+  glassMat.backFaceCulling=false;
+
+  function addCollision(mesh){
+    mesh.checkCollisions=true;
+    if(!collisionSurfaces.includes(mesh)) collisionSurfaces.push(mesh);
+    return mesh;
+  }
+
+  function removeCollision(mesh){
+    const i=collisionSurfaces.indexOf(mesh);
+    if(i>=0) collisionSurfaces.splice(i,1);
+    mesh.checkCollisions=false;
+  }
+
+  function box(name,pos,size,material=officeWallMat,collidable=true){
+    const b=BABYLON.MeshBuilder.CreateBox(name,{
       width:size.x,height:size.y,depth:size.z
     },scene);
     b.position.copyFrom(pos);
-    b.material = material;
-    b.checkCollisions = true;
-    collisionSurfaces.push(b);
+    b.material=material;
+    if(collidable) addCollision(b);
     return b;
   }
 
-  const ground = box("ground",new BABYLON.Vector3(0,-.12,0),new BABYLON.Vector3(12,.24,12),MAT.floor);
-  box("backWall",new BABYLON.Vector3(0,1.5,5.7),new BABYLON.Vector3(11.5,3,.25));
-  box("leftWall",new BABYLON.Vector3(-5.7,1.5,0),new BABYLON.Vector3(.25,3,11.5));
-  box("rightWall",new BABYLON.Vector3(5.7,1.5,0),new BABYLON.Vector3(.25,3,11.5));
-  box("frontRailL",new BABYLON.Vector3(-3.7,.65,-5.65),new BABYLON.Vector3(4,1.3,.3));
-  box("frontRailR",new BABYLON.Vector3(3.7,.65,-5.65),new BABYLON.Vector3(4,1.3,.3));
-  box("platform1",new BABYLON.Vector3(-2.5,.45,1.4),new BABYLON.Vector3(2.5,.9,2.2),MAT.accent);
-  box("platform2",new BABYLON.Vector3(2.7,.75,2.1),new BABYLON.Vector3(2.2,1.5,2.2),MAT.accent);
-  box("climbWall",new BABYLON.Vector3(0,1.45,3.8),new BABYLON.Vector3(4.4,2.9,.35));
-  box("pillarA",new BABYLON.Vector3(-4,1.2,-1.2),new BABYLON.Vector3(.65,2.4,.65));
-  box("pillarB",new BABYLON.Vector3(4,1.2,-1.2),new BABYLON.Vector3(.65,2.4,.65));
+  function childBox(name,root,pos,size,material,collidable=false){
+    const m=BABYLON.MeshBuilder.CreateBox(name,{
+      width:size.x,height:size.y,depth:size.z
+    },scene);
+    m.parent=root;
+    m.position.copyFrom(pos);
+    m.material=material;
+    if(collidable) addCollision(m);
+    return m;
+  }
 
-  const previewCamera = new BABYLON.UniversalCamera("preview",new BABYLON.Vector3(0,1.65,-4.4),scene);
-  previewCamera.setTarget(new BABYLON.Vector3(0,1.2,1.6));
+  function childCylinder(name,root,pos,height,diameter,material){
+    const m=BABYLON.MeshBuilder.CreateCylinder(name,{
+      height,diameter,tessellation:14
+    },scene);
+    m.parent=root;
+    m.position.copyFrom(pos);
+    m.material=material;
+    return m;
+  }
+
+  // Office is on an upper floor. The player stays on the office floor,
+  // while NPC/body pieces can fall four metres outside the windows.
+  const ground=box(
+    "officeFloor",
+    new BABYLON.Vector3(0,-.12,0),
+    new BABYLON.Vector3(10,.24,8),
+    officeFloorMat,
+    true
+  );
+
+  const outsideGround=box(
+    "streetBelow",
+    new BABYLON.Vector3(0,-4.32,3),
+    new BABYLON.Vector3(28,.25,22),
+    outsideMat,
+    true
+  );
+
+  // Ceiling + side walls.
+  box("officeCeiling",new BABYLON.Vector3(0,3.05,0),new BABYLON.Vector3(10,.18,8));
+  box("officeLeftWall",new BABYLON.Vector3(-5,1.48,0),new BABYLON.Vector3(.20,3.0,8));
+  box("officeRightWall",new BABYLON.Vector3(5,1.48,0),new BABYLON.Vector3(.20,3.0,8));
+
+  // Front wall with an open doorway.
+  box("frontWallL",new BABYLON.Vector3(-3.25,1.48,-4),new BABYLON.Vector3(3.5,3,.20));
+  box("frontWallR",new BABYLON.Vector3(3.25,1.48,-4),new BABYLON.Vector3(3.5,3,.20));
+  box("frontWallTop",new BABYLON.Vector3(0,2.62,-4),new BABYLON.Vector3(3.0,.72,.20));
+
+  // Window wall: sill, header and columns create three real openings.
+  box("windowSill",new BABYLON.Vector3(0,.32,4),new BABYLON.Vector3(10,.64,.20));
+  box("windowHeader",new BABYLON.Vector3(0,2.78,4),new BABYLON.Vector3(10,.54,.20));
+  for(const x of [-4.75,-1.58,1.58,4.75]){
+    box("windowColumn"+x,new BABYLON.Vector3(x,1.55,4),new BABYLON.Vector3(.50,1.95,.20));
+  }
+
+  function makeWindow(name,x,width=2.62){
+    const g=BABYLON.MeshBuilder.CreateBox(name,{
+      width,height:1.90,depth:.055
+    },scene);
+    g.position.set(x,1.57,3.955);
+    g.material=glassMat;
+    addCollision(g);
+    g.metadata={
+      breakableWindow:true,
+      broken:false
+    };
+    breakableWindows.push(g);
+    return g;
+  }
+
+  makeWindow("officeWindowLeft",-3.16);
+  makeWindow("officeWindowMiddle",0);
+  makeWindow("officeWindowRight",3.16);
+
+  // Ceiling lights.
+  const lightPanelMat=mkMat("lightPanel","#eaf6ff");
+  lightPanelMat.emissiveColor=new BABYLON.Color3(.72,.82,.90);
+  for(const x of [-2.5,0,2.5]){
+    const p=box("ceilingLight"+x,new BABYLON.Vector3(x,2.94,0),new BABYLON.Vector3(1.25,.035,.42),lightPanelMat,false);
+  }
+
+  // A few distant buildings outside so the room visibly feels high up.
+  const distantMat=mkMat("distant","#273241");
+  for(let i=0;i<6;i++){
+    const h=2.5+(i%3)*1.6;
+    const b=box(
+      "distantBuilding"+i,
+      new BABYLON.Vector3(-8+i*3.1,-4.15+h/2,10+(i%2)*3),
+      new BABYLON.Vector3(2.2,h,2.4),
+      distantMat,
+      false
+    );
+  }
+
+  function registerProp(root,hitMeshes,opts={}){
+    const p={
+      root,
+      hitMeshes,
+      type:opts.type||"prop",
+      mass:opts.mass||2,
+      breakThreshold:opts.breakThreshold??999,
+      radius:opts.radius||.35,
+      minY:opts.minY??0,
+      vel:new BABYLON.Vector3(),
+      ang:new BABYLON.Vector3(),
+      cooldown:0,
+      loose:false,
+      broken:false,
+      screen:opts.screen||null
+    };
+    officeProps.push(p);
+    return p;
+  }
+
+  function createDesk(name,x,z,rot=0){
+    const root=new BABYLON.TransformNode(name,scene);
+    root.position.set(x,0,z);
+    root.rotation.y=rot;
+
+    const top=childBox(name+"Top",root,new BABYLON.Vector3(0,.76,0),new BABYLON.Vector3(1.55,.09,.72),deskMat,true);
+    const modesty=childBox(name+"Panel",root,new BABYLON.Vector3(0,.43,.30),new BABYLON.Vector3(1.35,.55,.07),deskMat,false);
+    const legs=[];
+    for(const lx of [-.66,.66]){
+      for(const lz of [-.26,.26]){
+        legs.push(childBox(
+          name+"Leg"+lx+lz,root,
+          new BABYLON.Vector3(lx,.37,lz),
+          new BABYLON.Vector3(.07,.72,.07),
+          deskMetalMat,
+          false
+        ));
+      }
+    }
+
+    return registerProp(root,[top,modesty,...legs],{
+      type:"desk",mass:12,radius:.78,minY:0,breakThreshold:10
+    });
+  }
+
+  function createChair(name,x,z,rot=0){
+    const root=new BABYLON.TransformNode(name,scene);
+    root.position.set(x,0,z);
+    root.rotation.y=rot;
+
+    const seat=childBox(name+"Seat",root,new BABYLON.Vector3(0,.46,0),new BABYLON.Vector3(.48,.10,.48),chairMat,false);
+    const back=childBox(name+"Back",root,new BABYLON.Vector3(0,.80,.20),new BABYLON.Vector3(.48,.58,.08),chairMat,false);
+
+    const stem=childCylinder(name+"Stem",root,new BABYLON.Vector3(0,.25,0),.38,.075,deskMetalMat);
+    const base=childBox(name+"Base",root,new BABYLON.Vector3(0,.07,0),new BABYLON.Vector3(.55,.055,.55),deskMetalMat,false);
+
+    return registerProp(root,[seat,back,stem,base],{
+      type:"chair",mass:2.2,radius:.42,minY:0,breakThreshold:8
+    });
+  }
+
+  function createMonitor(name,x,z,rot=0){
+    const root=new BABYLON.TransformNode(name,scene);
+    root.position.set(x,.82,z);
+    root.rotation.y=rot;
+
+    const housing=childBox(name+"Housing",root,new BABYLON.Vector3(0,.29,0),new BABYLON.Vector3(.55,.35,.075),monitorMat,false);
+    const screen=childBox(name+"Screen",root,new BABYLON.Vector3(0,.29,-.041),new BABYLON.Vector3(.49,.29,.012),screenMat,false);
+    const stand=childCylinder(name+"Stand",root,new BABYLON.Vector3(0,.10,.02),.23,.045,deskMetalMat);
+    const foot=childBox(name+"Foot",root,new BABYLON.Vector3(0,-.02,.03),new BABYLON.Vector3(.28,.035,.20),deskMetalMat,false);
+
+    return registerProp(root,[housing,screen,stand,foot],{
+      type:"monitor",mass:1.15,radius:.34,minY:.18,breakThreshold:2.0,screen
+    });
+  }
+
+  function createKeyboard(name,x,z,rot=0){
+    const root=new BABYLON.TransformNode(name,scene);
+    root.position.set(x,.82,z);
+    root.rotation.y=rot;
+    const key=childBox(name+"Body",root,new BABYLON.Vector3(0,.015,0),new BABYLON.Vector3(.48,.035,.17),keyboardMat,false);
+    return registerProp(root,[key],{
+      type:"keyboard",mass:.35,radius:.24,minY:.04,breakThreshold:5
+    });
+  }
+
+  function createBin(name,x,z){
+    const root=new BABYLON.TransformNode(name,scene);
+    root.position.set(x,0,z);
+    const body=BABYLON.MeshBuilder.CreateCylinder(name+"Body",{
+      height:.46,diameterTop:.40,diameterBottom:.32,tessellation:16
+    },scene);
+    body.parent=root;
+    body.position.y=.23;
+    body.material=deskMetalMat;
+    return registerProp(root,[body],{
+      type:"bin",mass:.7,radius:.23,minY:0,breakThreshold:7
+    });
+  }
+
+  function createPlant(name,x,z){
+    const root=new BABYLON.TransformNode(name,scene);
+    root.position.set(x,0,z);
+
+    const pot=BABYLON.MeshBuilder.CreateCylinder(name+"Pot",{
+      height:.34,diameterTop:.34,diameterBottom:.24,tessellation:14
+    },scene);
+    pot.parent=root;pot.position.y=.17;pot.material=potMat;
+
+    const stalk=childCylinder(name+"Stalk",root,new BABYLON.Vector3(0,.53,0),.48,.045,plantMat);
+
+    const leaves=[];
+    for(let i=0;i<5;i++){
+      const l=BABYLON.MeshBuilder.CreateSphere(name+"Leaf"+i,{diameter:.24,segments:10},scene);
+      l.parent=root;
+      const a=i/5*Math.PI*2;
+      l.position.set(Math.cos(a)*.13,.67+Math.sin(a*2)*.05,Math.sin(a)*.13);
+      l.scaling.set(1.25,.55,.70);
+      l.material=plantMat;
+      leaves.push(l);
+    }
+
+    return registerProp(root,[pot,stalk,...leaves],{
+      type:"plant",mass:.9,radius:.34,minY:0,breakThreshold:4.5
+    });
+  }
+
+  // Main office furniture layout.
+  const deskLayout=[
+    [-2.65,-1.25,0],
+    [1.55,-1.25,0],
+    [-2.65,1.35,Math.PI],
+    [1.55,1.35,Math.PI]
+  ];
+
+  deskLayout.forEach((d,i)=>{
+    createDesk("desk"+i,d[0],d[1],d[2]);
+
+    const facing=d[2];
+    const monitorZ=d[1]+(facing===0?.10:-.10);
+    createMonitor("monitor"+i,d[0],monitorZ,facing);
+    createKeyboard("keyboard"+i,d[0],d[1]+(facing===0?-.22:.22),facing);
+
+    createChair(
+      "chair"+i,
+      d[0],
+      d[1]+(facing===0?-.72:.72),
+      facing
+    );
+  });
+
+  createBin("binA",-4.15,-2.7);
+  createBin("binB",4.05,2.6);
+  createPlant("plantA",-4.28,2.65);
+  createPlant("plantB",4.25,-2.65);
+
+  // Low office divider/cabinet.
+  box("cabinetA",new BABYLON.Vector3(-4.10,.55,.05),new BABYLON.Vector3(.62,1.10,2.0),deskMetalMat,true);
+  box("cabinetB",new BABYLON.Vector3(4.10,.55,.05),new BABYLON.Vector3(.62,1.10,2.0),deskMetalMat,true);
+
+  function surfaceSphereHit(surface,center,radius){
+    if(!surface || surface.isDisposed?.() || !surface.isEnabled()) return null;
+
+    surface.computeWorldMatrix(true);
+    const bb=surface.getBoundingInfo().boundingBox;
+    const min=bb.minimumWorld,max=bb.maximumWorld;
+
+    const q=new BABYLON.Vector3(
+      Math.max(min.x,Math.min(max.x,center.x)),
+      Math.max(min.y,Math.min(max.y,center.y)),
+      Math.max(min.z,Math.min(max.z,center.z))
+    );
+
+    let dv=center.subtract(q);
+    let d=dv.length();
+    if(d>=radius) return null;
+
+    let normal;
+    if(d>.0001){
+      normal=dv.scale(1/d);
+    }else{
+      const faces=[
+        {v:Math.abs(center.x-min.x),n:new BABYLON.Vector3(-1,0,0)},
+        {v:Math.abs(max.x-center.x),n:new BABYLON.Vector3(1,0,0)},
+        {v:Math.abs(center.y-min.y),n:new BABYLON.Vector3(0,-1,0)},
+        {v:Math.abs(max.y-center.y),n:new BABYLON.Vector3(0,1,0)},
+        {v:Math.abs(center.z-min.z),n:new BABYLON.Vector3(0,0,-1)},
+        {v:Math.abs(max.z-center.z),n:new BABYLON.Vector3(0,0,1)}
+      ].sort((a,b)=>a.v-b.v);
+      normal=faces[0].n;
+      d=0;
+    }
+
+    return {
+      mesh:surface,
+      point:q,
+      normal,
+      correction:normal.scale(radius-d+.003)
+    };
+  }
+
+  function findSurfaceCollision(center,radius){
+    let best=null,bestLen=0;
+    for(const s of collisionSurfaces){
+      const h=surfaceSphereHit(s,center,radius);
+      if(!h) continue;
+      const l=h.correction.length();
+      if(l>bestLen){best=h;bestLen=l;}
+    }
+    return best;
+  }
+
+  function createBloodSplat(hit,scale=1){
+    if(!hit?.mesh || !hit.point || !hit.normal) return;
+
+    const splat=BABYLON.MeshBuilder.CreateDisc("bloodSplat",{
+      radius:(.045+Math.random()*.095)*scale,
+      tessellation:14,
+      sideOrientation:BABYLON.Mesh.DOUBLESIDE
+    },scene);
+
+    splat.position=hit.point.add(hit.normal.scale(.007));
+    splat.material=Math.random()<.35?bloodBrightMat:bloodMat;
+    splat.lookAt(splat.position.add(hit.normal));
+    splat.rotation.z=Math.random()*Math.PI*2;
+    splat.isPickable=false;
+
+    bloodSplats.push(splat);
+    while(bloodSplats.length>70){
+      const old=bloodSplats.shift();
+      old?.dispose();
+    }
+  }
+
+  function spawnBloodExplosion(origin,hitDir,strength=1){
+    const dir=hitDir.clone();
+    if(dir.lengthSquared()<.001) dir.set(0,1,0);
+    dir.normalize();
+
+    for(let i=0;i<46;i++){
+      const drop=BABYLON.MeshBuilder.CreateSphere("bloodDrop",{
+        diameter:.020+Math.random()*.040,
+        segments:5
+      },scene);
+      drop.position=origin.add(new BABYLON.Vector3(
+        (Math.random()-.5)*.22,
+        (Math.random()-.5)*.28,
+        (Math.random()-.5)*.22
+      ));
+      drop.material=Math.random()<.35?bloodBrightMat:bloodMat;
+
+      const radial=new BABYLON.Vector3(
+        (Math.random()-.5)*5.2,
+        Math.random()*4.6,
+        (Math.random()-.5)*5.2
+      );
+
+      fxBodies.push({
+        mesh:drop,
+        kind:"blood",
+        radius:.018,
+        vel:dir.scale((2.0+Math.random()*4.0)*strength).add(radial),
+        spin:new BABYLON.Vector3(),
+        life:2.1+Math.random()*1.2
+      });
+    }
+
+    // Immediate nearby floor splats make the finishing hit feel heavier.
+    for(let i=0;i<8;i++){
+      const p=origin.add(new BABYLON.Vector3(
+        (Math.random()-.5)*1.25,
+        -origin.y+.01,
+        (Math.random()-.5)*1.25
+      ));
+      const hit=surfaceSphereHit(ground,p,.06);
+      if(hit) createBloodSplat(hit,.8+Math.random()*.7);
+    }
+  }
+
+  function spawnGlassBurst(pos,velocity,count=18){
+    const v=velocity?.clone()||new BABYLON.Vector3();
+    if(v.lengthSquared()<.001) v.set(0,0,2);
+
+    for(let i=0;i<count;i++){
+      const sh=BABYLON.MeshBuilder.CreateBox("glassShard",{
+        width:.035+Math.random()*.065,
+        height:.035+Math.random()*.10,
+        depth:.008+Math.random()*.012
+      },scene);
+      sh.position=pos.add(new BABYLON.Vector3(
+        (Math.random()-.5)*.35,
+        (Math.random()-.5)*.50,
+        (Math.random()-.5)*.05
+      ));
+      sh.material=glassMat;
+
+      const dir=v.normalize().scale(.9+Math.random()*2.0);
+      fxBodies.push({
+        mesh:sh,
+        kind:"glass",
+        radius:.045,
+        vel:dir.add(new BABYLON.Vector3(
+          (Math.random()-.5)*2.0,
+          .5+Math.random()*2.3,
+          (Math.random()-.5)*2.0
+        )),
+        spin:new BABYLON.Vector3(
+          (Math.random()-.5)*12,
+          (Math.random()-.5)*12,
+          (Math.random()-.5)*12
+        ),
+        life:2.2+Math.random()*1.2
+      });
+    }
+  }
+
+  function breakWindow(mesh,hitPos,velocity){
+    if(!mesh?.metadata?.breakableWindow || mesh.metadata.broken) return false;
+
+    mesh.metadata.broken=true;
+    removeCollision(mesh);
+    mesh.setEnabled(false);
+
+    spawnGlassBurst(
+      hitPos||mesh.getAbsolutePosition(),
+      velocity||new BABYLON.Vector3(0,0,2),
+      24
+    );
+    simpleHitSound(true);
+    return true;
+  }
+
+  function breakMonitor(prop,hitPos,velocity){
+    if(prop.broken) return;
+    prop.broken=true;
+
+    if(prop.screen) prop.screen.setEnabled(false);
+    spawnGlassBurst(hitPos,velocity,12);
+
+    // small electrical flash
+    const flashMat=mkMat("monitorFlash"+Math.random(),"#b9efff");
+    flashMat.emissiveColor=new BABYLON.Color3(.6,.9,1);
+    for(let i=0;i<6;i++){
+      const s=BABYLON.MeshBuilder.CreateSphere("monitorSpark",{diameter:.025,segments:5},scene);
+      s.position.copyFrom(hitPos);
+      s.material=flashMat;
+      fxBodies.push({
+        mesh:s,kind:"spark",radius:.012,
+        vel:new BABYLON.Vector3(
+          (Math.random()-.5)*2.8,
+          .8+Math.random()*2.0,
+          (Math.random()-.5)*2.8
+        ),
+        spin:new BABYLON.Vector3(),
+        life:.35+Math.random()*.35
+      });
+    }
+  }
+
+  function segmentHitsMesh(a,b,mesh,r=.075){
+    if(!mesh || !mesh.isEnabled()) return false;
+    for(let i=0;i<=6;i++){
+      const t=i/6;
+      const p=BABYLON.Vector3.Lerp(a,b,t);
+      const q=closestPointAabb(p,mesh);
+      if(BABYLON.Vector3.Distance(p,q)<=r) return true;
+    }
+    return false;
+  }
+
+  function hitOfficeProp(prop,hitPos,swingVel,speed){
+    if(prop.cooldown>0) return;
+    prop.cooldown=.16;
+    prop.loose=true;
+
+    let dir=swingVel.clone();
+    if(dir.lengthSquared()<.001) dir.set(0,1,0);
+    dir.normalize();
+
+    const power=Math.min(5.0,(speed*1.8)/Math.max(.55,prop.mass));
+    prop.vel.addInPlace(dir.scale(power));
+    prop.vel.y+=Math.min(1.3,speed*.08);
+
+    prop.ang.addInPlace(new BABYLON.Vector3(
+      (Math.random()-.5)*power*2.0,
+      (Math.random()-.5)*power*1.6,
+      (Math.random()-.5)*power*2.0
+    ));
+
+    if(prop.type==="monitor" && speed>=prop.breakThreshold){
+      breakMonitor(prop,hitPos,swingVel);
+    }
+
+    pulse(hands.right,Math.min(.75,.12+speed*.055),28+Math.min(45,speed*3));
+    simpleHitSound(false);
+  }
+
+  function handleBatOfficeHit(prev,tip,vel,speed){
+    if(speed<.55) return;
+
+    for(const w of breakableWindows){
+      if(w.metadata?.broken || !w.isEnabled()) continue;
+      if(segmentHitsMesh(prev,tip,w,.09)){
+        if(speed>=1.35){
+          breakWindow(w,tip,vel);
+          pulse(hands.right,.95,90);
+        }else{
+          pulse(hands.right,.20,25);
+        }
+        return;
+      }
+    }
+
+    for(const prop of officeProps){
+      if(prop.cooldown>0) continue;
+      const hit=prop.hitMeshes.some(m=>segmentHitsMesh(prev,tip,m,.075));
+      if(hit){
+        hitOfficeProp(prop,tip,vel,speed);
+        return;
+      }
+    }
+  }
+
+  function updateOfficePhysics(dt){
+    for(const p of officeProps){
+      p.cooldown=Math.max(0,p.cooldown-dt);
+      if(!p.loose) continue;
+
+      p.vel.y-=5.8*dt;
+      p.root.position.addInPlace(p.vel.scale(dt));
+
+      p.root.rotation.x+=p.ang.x*dt;
+      p.root.rotation.y+=p.ang.y*dt;
+      p.root.rotation.z+=p.ang.z*dt;
+
+      p.vel.x*=Math.pow(.46,dt);
+      p.vel.z*=Math.pow(.46,dt);
+      p.ang.scaleInPlace(Math.pow(.32,dt));
+
+      if(p.root.position.y<p.minY){
+        p.root.position.y=p.minY;
+        if(p.vel.y<0) p.vel.y*=-.12;
+        p.vel.x*=.78;
+        p.vel.z*=.78;
+      }
+    }
+
+    for(let i=fxBodies.length-1;i>=0;i--){
+      const f=fxBodies[i];
+      f.life-=dt;
+      f.vel.y-=7.4*dt;
+      f.mesh.position.addInPlace(f.vel.scale(dt));
+
+      if(f.spin){
+        f.mesh.rotation.x+=f.spin.x*dt;
+        f.mesh.rotation.y+=f.spin.y*dt;
+        f.mesh.rotation.z+=f.spin.z*dt;
+      }
+
+      const hit=findSurfaceCollision(f.mesh.position,f.radius||.02);
+      if(hit){
+        if(f.kind==="blood"){
+          createBloodSplat(hit,.7+Math.random()*.75);
+          f.mesh.dispose();
+          fxBodies.splice(i,1);
+          continue;
+        }
+
+        f.mesh.position.addInPlace(hit.correction);
+        const vn=BABYLON.Vector3.Dot(f.vel,hit.normal);
+        if(vn<0) f.vel.subtractInPlace(hit.normal.scale(vn*1.35));
+        f.vel.scaleInPlace(f.kind==="glass"?.48:.35);
+      }
+
+      if(f.life<=0 || f.mesh.position.y<-5.2){
+        f.mesh.dispose();
+        fxBodies.splice(i,1);
+      }
+    }
+  }
+
+  const previewCamera = new BABYLON.UniversalCamera("preview",new BABYLON.Vector3(0,1.65,-3.15),scene);
+  previewCamera.setTarget(new BABYLON.Vector3(0,1.25,.7));
   previewCamera.minZ=.04;
   scene.activeCamera=previewCamera;
 
@@ -77,7 +679,7 @@
   let bodyVelocity=new BABYLON.Vector3(0,0,0);
 
   // Much lighter than previous versions.
-  const PLAYER_GRAVITY = -0.38;
+  const PLAYER_GRAVITY = -2.60;
   const PUSH_GAIN = 1.68;
   const MAX_PLAYER_SPEED = 9.6;
 
@@ -195,6 +797,7 @@
     blockPlane.parent=xrCamera;
     blockPlane.position.set(.48,.18,1.15);
     blockPlane.rotation.set(0,Math.PI,0);
+    blockPlane.setEnabled(false);
   }
 
   function hurtPlayer(amount, fromWorldPos) {
@@ -247,28 +850,27 @@
   const chestRoot = new BABYLON.TransformNode("playerBodyRoot",scene);
 
   const chest = BABYLON.MeshBuilder.CreateCapsule("playerChest",{
-    height:.245,radius:.125,tessellation:14
+    height:.145,radius:.072,tessellation:12
   },scene);
   chest.parent=chestRoot;
-  chest.position.y=-.115;
-  chest.scaling.z=.72;
+  chest.position.y=-.065;
+  chest.scaling.z=.66;
   chest.material=MAT.accent;
 
-  // Tiny high waist: this is deliberately much smaller than v0.13.
-  const belly = BABYLON.MeshBuilder.CreateSphere("playerWaist",{diameter:.165,segments:12},scene);
+  const belly = BABYLON.MeshBuilder.CreateSphere("playerWaist",{diameter:.095,segments:10},scene);
   belly.parent=chestRoot;
-  belly.position.y=-.245;
-  belly.scaling.set(1,.38,.68);
+  belly.position.y=-.135;
+  belly.scaling.set(1,.30,.62);
   belly.material=MAT.accent;
 
-  const shoulderL = BABYLON.MeshBuilder.CreateSphere("shoulderL",{diameter:.115,segments:10},scene);
+  const shoulderL = BABYLON.MeshBuilder.CreateSphere("shoulderL",{diameter:.068,segments:9},scene);
   shoulderL.parent=chestRoot;
-  shoulderL.position.set(-.125,-.025,0);
+  shoulderL.position.set(-.078,-.005,0);
   shoulderL.material=MAT.accent;
 
   const shoulderR = shoulderL.clone("shoulderR");
   shoulderR.parent=chestRoot;
-  shoulderR.position.x=.125;
+  shoulderR.position.x=.078;
 
   chestRoot.setEnabled(false);
 
@@ -285,23 +887,22 @@
     if (f.lengthSquared()<.001) f.set(0,0,1);
     f.normalize();
 
-    // Tiny, very high torso: upper chest only, ending around the high waist.
-    const topY=Math.max(.86,head.y-.105);
-    const bottomY=Math.max(.72,head.y-.31);
+    // Micro torso: only a small upper-body marker under the headset.
+    const topY=Math.max(.94,head.y-.070);
+    const bottomY=Math.max(.84,head.y-.205);
     const bodyMid=(topY+bottomY)*.5;
 
     chestRoot.position.set(
-      head.x + f.x*.055,
-      bodyMid + .065,
-      head.z + f.z*.055
+      head.x + f.x*.045,
+      bodyMid + .032,
+      head.z + f.z*.045
     );
     chestRoot.rotation.y=Math.atan2(f.x,f.z);
 
-    // Never stretch downward when crouching.
-    const bodyHeight=Math.max(.14,topY-bottomY);
-    chest.scaling.y=Math.min(.78,bodyHeight/.245);
-    belly.position.y=-Math.min(.235,bodyHeight+.025);
-    belly.scaling.y=.34;
+    const bodyHeight=Math.max(.09,topY-bottomY);
+    chest.scaling.y=Math.min(.72,bodyHeight/.145);
+    belly.position.y=-Math.min(.130,bodyHeight+.015);
+    belly.scaling.y=.28;
   }
   function keepRigAboveFloor() {
     if (!xrCamera) return;
@@ -630,10 +1231,14 @@
   // ------------------------------------------------------------
   const batRoot=new BABYLON.TransformNode("batRoot",scene);
 
-  const batWood=mkMat("batWood","#b9783e");
-  const batDark=mkMat("batDark","#4b2d18");
+  const batWood=mkMat("batWood","#9b6136");
+  const batDark=mkMat("batDark","#3d2618");
   const batMetal=mkMat("batMetal","#cbd5e1");
-  const batTape=mkMat("batTape","#1f2937");
+  const batTape=mkMat("batTape","#171b22");
+  batWood.specularColor=new BABYLON.Color3(.22,.13,.07);
+  batWood.specularPower=26;
+  batMetal.specularColor=new BABYLON.Color3(.95,.95,.95);
+  batMetal.specularPower=72;
 
   const batBarrel=BABYLON.MeshBuilder.CreateCylinder("batBarrel",{
     height:.78,diameterTop:.115,diameterBottom:.078,tessellation:20
@@ -685,6 +1290,18 @@
   metalRing.rotation.x=Math.PI/2;
   metalRing.position.z=-.095;
   metalRing.material=batMetal;
+
+  for(let i=0;i<4;i++){
+    const grain=BABYLON.MeshBuilder.CreateTorus("batGrain"+i,{
+      diameter:.108-i*.004,
+      thickness:.0045,
+      tessellation:18
+    },scene);
+    grain.parent=batRoot;
+    grain.rotation.x=Math.PI/2;
+    grain.position.z=.18+i*.145;
+    grain.material=batDark;
+  }
 
   const knob=BABYLON.MeshBuilder.CreateSphere("batKnob",{
     diameter:.09,segments:14
@@ -957,6 +1574,10 @@
     return rotY(v,-npc.root.rotation.y);
   }
 
+  function npcWorldToLocalPoint(v){
+    return rotY(v.subtract(npc.root.position),-npc.root.rotation.y);
+  }
+
   function ragPoint(name,x,y,z,radius=.10,invMass=1){
     const p=new BABYLON.Vector3(x,y,z);
     return {
@@ -1097,20 +1718,44 @@
       base.z+=stride*.30;
     }
 
-    // Right arm follows the attack in a springy way instead of being a
-    // completely rigid animation.
-    if(npc.attackAnim>0){
+    // During attacks the physical right arm aims at the player's CURRENT
+    // chest position. This keeps the active ragdoll, but makes the swing
+    // actually reach toward the player rather than straight forward.
+    if(npc.attackAnim>0 && xrCamera){
       const progress=1-(npc.attackAnim/npc.attackDuration);
+      const shoulder=rd.points.rShoulder.base.clone();
+
+      const spheres=playerHitSpheres();
+      const targetWorld=(spheres[1]?.center || xrCamera.globalPosition).clone();
+      const target=npcWorldToLocalPoint(targetWorld);
+
+      let reach=target.subtract(shoulder);
+      if(reach.lengthSquared()<.001) reach.set(0,0,.68);
+      reach.normalize().scaleInPlace(.68);
+
+      const strike=shoulder.add(reach);
+      const windup=shoulder.add(new BABYLON.Vector3(.18,.20,-.28));
+
+      let handTarget;
+      if(progress<.28){
+        handTarget=BABYLON.Vector3.Lerp(
+          rd.points.rHand.base,
+          windup,
+          progress/.28
+        );
+      }else{
+        const t=(progress-.28)/.72;
+        const smooth=t*t*(3-2*t);
+        handTarget=BABYLON.Vector3.Lerp(windup,strike,smooth);
+      }
+
       if(name==="rHand"){
-        const arc=Math.sin(progress*Math.PI);
-        base.x=.44;
-        base.y=1.02 + arc*.13;
-        base.z=.08 + progress*.38;
+        return handTarget;
       }else if(name==="rElbow"){
-        const arc=Math.sin(progress*Math.PI);
-        base.x=.39;
-        base.y=1.18 + arc*.08;
-        base.z=.03 + progress*.18;
+        const elbow=BABYLON.Vector3.Lerp(shoulder,handTarget,.50);
+        elbow.y+=.08;
+        elbow.x+=.05;
+        return elbow;
       }
     }
 
@@ -1133,17 +1778,27 @@
     b.pos.subtractInPlace(corr.scale(wb/sum));
   }
 
-  function collideNpcRagdollPoint(p){
+  function collideNpcRagdollPoint(p,dt){
     const world=npcLocalToWorld(p.pos);
-    const correction=playerSphereCorrection(world,p.radius);
-    if(!correction) return;
+    const hit=findSurfaceCollision(world,p.radius);
+    if(!hit) return;
 
-    const localCorrection=worldVectorToNpcLocal(correction);
+    const localVel=p.pos.subtract(p.prev).scale(1/Math.max(dt,.008));
+    const worldVel=rotY(localVel,npc.root.rotation.y);
+    const speed=worldVel.length();
+
+    if(hit.mesh?.metadata?.breakableWindow && speed>2.15){
+      if(breakWindow(hit.mesh,world,worldVel)){
+        // Do not push the body back after the glass has broken.
+        return;
+      }
+    }
+
+    const localCorrection=worldVectorToNpcLocal(hit.correction);
     p.pos.addInPlace(localCorrection);
 
-    // Moving some of the correction into previous position kills the
-    // trampoline/bounce effect while preserving impact motion.
-    p.prev.addInPlace(localCorrection.scale(.72));
+    // Collision damping keeps the ragdoll from becoming a trampoline.
+    p.prev.addInPlace(localCorrection.scale(.68));
   }
 
   function updateNpcRagdoll(dt,active){
@@ -1152,11 +1807,11 @@
     const rd=npc.ragdoll;
     const frame=Math.min(1.4,dt*60);
     const gravity=active ? -4.8 : -7.1;
-    const damping=active ? .91 : .965;
+    const damping=active ? .925 : .975;
 
     let strength=.18;
-    if(npc.stun>0) strength=.045;
-    else if(npc.recentlyHit>0) strength=.075;
+    if(npc.stun>0) strength=.020;
+    else if(npc.recentlyHit>0) strength=.036;
     else if(npc.emotion==="angry") strength=.21;
     else if(npc.emotion==="scared") strength=.14;
 
@@ -1180,9 +1835,9 @@
     }
 
     // More iterations = tighter joints. Five is a good Quest 2 compromise.
-    for(let iteration=0;iteration<5;iteration++){
+    for(let iteration=0;iteration<8;iteration++){
       for(const c of rd.constraints) solveRagConstraint(c);
-      for(const p of rd.list) collideNpcRagdollPoint(p);
+      for(const p of rd.list) collideNpcRagdollPoint(p,dt);
     }
 
     updateNpcRagdollMeshes();
@@ -1218,6 +1873,9 @@
     npc.leftEye.position.copyFrom(p.head.pos.add(new BABYLON.Vector3(-.085,.08,.225)));
     npc.rightEye.position.copyFrom(p.head.pos.add(new BABYLON.Vector3(.085,.08,.225)));
     npc.mouth.position.copyFrom(p.head.pos.add(new BABYLON.Vector3(0,-.11,.242)));
+    npc.hair.position.copyFrom(p.head.pos.add(new BABYLON.Vector3(0,.15,-.015)));
+    npc.leftEar.position.copyFrom(p.head.pos.add(new BABYLON.Vector3(-.245,.015,0)));
+    npc.rightEar.position.copyFrom(p.head.pos.add(new BABYLON.Vector3(.245,.015,0)));
 
     // Weapon is physically attached to the ragdoll right hand.
     npc.weaponRoot.position.copyFrom(p.rHand.pos);
@@ -1255,6 +1913,7 @@
     const pantsMat=mkMat("npcPants"+Math.random(),"#334155");
     const shoeMat=mkMat("npcShoes"+Math.random(),"#111827");
     const eyeMat=mkMat("npcEyes"+Math.random(),"#111111");
+    const hairMat=mkMat("npcHair"+Math.random(),"#30231c");
 
     function capsule(name,radius,material){
       const m=BABYLON.MeshBuilder.CreateCapsule(name,{
@@ -1311,6 +1970,23 @@
     mouth.parent=visual;
     mouth.material=eyeMat;
 
+    const hair=BABYLON.MeshBuilder.CreateSphere("npcHair",{
+      diameter:.50,segments:14
+    },scene);
+    hair.parent=visual;
+    hair.scaling.set(1.01,.52,1.01);
+    hair.material=hairMat;
+
+    const leftEar=BABYLON.MeshBuilder.CreateSphere("npcLeftEar",{
+      diameter:.10,segments:10
+    },scene);
+    leftEar.parent=visual;
+    leftEar.scaling.set(.55,1,.48);
+    leftEar.material=skinMat;
+
+    const rightEar=leftEar.clone("npcRightEar");
+    rightEar.parent=visual;
+
     const leftUpperArm=capsule("leftUpperArm",.088,skinMat);
     const leftLowerArm=capsule("leftLowerArm",.077,skinMat);
     const rightUpperArm=capsule("rightUpperArm",.088,skinMat);
@@ -1345,14 +2021,14 @@
 
     npc={
       root,visual,
-      torso,chestPlate,pelvis,head,nose,leftEye,rightEye,mouth,
+      torso,chestPlate,pelvis,head,nose,leftEye,rightEye,mouth,hair,leftEar,rightEar,
       leftUpperArm,leftLowerArm,leftHand,
       rightUpperArm,rightLowerArm,rightHand,
       leftUpperLeg,leftLowerLeg,leftShoe,
       rightUpperLeg,rightLowerLeg,rightShoe,
 
       parts:[
-        torso,chestPlate,pelvis,head,nose,leftEye,rightEye,mouth,
+        torso,chestPlate,pelvis,head,nose,leftEye,rightEye,mouth,hair,leftEar,rightEar,
         leftUpperArm,leftLowerArm,leftHand,
         rightUpperArm,rightLowerArm,rightHand,
         leftUpperLeg,leftLowerLeg,leftShoe,
@@ -1360,7 +2036,7 @@
       ],
 
       skinParts:[
-        head,nose,leftUpperArm,leftLowerArm,leftHand,
+        head,nose,leftEar,rightEar,leftUpperArm,leftLowerArm,leftHand,
         rightUpperArm,rightLowerArm,rightHand
       ],
       shirtParts:[torso,chestPlate],
@@ -1447,8 +2123,18 @@
       if (npc.velocity.y<0) npc.velocity.y=0;
     }
 
-    for (const s of collisionSurfaces) {
-      if (s===ground) continue;
+    for (const s of [...collisionSurfaces]) {
+      if (s===ground || s===outsideGround) continue;
+
+      if(
+        s.metadata?.breakableWindow &&
+        !s.metadata.broken &&
+        npc.velocity.length()>2.30
+      ){
+        const impact=npc.root.position.add(new BABYLON.Vector3(0,1.05,0));
+        if(breakWindow(s,impact,npc.velocity)) continue;
+      }
+
       s.computeWorldMatrix(true);
       const bb=s.getBoundingInfo().boundingBox;
       const min=bb.minimumWorld,max=bb.maximumWorld;
@@ -1501,45 +2187,28 @@
 
   function resolveDeathPart(r) {
     const radius=r.radius||.15;
-    for (const s of collisionSurfaces) {
-      s.computeWorldMatrix(true);
-      const bb=s.getBoundingInfo().boundingBox;
-      const min=bb.minimumWorld,max=bb.maximumWorld;
-      const p=r.mesh.position;
 
-      const q=new BABYLON.Vector3(
-        Math.max(min.x,Math.min(max.x,p.x)),
-        Math.max(min.y,Math.min(max.y,p.y)),
-        Math.max(min.z,Math.min(max.z,p.z))
-      );
+    for (const s of [...collisionSurfaces]) {
+      const hit=surfaceSphereHit(s,r.mesh.position,radius);
+      if(!hit) continue;
 
-      let dv=p.subtract(q);
-      let d=dv.length();
-      if (d>=radius) continue;
-
-      let n;
-      if (d>.0001) n=dv.scale(1/d);
-      else {
-        const faces=[
-          {v:Math.abs(p.x-min.x),n:new BABYLON.Vector3(-1,0,0)},
-          {v:Math.abs(max.x-p.x),n:new BABYLON.Vector3(1,0,0)},
-          {v:Math.abs(p.y-min.y),n:new BABYLON.Vector3(0,-1,0)},
-          {v:Math.abs(max.y-p.y),n:new BABYLON.Vector3(0,1,0)},
-          {v:Math.abs(p.z-min.z),n:new BABYLON.Vector3(0,0,-1)},
-          {v:Math.abs(max.z-p.z),n:new BABYLON.Vector3(0,0,1)}
-        ].sort((a,b)=>a.v-b.v);
-        n=faces[0].n;d=0;
+      if(
+        s.metadata?.breakableWindow &&
+        !s.metadata.broken &&
+        r.vel.length()>2.0
+      ){
+        if(breakWindow(s,r.mesh.position,r.vel)) continue;
       }
 
-      r.mesh.position.addInPlace(n.scale(radius-d+.003));
-      const vn=BABYLON.Vector3.Dot(r.vel,n);
-      if (vn<0) {
-        r.vel.subtractInPlace(n.scale(vn*1.20));
-        r.vel.scaleInPlace(.80);
+      r.mesh.position.addInPlace(hit.correction);
+
+      const vn=BABYLON.Vector3.Dot(r.vel,hit.normal);
+      if(vn<0){
+        r.vel.subtractInPlace(hit.normal.scale(vn*1.22));
+        r.vel.scaleInPlace(.72);
       }
     }
   }
-
   function moveDeathPart(r,dt) {
     const delta=r.vel.scale(dt);
     const steps=Math.max(1,Math.ceil(delta.length()/.055));
@@ -1552,26 +2221,30 @@
 
   function spawnDeathRagdoll(origin,launchDir,force) {
     const specs=[
-      {type:"capsule",r:.29,h:.74,off:[0,1.08,0],scale:[1,1,1]},
-      {type:"sphere",d:.48,off:[0,1.71,0],scale:[1,1,1]},
-      {type:"box",size:[.43,.25,.31],off:[0,.67,0],scale:[1,1,1]},
+      {type:"capsule",r:.29,h:.74,off:[0,1.08,0],mat:"shirt"},
+      {type:"sphere",d:.48,off:[0,1.71,0],mat:"skin"},
+      {type:"box",size:[.43,.25,.31],off:[0,.67,0],mat:"pants"},
 
-      {type:"capsule",r:.095,h:.40,off:[-.34,1.30,0],scale:[1,1,1]},
-      {type:"capsule",r:.078,h:.37,off:[-.47,1.02,0],scale:[1,1,1]},
-      {type:"sphere",d:.16,off:[-.49,.80,.02],scale:[.85,.70,1.15]},
+      {type:"capsule",r:.095,h:.40,off:[-.34,1.30,0],mat:"skin"},
+      {type:"capsule",r:.078,h:.37,off:[-.47,1.02,0],mat:"skin"},
+      {type:"sphere",d:.16,off:[-.49,.80,.02],mat:"skin"},
 
-      {type:"capsule",r:.095,h:.40,off:[.34,1.30,0],scale:[1,1,1]},
-      {type:"capsule",r:.078,h:.37,off:[.47,1.02,0],scale:[1,1,1]},
-      {type:"sphere",d:.16,off:[.49,.80,.02],scale:[.85,.70,1.15]},
+      {type:"capsule",r:.095,h:.40,off:[.34,1.30,0],mat:"skin"},
+      {type:"capsule",r:.078,h:.37,off:[.47,1.02,0],mat:"skin"},
+      {type:"sphere",d:.16,off:[.49,.80,.02],mat:"skin"},
 
-      {type:"capsule",r:.105,h:.46,off:[-.15,.43,0],scale:[1,1,1]},
-      {type:"capsule",r:.088,h:.43,off:[-.15,.10,0],scale:[1,1,1]},
-      {type:"box",size:[.19,.11,.30],off:[-.15,-.14,.08],scale:[1,1,1]},
+      {type:"capsule",r:.105,h:.46,off:[-.15,.43,0],mat:"pants"},
+      {type:"capsule",r:.088,h:.43,off:[-.15,.10,0],mat:"pants"},
+      {type:"box",size:[.19,.11,.30],off:[-.15,-.14,.08],mat:"shoe"},
 
-      {type:"capsule",r:.105,h:.46,off:[.15,.43,0],scale:[1,1,1]},
-      {type:"capsule",r:.088,h:.43,off:[.15,.10,0],scale:[1,1,1]},
-      {type:"box",size:[.19,.11,.30],off:[.15,-.14,.08],scale:[1,1,1]}
+      {type:"capsule",r:.105,h:.46,off:[.15,.43,0],mat:"pants"},
+      {type:"capsule",r:.088,h:.43,off:[.15,.10,0],mat:"pants"},
+      {type:"box",size:[.19,.11,.30],off:[.15,-.14,.08],mat:"shoe"}
     ];
+
+    const baseDir=launchDir.clone();
+    if(baseDir.lengthSquared()<.001) baseDir.set(0,1,0);
+    baseDir.normalize();
 
     for(const sp of specs){
       let m,radius;
@@ -1581,41 +2254,43 @@
           diameter:sp.d,segments:14
         },scene);
         radius=sp.d*.5;
-      } else if(sp.type==="box"){
+      }else if(sp.type==="box"){
         m=BABYLON.MeshBuilder.CreateBox("deathPart",{
           width:sp.size[0],height:sp.size[1],depth:sp.size[2]
         },scene);
         radius=Math.max(...sp.size)*.42;
-      } else {
+      }else{
         m=BABYLON.MeshBuilder.CreateCapsule("deathPart",{
           radius:sp.r,height:sp.h,tessellation:14
         },scene);
         radius=Math.max(sp.r*1.2,sp.h*.28);
       }
 
-      m.material=MAT.npc;
-      m.position=origin.add(new BABYLON.Vector3(...sp.off));
-      m.scaling.set(...sp.scale);
+      m.material=
+        sp.mat==="skin" ? npc.skinMat :
+        sp.mat==="pants" ? npc.pantsMat :
+        sp.mat==="shoe" ? npc.shoeMat :
+        npc.shirtMat;
 
-      // Most of the velocity comes from the actual bat direction;
-      // only a small separation impulse makes the body come apart.
-      const scatter=new BABYLON.Vector3(
-        (Math.random()-.5)*1.15,
-        .35+Math.random()*1.10,
-        (Math.random()-.5)*1.15
+      m.position=origin.add(new BABYLON.Vector3(...sp.off));
+
+      const radial=new BABYLON.Vector3(
+        (Math.random()-.5)*3.3,
+        .6+Math.random()*2.6,
+        (Math.random()-.5)*3.3
       );
 
-      const vel=launchDir.scale(force).add(scatter);
+      const vel=baseDir.scale(force*(.62+Math.random()*.28)).add(radial);
 
       deathParts.push({
         mesh:m,
         vel,
         radius,
-        life:4.2,
+        life:6.2,
         spin:new BABYLON.Vector3(
-          (Math.random()-.5)*7,
-          (Math.random()-.5)*7,
-          (Math.random()-.5)*7
+          (Math.random()-.5)*10,
+          (Math.random()-.5)*10,
+          (Math.random()-.5)*10
         )
       });
     }
@@ -1669,24 +2344,25 @@
     npc.hp.plane.setEnabled(false);
     npc.speech.plane.setEnabled(false);
     npc.ragdoll.dead=true;
-    npc.respawnTimer=4.8;
+    npc.respawnTimer=5.3;
 
-    // Full-body launch, but the joints stay connected like a real ragdoll.
-    const force=Math.min(18,7.0+speed*.80);
-    const impulse=dir.scale(force).add(new BABYLON.Vector3(0,2.3,0));
+    // Use the actual root position so the separated ragdoll parts keep
+    // the NPC's current location and can fly through a broken office window.
+    const origin=npc.root.position.clone();
+    const force=Math.min(15.5,6.2+speed*.66);
 
-    applyNpcRagdollImpulse(hitPos,impulse,2.5);
-
-    // A little whole-body rotational asymmetry makes the fall look much
-    // more natural without randomly exploding the body.
-    for(const p of npc.ragdoll.list){
-      const side=(p.pos.x>=0?1:-1);
-      p.prev.x-=side*(Math.random()*.018);
-      p.prev.z-=(Math.random()-.5)*.024;
-    }
-
+    spawnDeathRagdoll(origin,dir,force);
+    spawnBloodExplosion(
+      npcLocalToWorld(npc.ragdoll.points.chest.pos),
+      dir,
+      .90+Math.min(.55,speed*.035)
+    );
     coolDeathBurst(npcLocalToWorld(npc.ragdoll.points.chest.pos));
-    pulse(hands.right,1,145);
+
+    npc.visual.setEnabled(false);
+    npc.weaponRoot.setEnabled(false);
+
+    pulse(hands.right,1,150);
     simpleHitSound(true);
   }
   function swingDamage(speed) {
@@ -1707,7 +2383,11 @@
 
     npc.hpValue-=damage;
     npc.hitCooldown=.18;
-    npc.recentlyHit=.14;
+    npc.recentlyHit=.28;
+    npc.stun=Math.max(
+      npc.stun,
+      Math.min(.30,Math.max(0,speed-2.0)*.035)
+    );
 
     if (npc.hpValue<=0) {
       finishNpc(hitPos,swingVel,speed);
@@ -1926,10 +2606,7 @@
 
             // Aim weapon height toward current chest/head height.
             const playerSpheres=playerHitSpheres();
-            const targetSphere=playerSpheres[
-              Math.floor(Math.random()*Math.min(2,playerSpheres.length))
-            ] || playerSpheres[0];
-
+            const targetSphere=playerSpheres[1] || playerSpheres[0];
             const targetWorld=(targetSphere?.center || xrCamera.globalPosition).clone();
             const weaponWorld=npc.weaponRoot.getAbsolutePosition();
             const aim=targetWorld.subtract(weaponWorld);
@@ -1982,7 +2659,7 @@
               const blockDist=Math.min(dNow,dPrevBat,dTipNow);
 
               // Larger and earlier block window than v0.14.
-              if(blockDist<.31 && progress>.16 && progress<.97){
+              if(blockDist<.185 && progress>.23 && progress<.93){
                 npc.attackBlocked=true;
                 npc.attackHasHit=true;
                 npc.attackAnim=0;
@@ -1999,9 +2676,6 @@
                 pulse(hands.right,1,135);
                 pulse(hands.left,.35,55);
                 simpleHitSound(true);
-
-                blockFlashTimer=.42;
-                blockPlane.setEnabled(true);
 
                 npc.anger=Math.min(100,npc.anger+14);
                 speakNpc("block",true);
@@ -2048,27 +2722,41 @@
         npc.respawnTimer-=dt;
         npc.walkingNow=false;
 
-        // Completely limp physics: no standing springs, only joints,
-        // inertia, gravity and collisions.
-        updateNpcRagdoll(dt,false);
-
-        // Weapon stays attached to the limp right hand.
-        npc.weaponRoot.position.copyFrom(npc.ragdoll.points.rHand.pos);
-
         if (npc.respawnTimer<=0) {
           npc.root.dispose();
           createNpc();
           npc.root.position=new BABYLON.Vector3(
-            (Math.random()-.5)*2.6,
+            (Math.random()-.5)*2.4,
             0,
-            1.7+Math.random()*1.2
+            .4+Math.random()*1.6
           );
         }
 
       }
     }
 
-    // Connected active-ragdoll death physics handled above.
+    // Exploded ragdoll pieces remain fully physical and can smash windows.
+    for(let i=deathParts.length-1;i>=0;i--){
+      const r=deathParts[i];
+      r.life-=dt;
+      r.vel.y-=7.2*dt;
+      moveDeathPart(r,dt);
+
+      r.mesh.rotation.x+=r.spin.x*dt;
+      r.mesh.rotation.y+=r.spin.y*dt;
+      r.mesh.rotation.z+=r.spin.z*dt;
+
+      r.vel.x*=Math.pow(.72,dt);
+      r.vel.z*=Math.pow(.72,dt);
+      r.spin.scaleInPlace(Math.pow(.50,dt));
+
+      if(r.life<=0 || r.mesh.position.y<-5.4){
+        r.mesh.dispose();
+        deathParts.splice(i,1);
+      }
+    }
+
+    updateOfficePhysics(dt);
 
     // XR player / hands / bat
     if (xrCamera && xr?.baseExperience?.state===BABYLON.WebXRState.IN_XR) {
@@ -2102,8 +2790,8 @@
 
         keepRigAboveFloor();
         resolvePlayerWorldCollision();
-        xrCamera.position.x=Math.max(-5.15,Math.min(5.15,xrCamera.position.x));
-        xrCamera.position.z=Math.max(-5.05,Math.min(5.15,xrCamera.position.z));
+        xrCamera.position.x=Math.max(-4.70,Math.min(4.70,xrCamera.position.x));
+        xrCamera.position.z=Math.max(-3.65,Math.min(3.65,xrCamera.position.z));
         xrCamera.position.y=Math.min(4.2,xrCamera.position.y);
 
         updateBodyVisual();
@@ -2113,6 +2801,9 @@
           if (batTipLast) {
             const vel=tip.subtract(batTipLast).scale(1/Math.max(dt,.008));
             const speed=vel.length();
+
+            // Office objects and windows use the entire swept bat path.
+            handleBatOfficeHit(batTipLast,tip,vel,speed);
 
             if (speed>.50 && batHitCooldown<=0 && npcSphereHit(tip,.17)) {
               batHitCooldown=.20;
