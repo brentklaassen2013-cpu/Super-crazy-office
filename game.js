@@ -1,5 +1,5 @@
 (() => {
-  const BUILD_VERSION="0.23.6";
+  const BUILD_VERSION="0.23.7";
   const canvas = document.getElementById("renderCanvas");
   const engine = new BABYLON.Engine(canvas, true, { stencil:true });
   const scene = new BABYLON.Scene(engine);
@@ -341,7 +341,7 @@
   const ground=box(
     "officeFloor",
     new BABYLON.Vector3(0,-.12,-2.5),
-    new BABYLON.Vector3(10,.24,13),
+    new BABYLON.Vector3(12.8,.24,15.5),
     officeFloorMat,
     true
   );
@@ -349,32 +349,32 @@
   const outsideGround=box(
     "streetBelow",
     new BABYLON.Vector3(0,-4.32,3),
-    new BABYLON.Vector3(28,.25,22),
+    new BABYLON.Vector3(34,.25,26),
     outsideMat,
     true
   );
 
   // Ceiling + side walls.
-  box("officeCeiling",new BABYLON.Vector3(0,3.05,-2.5),new BABYLON.Vector3(10,.18,13));
-  box("officeLeftWall",new BABYLON.Vector3(-5,1.48,-2.5),new BABYLON.Vector3(.20,3.0,13));
-  box("officeRightWall",new BABYLON.Vector3(5,1.48,-2.5),new BABYLON.Vector3(.20,3.0,13));
+  box("officeCeiling",new BABYLON.Vector3(0,3.55,-2.5),new BABYLON.Vector3(12.8,.18,15.5));
+  box("officeLeftWall",new BABYLON.Vector3(-6.4,1.73,-2.5),new BABYLON.Vector3(.20,3.5,15.5));
+  box("officeRightWall",new BABYLON.Vector3(6.4,1.73,-2.5),new BABYLON.Vector3(.20,3.5,15.5));
 
   // Front wall with an open doorway.
-  box("frontWallL",new BABYLON.Vector3(-3.25,1.48,-4),new BABYLON.Vector3(3.5,3,.20));
-  box("frontWallR",new BABYLON.Vector3(3.25,1.48,-4),new BABYLON.Vector3(3.5,3,.20));
-  box("frontWallTop",new BABYLON.Vector3(0,2.62,-4),new BABYLON.Vector3(3.0,.72,.20));
+  box("frontWallL",new BABYLON.Vector3(-3.93,1.73,-4),new BABYLON.Vector3(4.95,3.5,.20));
+  box("frontWallR",new BABYLON.Vector3(3.93,1.73,-4),new BABYLON.Vector3(4.95,3.5,.20));
+  box("frontWallTop",new BABYLON.Vector3(0,3.08,-4),new BABYLON.Vector3(2.9,.88,.20));
 
   // New rear exterior wall: the old wall at z=-4 is now an interior divider.
-  box("rearOuterWall",new BABYLON.Vector3(0,1.48,-9),new BABYLON.Vector3(10,3.0,.20));
+  box("rearOuterWall",new BABYLON.Vector3(0,1.73,-9),new BABYLON.Vector3(12.8,3.5,.20));
 
   // Window wall: sill, header and columns create three real openings.
-  box("windowSill",new BABYLON.Vector3(0,.32,4),new BABYLON.Vector3(10,.64,.20));
-  box("windowHeader",new BABYLON.Vector3(0,2.78,4),new BABYLON.Vector3(10,.54,.20));
-  for(const x of [-4.75,-1.58,1.58,4.75]){
-    box("windowColumn"+x,new BABYLON.Vector3(x,1.55,4),new BABYLON.Vector3(.50,1.95,.20));
+  box("windowSill",new BABYLON.Vector3(0,.32,4),new BABYLON.Vector3(12.8,.64,.20));
+  box("windowHeader",new BABYLON.Vector3(0,3.18,4),new BABYLON.Vector3(12.8,.74,.20));
+  for(const x of [-6.1,-2.03,2.03,6.1]){
+    box("windowColumn"+x,new BABYLON.Vector3(x,1.77,4),new BABYLON.Vector3(.55,2.38,.20));
   }
 
-  function makeWindow(name,x,width=2.62){
+  function makeWindow(name,x,width=3.35){
     const g=BABYLON.MeshBuilder.CreateBox(name,{
       width,height:1.90,depth:.055
     },scene);
@@ -389,9 +389,9 @@
     return g;
   }
 
-  makeWindow("officeWindowLeft",-3.16);
+  makeWindow("officeWindowLeft",-4.07);
   makeWindow("officeWindowMiddle",0);
-  makeWindow("officeWindowRight",3.16);
+  makeWindow("officeWindowRight",4.07);
 
   // Ceiling lights.
   const lightPanelMat=mkMat("lightPanel","#eaf6ff");
@@ -754,12 +754,12 @@
   }
 
   // Window frames and simple blinds.
-  for(const x of [-3.16,0,3.16]){
-    box("windowFrameTop"+x,new BABYLON.Vector3(x,2.54,3.91),new BABYLON.Vector3(2.72,.055,.07),darkTrimMat,false);
-    box("windowFrameBottom"+x,new BABYLON.Vector3(x,.61,3.91),new BABYLON.Vector3(2.72,.055,.07),darkTrimMat,false);
-    box("windowFrameL"+x,new BABYLON.Vector3(x-1.33,1.57,3.91),new BABYLON.Vector3(.05,1.92,.07),darkTrimMat,false);
-    box("windowFrameR"+x,new BABYLON.Vector3(x+1.33,1.57,3.91),new BABYLON.Vector3(.05,1.92,.07),darkTrimMat,false);
-    box("windowCross"+x,new BABYLON.Vector3(x,1.58,3.91),new BABYLON.Vector3(2.68,.035,.055),darkTrimMat,false);
+  for(const x of [-4.07,0,4.07]){
+    box("windowFrameTop"+x,new BABYLON.Vector3(x,2.86,3.91),new BABYLON.Vector3(3.42,.055,.07),darkTrimMat,false);
+    box("windowFrameBottom"+x,new BABYLON.Vector3(x,.61,3.91),new BABYLON.Vector3(3.42,.055,.07),darkTrimMat,false);
+    box("windowFrameL"+x,new BABYLON.Vector3(x-1.68,1.72,3.91),new BABYLON.Vector3(.05,2.20,.07),darkTrimMat,false);
+    box("windowFrameR"+x,new BABYLON.Vector3(x+1.68,1.72,3.91),new BABYLON.Vector3(.05,2.20,.07),darkTrimMat,false);
+    box("windowCross"+x,new BABYLON.Vector3(x,1.73,3.91),new BABYLON.Vector3(3.36,.035,.055),darkTrimMat,false);
 
     for(let i=0;i<4;i++){
       box(
@@ -3656,10 +3656,10 @@
       [
         p.pelvis.pos,
         p.spineLow.pos,
-        p.chest.pos.add(p.neckBase.pos.subtract(p.chest.pos).scale(.48)),
-        p.neckBase.pos.add(new BABYLON.Vector3(0,-.055,0))
+        p.chest.pos.add(p.neckBase.pos.subtract(p.chest.pos).scale(.44)),
+        p.neckBase.pos.add(new BABYLON.Vector3(0,-.07,0))
       ],
-      [.190,.215,.275,.292]
+      [.175,.195,.225,.240]
     );
 
     // Broad connected shoulders cover the torso cap and join both arms.
@@ -3811,7 +3811,7 @@
     const hairMat=mkMat("npcHair"+Math.random(),"#30231c");
     const beardMat=mkMat("npcBeard"+Math.random(),"#4b3429");
     beardMat.alpha=.48;
-    beardMat.diffuseTexture=DETAIL_TEX.hair;
+    // v0.23.7 smoother NPC beard: no noisy diffuse texture;
     const teethMat=mkMat("npcTeeth"+Math.random(),"#f4eee5");
 
     // clean v0.23.3: skinMat.diffuseTexture=DETAIL_TEX.skin;
@@ -3822,6 +3822,14 @@
     // clean v0.23.3: pantsDarkMat.diffuseTexture=DETAIL_TEX.fabric;
     // clean v0.23.3: shoeMat.diffuseTexture=DETAIL_TEX.metal;
     // clean v0.23.3: hairMat.diffuseTexture=DETAIL_TEX.hair;
+    // Give the NPC the same clean material style as the office.
+    skinMat.diffuseTexture=DETAIL_TEX.skin;skinMat.diffuseTexture.level=.35;
+    skinDarkMat.diffuseTexture=DETAIL_TEX.skin;skinDarkMat.diffuseTexture.level=.28;
+    shirtMat.diffuseTexture=DETAIL_TEX.wall;shirtMat.diffuseTexture.level=.22;
+    shirtDarkMat.diffuseTexture=DETAIL_TEX.wall;shirtDarkMat.diffuseTexture.level=.18;
+    pantsMat.diffuseTexture=DETAIL_TEX.fabric;pantsMat.diffuseTexture.level=.14;
+    pantsDarkMat.diffuseTexture=DETAIL_TEX.fabric;pantsDarkMat.diffuseTexture.level=.10;
+    hairMat.diffuseTexture=DETAIL_TEX.hair;hairMat.diffuseTexture.level=.12;
 
     // v0.23.6 clean realism: no dotted skin bump
     // v0.23.6 clean realism: no dotted skinDark bump
@@ -3860,18 +3868,18 @@
       "npcSmoothBody",
       [
         new BABYLON.Vector3(0,.66,0),
-        new BABYLON.Vector3(0,.88,0),
-        new BABYLON.Vector3(0,1.13,0),
-        new BABYLON.Vector3(0,1.34,0)
+        new BABYLON.Vector3(0,.90,0),
+        new BABYLON.Vector3(0,1.12,0),
+        new BABYLON.Vector3(0,1.31,0)
       ],
-      [.190,.215,.275,.292],
+      [.175,.195,.225,.240],
       shirtMat,
       visual
     );
 
     // A horizontal shoulder bridge hides the tube cap and joins both arms
     // to the chest like one body.
-    const shoulderBridge=capsule("npcShoulderBridge",.165,shirtMat);
+    const shoulderBridge=capsule("npcShoulderBridge",.135,shirtMat);
 
     const neckShell=createSmoothNpcTube(
       "npcSmoothNeck",
@@ -3966,7 +3974,7 @@
     neck.setEnabled(false);
 
     const chestPlate=jointSphere("npcChest",.56,shirtMat);
-    chestPlate.scaling.set(1,.70,.72);
+    chestPlate.scaling.set(.88,.55,.60);
 
     const pelvis=jointSphere("npcPelvis",.44,pantsMat);
     pelvis.scaling.set(1.10,.52,.84);
