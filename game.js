@@ -1,5 +1,5 @@
 (() => {
-  const BUILD_VERSION="0.21";
+  const BUILD_VERSION="0.22";
   const canvas = document.getElementById("renderCanvas");
   const engine = new BABYLON.Engine(canvas, true, { stencil:true });
   const scene = new BABYLON.Scene(engine);
@@ -2619,55 +2619,80 @@
   };
   function speakNpc(kind,force=false) {
     if (!npc || npc.dead || !("speechSynthesis" in window)) return;
-    if (!force && npc.speechCooldown>0) return;
+
+    // NPC should NOT constantly talk.
+    // Even when code asks for a line, most ordinary reactions stay silent.
+    if(!force){
+      const chance={
+        chase:.10,
+        angry:.16,
+        furious:.24,
+        hurt:.14,
+        scared:.18,
+        attack:.12,
+        block:.16,
+        death:1
+      }[kind] ?? .12;
+
+      if(Math.random()>chance) return;
+      if(npc.speechCooldown>0) return;
+    }else{
+      // Forced reactions still get throttled unless it is the death line.
+      if(kind!=="death" && npc.speechCooldown>1.1 && Math.random()<.72) return;
+    }
 
     const lines=VOICE_LINES[kind]||VOICE_LINES.chase;
     const line=lines[Math.floor(Math.random()*lines.length)];
 
-    npc.speechCooldown=1.25+Math.random()*1.35;
-    npc.bubbleTimer=1.9;
+    // Long quiet gaps between lines.
+    npc.speechCooldown=
+      kind==="death" ? 0 :
+      4.6+Math.random()*3.8;
+
+    npc.bubbleTimer=1.65;
     npc.speech.text.text=line;
     npc.speech.plane.setEnabled(true);
 
     try {
       const u=new SpeechSynthesisUtterance(line);
       if(selectedVoice) u.voice=selectedVoice;
-      u.volume=.92;
 
-      // Keep this near normal human speaking pitch/rate.
+      // Keep volume and pitch in a restrained human range.
+      u.volume=.88;
+
       if(kind==="furious"){
-        u.rate=1.03+Math.random()*.035;
-        u.pitch=.91+Math.random()*.035;
+        u.rate=.98+Math.random()*.025;
+        u.pitch=.92+Math.random()*.025;
       }else if(kind==="angry"){
-        u.rate=1.00+Math.random()*.035;
-        u.pitch=.94+Math.random()*.035;
+        u.rate=.96+Math.random()*.025;
+        u.pitch=.95+Math.random()*.025;
       }else if(kind==="scared"){
-        u.rate=1.05+Math.random()*.04;
-        u.pitch=1.02+Math.random()*.045;
+        u.rate=1.00+Math.random()*.03;
+        u.pitch=1.01+Math.random()*.025;
       }else if(kind==="hurt"){
-        u.rate=1.00+Math.random()*.05;
-        u.pitch=.99+Math.random()*.05;
+        u.rate=.98+Math.random()*.03;
+        u.pitch=.99+Math.random()*.025;
       }else if(kind==="attack"){
-        u.rate=1.03+Math.random()*.035;
-        u.pitch=.96+Math.random()*.035;
+        u.rate=.99+Math.random()*.025;
+        u.pitch=.97+Math.random()*.025;
       }else{
-        u.rate=.96+Math.random()*.04;
-        u.pitch=.98+Math.random()*.035;
+        u.rate=.94+Math.random()*.025;
+        u.pitch=.99+Math.random()*.02;
       }
 
-      // Do not cut every line off. Interrupt only for important reactions.
-      if(
-        force &&
-        currentNpcUtterance &&
-        speechSynthesis.speaking &&
-        (kind==="death" || kind==="hurt" || kind==="furious")
-      ){
-        speechSynthesis.cancel();
+      // Avoid overlapping dialogue.
+      if(speechSynthesis.speaking){
+        if(kind==="death"){
+          speechSynthesis.cancel();
+        }else{
+          return;
+        }
       }
 
       currentNpcUtterance=u;
       u.onend=()=>{ if(currentNpcUtterance===u) currentNpcUtterance=null; };
       u.onerror=()=>{ if(currentNpcUtterance===u) currentNpcUtterance=null; };
+
       speechSynthesis.speak(u);
     } catch(_) {}
   }
@@ -3158,16 +3183,16 @@
     }
     npc.faceBlinkAmount=Math.max(0,npc.faceBlinkAmount-dt*11);
     const blink=npc.faceBlinkAmount>0?.18:1;
-    npc.leftEyeWhite.scaling.y=.64*blink;
-    npc.rightEyeWhite.scaling.y=.64*blink;
+    npc.leftEyeWhite.scaling.y=.58*blink;
+    npc.rightEyeWhite.scaling.y=.58*blink;
 
     const target=playerWorldPos();
     const headWorld=npcLocalToWorld(npc.ragdoll.points.head.pos);
     const local=worldVectorToNpcLocal(target.subtract(headWorld));
     const px=BABYLON.Scalar.Clamp(local.x*.025,-.018,.018);
     const py=BABYLON.Scalar.Clamp(local.y*.012,-.012,.012);
-    npc.leftPupil.position.x=-.072+px;npc.rightPupil.position.x=.072+px;
-    npc.leftPupil.position.y=.066+py;npc.rightPupil.position.y=.066+py;
+    npc.leftPupil.position.x=-.068+px;npc.rightPupil.position.x=.068+px;
+    npc.leftPupil.position.y=.060+py;npc.rightPupil.position.y=.060+py;
 
     if(npc.emotion==="angry"){
       npc.eyebrowL.rotation.z=-.28;npc.eyebrowR.rotation.z=.28;
@@ -3277,10 +3302,15 @@
       [.118,.108,.091]
     );
 
-    // Neck deliberately overlaps both upper chest and head.
-    const neckBottom=BABYLON.Vector3.Lerp(p.chest.pos,p.neckBase.pos,.64);
-    const neckTop=BABYLON.Vector3.Lerp(p.neckBase.pos,p.head.pos,.76);
-    setSegment(npc.neck,neckBottom,neckTop,1);
+    // Smooth neck with no visible capsule caps/rings.
+    const neckBottom=BABYLON.Vector3.Lerp(p.chest.pos,p.neckBase.pos,.52);
+    const neckMid=p.neckBase.pos;
+    const neckTop=BABYLON.Vector3.Lerp(p.neckBase.pos,p.head.pos,.72);
+    updateSmoothNpcTube(
+      npc.neckShell,
+      [neckBottom,neckMid,neckTop],
+      [.092,.087,.082]
+    );
 
     npc.pelvis.position.copyFrom(p.pelvis.pos);
     npc.head.position.copyFrom(p.head.pos);
@@ -3400,6 +3430,18 @@
     // to the chest like one body.
     const shoulderBridge=capsule("npcShoulderBridge",.165,shirtMat);
 
+    const neckShell=createSmoothNpcTube(
+      "npcSmoothNeck",
+      [
+        new BABYLON.Vector3(0,1.31,0),
+        new BABYLON.Vector3(0,1.43,0),
+        new BABYLON.Vector3(0,1.54,0)
+      ],
+      [.090,.088,.084],
+      skinMat,
+      visual
+    );
+
     const leftSleeveShell=createSmoothNpcTube(
       "npcLeftSleeveTube",
       [
@@ -3478,6 +3520,7 @@
     const abdomen=capsule("npcAbdomen",.225,shirtDarkMat);
     const torso=capsule("npcTorso",.285,shirtMat);
     const neck=capsule("npcNeck",.098,skinMat);
+    neck.setEnabled(false);
 
     const chestPlate=jointSphere("npcChest",.56,shirtMat);
     chestPlate.scaling.set(1,.70,.72);
@@ -3499,8 +3542,14 @@
     pantsMat.specularPower=10;
 
     // Head + all face detail parented to the head so it tilts with the neck.
-    const head=jointSphere("npcHead",.45,skinMat);
-    head.scaling.set(.86,1.10,.82);
+    const head=jointSphere("npcHead",.435,skinMat);
+    head.scaling.set(.84,1.07,.79);
+
+    // Separate lower face/jaw shape makes the head less like one round ball.
+    const jaw=jointSphere("npcJaw",.31,skinMat);
+    jaw.parent=head;
+    jaw.position.set(0,-.145,.008);
+    jaw.scaling.set(.88,.58,.76);
 
     function faceSphere(name,diam,pos,mat,scale=[1,1,1]){
       const m=BABYLON.MeshBuilder.CreateSphere(name,{diameter:diam,segments:11},scene);
@@ -3511,45 +3560,51 @@
       return m;
     }
 
-    const nose=faceSphere("npcNose",.075,[0,-.025,.205],skinMat,[.80,1,1.15]);
+    const nose=faceSphere("npcNose",.060,[0,-.020,.188],skinMat,[.72,1,.95]);
     const leftEar=faceSphere("npcLeftEar",.090,[-.205,.005,0],skinMat,[.46,1,.42]);
     const rightEar=faceSphere("npcRightEar",.090,[.205,.005,0],skinMat,[.46,1,.42]);
 
-    const leftEyeWhite=faceSphere("npcLeftEyeWhite",.060,[-.072,.066,.203],eyeWhiteMat,[1.18,.64,.34]);
-    const rightEyeWhite=faceSphere("npcRightEyeWhite",.060,[.072,.066,.203],eyeWhiteMat,[1.18,.64,.34]);
-    const leftEye=faceSphere("npcLeftEye",.028,[-.072,.066,.222],eyeMat,[1,1,.38]);
-    const rightEye=faceSphere("npcRightEye",.028,[.072,.066,.222],eyeMat,[1,1,.38]);
-    const leftPupil=faceSphere("npcLeftPupil",.014,[-.072,.066,.233],pupilMat,[1,1,.32]);
-    const rightPupil=faceSphere("npcRightPupil",.014,[.072,.066,.233],pupilMat,[1,1,.32]);
+    const leftEyeWhite=faceSphere("npcLeftEyeWhite",.052,[-.068,.060,.192],eyeWhiteMat,[1.12,.58,.28]);
+    const rightEyeWhite=faceSphere("npcRightEyeWhite",.052,[.068,.060,.192],eyeWhiteMat,[1.12,.58,.28]);
+    const leftEye=faceSphere("npcLeftEye",.023,[-.068,.060,.205],eyeMat,[1,1,.28]);
+    const rightEye=faceSphere("npcRightEye",.023,[.068,.060,.205],eyeMat,[1,1,.28]);
+    const leftPupil=faceSphere("npcLeftPupil",.011,[-.068,.060,.214],pupilMat,[1,1,.25]);
+    const rightPupil=faceSphere("npcRightPupil",.011,[.068,.060,.214],pupilMat,[1,1,.25]);
 
     const mouth=BABYLON.MeshBuilder.CreateBox("npcMouth",{
       width:.105,height:.022,depth:.010
     },scene);
     mouth.parent=head;
-    mouth.position.set(0,-.105,.207);
+    mouth.position.set(0,-.102,.188);
     mouth.material=pupilMat;
 
     const upperLip=BABYLON.MeshBuilder.CreateCapsule("npcUpperLip",{
       height:.105,radius:.009,tessellation:10
     },scene);
     upperLip.parent=head;upperLip.rotation.z=Math.PI/2;
-    upperLip.position.set(0,-.097,.214);upperLip.material=skinDarkMat;
+    upperLip.position.set(0,-.095,.194);upperLip.material=skinDarkMat;
 
     const lowerLip=BABYLON.MeshBuilder.CreateCapsule("npcLowerLip",{
       height:.096,radius:.010,tessellation:10
     },scene);
     lowerLip.parent=head;lowerLip.rotation.z=Math.PI/2;
-    lowerLip.position.set(0,-.118,.214);lowerLip.material=skinDarkMat;
+    lowerLip.position.set(0,-.114,.194);lowerLip.material=skinDarkMat;
 
     const teeth=BABYLON.MeshBuilder.CreateBox("npcTeeth",{
       width:.070,height:.010,depth:.006
     },scene);
-    teeth.parent=head;teeth.position.set(0,-.103,.216);teeth.material=teethMat;
+    teeth.parent=head;teeth.position.set(0,-.102,.196);teeth.material=teethMat;
 
-    const chin=faceSphere("npcChin",.105,[0,-.205,.12],skinDarkMat,[1,.62,.90]);
+    // No separate chin sphere: the jaw mesh above forms the chin naturally.
+    const cheekL=BABYLON.MeshBuilder.CreateSphere("npcCheekL",{diameter:.060,segments:10},scene);
+    cheekL.parent=head;
+    cheekL.position.set(-.090,-.045,.145);
+    cheekL.scaling.set(1.0,.42,.32);
+    cheekL.material=skinMat;
 
-    const cheekL=faceSphere("npcCheekL",.078,[-.10,-.052,.155],skinMat,[1.08,.68,.46]);
-    const cheekR=faceSphere("npcCheekR",.078,[.10,-.052,.155],skinMat,[1.08,.68,.46]);
+    const cheekR=cheekL.clone("npcCheekR");
+    cheekR.parent=head;
+    cheekR.position.x=.090;
 
     const eyebrowL=BABYLON.MeshBuilder.CreateBox("npcEyebrowL",{
       width:.10,height:.018,depth:.012
@@ -3558,11 +3613,11 @@
     const eyebrowR=eyebrowL.clone("npcEyebrowR");eyebrowR.parent=head;eyebrowR.position.x=.085;eyebrowR.rotation.z=.08;
 
     const hair=BABYLON.MeshBuilder.CreateSphere("npcHair",{
-      diameter:.455,segments:18
+      diameter:.425,segments:18
     },scene);
     hair.parent=head;
-    hair.position.set(0,.145,-.030);
-    hair.scaling.set(.90,.43,.92);
+    hair.position.set(0,.135,-.055);
+    hair.scaling.set(.86,.34,.86);
     hair.material=hairMat;
 
     // Small side hair patches.
@@ -3726,11 +3781,11 @@
 
     npc={
       root,visual,
-      bodyShell,shoulderBridge,leftSleeveShell,rightSleeveShell,
+      bodyShell,shoulderBridge,neckShell,leftSleeveShell,rightSleeveShell,
       leftArmShell,rightArmShell,leftLegShell,rightLegShell,
       abdomen,torso,neck,chestPlate,pelvis,spineJoint,neckJoint,
-      head,nose,leftEar,rightEar,leftEyeWhite,rightEyeWhite,leftEye,rightEye,leftPupil,rightPupil,
-      mouth,upperLip,lowerLip,teeth,chin,cheekL,cheekR,eyebrowL,eyebrowR,hair,
+      head,jaw,nose,leftEar,rightEar,leftEyeWhite,rightEyeWhite,leftEye,rightEye,leftPupil,rightPupil,
+      mouth,upperLip,lowerLip,teeth,cheekL,cheekR,eyebrowL,eyebrowR,hair,
       leftUpperArm,leftLowerArm,leftShoulderJoint,leftElbowJoint,leftWristJoint,leftHand,leftSleeve,
       rightUpperArm,rightLowerArm,rightShoulderJoint,rightElbowJoint,rightWristJoint,rightHand,rightSleeve,
       leftUpperLeg,leftLowerLeg,leftHipJoint,leftKneeJoint,leftAnkleJoint,leftShoe,
@@ -3738,11 +3793,11 @@
       belt,collar,badge,badgeStripe,
 
       parts:[
-        bodyShell,shoulderBridge,leftSleeveShell,rightSleeveShell,
+        bodyShell,shoulderBridge,neckShell,leftSleeveShell,rightSleeveShell,
         leftArmShell,rightArmShell,leftLegShell,rightLegShell,
         abdomen,torso,neck,chestPlate,pelvis,spineJoint,neckJoint,
-        head,nose,leftEar,rightEar,leftEyeWhite,rightEyeWhite,leftEye,rightEye,leftPupil,rightPupil,
-        mouth,upperLip,lowerLip,teeth,chin,cheekL,cheekR,eyebrowL,eyebrowR,hair,
+        head,jaw,nose,leftEar,rightEar,leftEyeWhite,rightEyeWhite,leftEye,rightEye,leftPupil,rightPupil,
+        mouth,upperLip,lowerLip,teeth,cheekL,cheekR,eyebrowL,eyebrowR,hair,
         leftUpperArm,leftLowerArm,leftShoulderJoint,leftElbowJoint,leftWristJoint,leftHand,leftSleeve,
         rightUpperArm,rightLowerArm,rightShoulderJoint,rightElbowJoint,rightWristJoint,rightHand,rightSleeve,
         leftUpperLeg,leftLowerLeg,leftHipJoint,leftKneeJoint,leftAnkleJoint,leftShoe,
@@ -3751,8 +3806,8 @@
       ],
 
       skinParts:[
-        leftArmShell,rightArmShell,
-        neck,neckJoint,head,nose,leftEar,rightEar,chin,cheekL,cheekR,upperLip,lowerLip,
+        leftArmShell,rightArmShell,neckShell,
+        neck,neckJoint,head,jaw,nose,leftEar,rightEar,cheekL,cheekR,upperLip,lowerLip,
         leftUpperArm,leftLowerArm,leftElbowJoint,leftWristJoint,leftHand,
         rightUpperArm,rightLowerArm,rightElbowJoint,rightWristJoint,rightHand
       ],
@@ -3771,7 +3826,7 @@
       flashParts:[
         bodyShell,shoulderBridge,leftSleeveShell,rightSleeveShell,
         leftArmShell,rightArmShell,leftLegShell,rightLegShell,
-        neck,pelvis,head,leftHand,rightHand,
+        neckShell,pelvis,head,jaw,leftHand,rightHand,
         leftShoe,rightShoe
       ],
 
@@ -3854,9 +3909,10 @@
     npc.leftLegShell.material=npc.pantsMat;
     npc.rightLegShell.material=npc.pantsMat;
 
-    npc.neck.material=npc.skinMat;
+    npc.neckShell.material=npc.skinMat;
     npc.pelvis.material=npc.pantsMat;
     npc.head.material=npc.skinMat;
+    npc.jaw.material=npc.skinMat;
     npc.leftHand.material=npc.skinMat;
     npc.rightHand.material=npc.skinMat;
     npc.leftShoe.material=npc.shoeMat;
@@ -4030,14 +4086,14 @@
       const outward=mesh.position.subtract(chestCenter);
       if(outward.lengthSquared()>.0001){
         outward.normalize();
-        vel.addInPlace(outward.scale(1.1+Math.random()*1.5));
+        vel.addInPlace(outward.scale(1.35+Math.random()*1.65));
       }
 
       deathParts.push({
         mesh,
         vel,
         radius,
-        life:7.2,
+        life:7.8,
         spin:new BABYLON.Vector3(
           (Math.random()-.5)*7,
           (Math.random()-.5)*7,
@@ -4092,36 +4148,66 @@
     // Head keeps hair and eyes after it separates.
     {
       const m=BABYLON.MeshBuilder.CreateSphere("deathHead",{
-        diameter:.43,segments:16
+        diameter:.415,segments:18
       },scene);
       m.position.copyFrom(W("head"));
-      m.scaling.set(.86,1.10,.82);
+      m.scaling.set(.84,1.08,.79);
       m.material=npc.skinMat;
 
+      const jaw=BABYLON.MeshBuilder.CreateSphere("deathJaw",{
+        diameter:.29,segments:14
+      },scene);
+      jaw.parent=m;
+      jaw.position.set(0,-.145,.008);
+      jaw.scaling.set(.88,.58,.76);
+      jaw.material=npc.skinMat;
+
       const hair=BABYLON.MeshBuilder.CreateSphere("deathHair",{
-        diameter:.43,segments:14
+        diameter:.405,segments:16
       },scene);
       hair.parent=m;
-      hair.position.set(0,.14,-.03);
-      hair.scaling.set(.90,.43,.92);
+      hair.position.set(0,.135,-.055);
+      hair.scaling.set(.86,.34,.86);
       hair.material=npc.hairMat;
 
       for(const sx of [-1,1]){
-        const eye=BABYLON.MeshBuilder.CreateSphere("deathEye",{
-          diameter:.045,segments:9
+        const white=BABYLON.MeshBuilder.CreateSphere("deathEyeWhite",{
+          diameter:.050,segments:10
         },scene);
-        eye.parent=m;
-        eye.position.set(sx*.075,.055,.205);
-        eye.scaling.set(1.15,.62,.34);
-        eye.material=npc.eyeWhiteMat;
+        white.parent=m;
+        white.position.set(sx*.068,.060,.192);
+        white.scaling.set(1.12,.58,.28);
+        white.material=npc.eyeWhiteMat;
+
+        const iris=BABYLON.MeshBuilder.CreateSphere("deathIris",{
+          diameter:.022,segments:8
+        },scene);
+        iris.parent=m;
+        iris.position.set(sx*.068,.060,.205);
+        iris.material=npc.eyeMat;
 
         const pupil=BABYLON.MeshBuilder.CreateSphere("deathPupil",{
-          diameter:.014,segments:7
+          diameter:.010,segments:7
         },scene);
         pupil.parent=m;
-        pupil.position.set(sx*.075,.055,.224);
+        pupil.position.set(sx*.068,.060,.214);
         pupil.material=npc.pupilMat;
       }
+
+      const nose=BABYLON.MeshBuilder.CreateSphere("deathNose",{
+        diameter:.058,segments:10
+      },scene);
+      nose.parent=m;
+      nose.position.set(0,-.020,.188);
+      nose.scaling.set(.72,1,.95);
+      nose.material=npc.skinMat;
+
+      const mouth=BABYLON.MeshBuilder.CreateBox("deathMouth",{
+        width:.095,height:.020,depth:.008
+      },scene);
+      mouth.parent=m;
+      mouth.position.set(0,-.102,.188);
+      mouth.material=npc.pupilMat;
 
       const vel=V("head").scale(.72)
         .add(dir.scale(force*.26))
@@ -4130,7 +4216,7 @@
           .35+Math.random()*1.2,
           (Math.random()-.5)*1.2
         ));
-      addPiece(m,.22,vel);
+      addPiece(m,.21,vel);
     }
     spherePiece("deathPelvis","pelvis",.42,npc.pantsMat);
 
@@ -4315,11 +4401,11 @@
 
     npc.anger=Math.min(100,npc.anger+12+damage*.9);
     if(npc.hpValue<=30){
-      npc.emotion="scared";speakNpc(Math.random()<.55?"scared":"angry",true);
+      npc.emotion="scared";speakNpc(Math.random()<.55?"scared":"angry",false);
     }else if(npc.anger>=55){
-      npc.emotion="angry";speakNpc(Math.random()<.62?"furious":"angry",true);
+      npc.emotion="angry";speakNpc(Math.random()<.62?"furious":"angry",false);
     }else{
-      npc.emotion="angry";speakNpc(speed>3?"angry":"hurt",true);
+      npc.emotion="angry";speakNpc(speed>3?"angry":"hurt",false);
     }
 
     pulse(hands.right,Math.min(1,.22+speed*.09),35+Math.min(75,speed*5));
@@ -4509,7 +4595,7 @@
             npc.attackHasHit=false;
             npc.attackBlocked=false;
             npc.weaponPrevTip=npc.weaponTip.getAbsolutePosition().clone();
-            speakNpc(npc.anger>=60 && Math.random()<.45 ? "furious" : "attack",true);
+            speakNpc(npc.anger>=60 && Math.random()<.45 ? "furious" : "attack",false);
             playImpactSound("whoosh",.55);
           }
 
@@ -4607,7 +4693,7 @@
                 recordBlock();
 
                 npc.anger=Math.min(100,npc.anger+14);
-                speakNpc("block",true);
+                speakNpc("block",false);
               }
             }
 
@@ -4817,7 +4903,7 @@
       (Math.random()-.5)*8
     );
 
-    speakNpc("furious",true);
+    speakNpc("furious",false);
     playImpactSound("whoosh",.6);
     return true;
   }
