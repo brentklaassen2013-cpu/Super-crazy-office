@@ -77,7 +77,7 @@
   let bodyVelocity=new BABYLON.Vector3(0,0,0);
 
   // Much lighter than previous versions.
-  const PLAYER_GRAVITY = -1.45;
+  const PLAYER_GRAVITY = -0.92;
   const PUSH_GAIN = 1.68;
   const MAX_PLAYER_SPEED = 9.6;
 
@@ -187,7 +187,7 @@
     away.normalize();
 
     bodyVelocity.addInPlace(
-      away.scale(4.7).add(new BABYLON.Vector3(0,1.35,0))
+      away.scale(2.8).add(new BABYLON.Vector3(0,.72,0))
     );
 
     pulse(hands.left,.92,115);
@@ -260,22 +260,23 @@
     if (f.lengthSquared()<.001) f.set(0,0,1);
     f.normalize();
 
-    const topY=Math.max(.52,head.y-.18);
-    const bottomY=Math.max(.25,head.y-.74);
+    const topY=Math.max(.64,head.y-.16);
+    const bottomY=Math.max(.46,head.y-.56);
     const bodyMid=(topY+bottomY)*.5;
 
     chestRoot.position.set(
-      head.x + f.x*.07,
-      bodyMid + .31,
-      head.z + f.z*.07
+      head.x + f.x*.08,
+      bodyMid + .27,
+      head.z + f.z*.08
     );
     chestRoot.rotation.y=Math.atan2(f.x,f.z);
 
     // If the real player crouches extremely low, compress visually rather
     // than allowing the torso to disappear below the virtual floor.
-    const bodyHeight=Math.max(.35,topY-bottomY);
-    chest.scaling.y=Math.min(1,bodyHeight/.56);
-    belly.position.y=-Math.min(.66,bodyHeight+.10);
+    const bodyHeight=Math.max(.28,topY-bottomY);
+    chest.scaling.y=Math.min(.92,bodyHeight/.50);
+    belly.position.y=-Math.min(.48,bodyHeight+.05);
+    belly.scaling.y=.58;
   }
   function keepRigAboveFloor() {
     if (!xrCamera) return;
@@ -549,32 +550,90 @@
   }
 
   // ------------------------------------------------------------
-  // Bat
+  // Detailed player bat
   // ------------------------------------------------------------
   const batRoot=new BABYLON.TransformNode("batRoot",scene);
+
+  const batWood=mkMat("batWood","#b9783e");
+  const batDark=mkMat("batDark","#4b2d18");
+  const batMetal=mkMat("batMetal","#cbd5e1");
+  const batTape=mkMat("batTape","#1f2937");
+
   const batBarrel=BABYLON.MeshBuilder.CreateCylinder("batBarrel",{
-    height:.76,diameterTop:.10,diameterBottom:.066,tessellation:16
+    height:.78,diameterTop:.115,diameterBottom:.078,tessellation:20
   },scene);
   batBarrel.parent=batRoot;
   batBarrel.rotation.x=Math.PI/2;
-  batBarrel.position.z=.36;
-  batBarrel.material=MAT.bat;
+  batBarrel.position.z=.37;
+  batBarrel.material=batWood;
 
-  const grip=BABYLON.MeshBuilder.CreateCylinder("batGrip",{height:.24,diameter:.055,tessellation:12},scene);
+  const batTipCap=BABYLON.MeshBuilder.CreateSphere("batTipCap",{
+    diameter:.118,segments:16
+  },scene);
+  batTipCap.parent=batRoot;
+  batTipCap.position.z=.765;
+  batTipCap.scaling.z=.62;
+  batTipCap.material=batWood;
+
+  const batNeck=BABYLON.MeshBuilder.CreateCylinder("batNeck",{
+    height:.14,diameterTop:.078,diameterBottom:.058,tessellation:16
+  },scene);
+  batNeck.parent=batRoot;
+  batNeck.rotation.x=Math.PI/2;
+  batNeck.position.z=-.07;
+  batNeck.material=batDark;
+
+  const grip=BABYLON.MeshBuilder.CreateCylinder("batGrip",{
+    height:.29,diameter:.061,tessellation:14
+  },scene);
   grip.parent=batRoot;
   grip.rotation.x=Math.PI/2;
-  grip.position.z=-.15;
-  grip.material=MAT.grip;
+  grip.position.z=-.245;
+  grip.material=batTape;
+
+  // Grip rings for extra detail.
+  for(let i=0;i<5;i++){
+    const ring=BABYLON.MeshBuilder.CreateTorus("gripRing"+i,{
+      diameter:.067,thickness:.007,tessellation:14
+    },scene);
+    ring.parent=batRoot;
+    ring.rotation.x=Math.PI/2;
+    ring.position.z=-.12-i*.055;
+    ring.material=batDark;
+  }
+
+  const metalRing=BABYLON.MeshBuilder.CreateTorus("metalRing",{
+    diameter:.082,thickness:.010,tessellation:18
+  },scene);
+  metalRing.parent=batRoot;
+  metalRing.rotation.x=Math.PI/2;
+  metalRing.position.z=-.095;
+  metalRing.material=batMetal;
+
+  const knob=BABYLON.MeshBuilder.CreateSphere("batKnob",{
+    diameter:.09,segments:14
+  },scene);
+  knob.parent=batRoot;
+  knob.position.z=-.405;
+  knob.scaling.z=.65;
+  knob.material=batDark;
+
   batRoot.setEnabled(false);
 
   let batTipLast=null;
   let batHitCooldown=0;
   function batTip() {
-    return BABYLON.Vector3.TransformCoordinates(new BABYLON.Vector3(0,0,.77),batRoot.getWorldMatrix());
+    return BABYLON.Vector3.TransformCoordinates(
+      new BABYLON.Vector3(0,0,.825),
+      batRoot.getWorldMatrix()
+    );
   }
 
   function batBase() {
-    return BABYLON.Vector3.TransformCoordinates(new BABYLON.Vector3(0,0,-.16),batRoot.getWorldMatrix());
+    return BABYLON.Vector3.TransformCoordinates(
+      new BABYLON.Vector3(0,0,-.42),
+      batRoot.getWorldMatrix()
+    );
   }
 
   function simpleHitSound(strong=false) {
@@ -708,16 +767,16 @@
     r.background="#111827EE";r.color="white";r.thickness=4;r.cornerRadius=28;
     t.addControl(r);
     const tx=new BABYLON.GUI.TextBlock();
-    tx.text="100 HP";tx.color="white";tx.fontSize=68;tx.fontWeight="900";
+    tx.text="160 HP";tx.color="white";tx.fontSize=68;tx.fontWeight="900";
     r.addControl(tx);
     return {plane:p,text:tx};
   }
 
   const NPC_WEAPONS=[
-    {name:"Pipe",damage:16,knockback:4.0,reach:.82},
-    {name:"Hammer",damage:20,knockback:4.8,reach:.70},
-    {name:"Frying Pan",damage:14,knockback:3.7,reach:.72},
-    {name:"Broom",damage:12,knockback:3.4,reach:.94}
+    {name:"Pipe",damage:18,knockback:2.7,reach:.86},
+    {name:"Hammer",damage:23,knockback:3.2,reach:.74},
+    {name:"Frying Pan",damage:17,knockback:2.5,reach:.76},
+    {name:"Broom",damage:15,knockback:2.3,reach:.98}
   ];
 
   function createNpcWeapon(visual) {
@@ -756,6 +815,313 @@
     return {root,tip,cfg};
   }
 
+
+  // ------------------------------------------------------------
+  // Active ragdoll NPC physics
+  // ------------------------------------------------------------
+  function rotY(v,a){
+    const c=Math.cos(a),s=Math.sin(a);
+    return new BABYLON.Vector3(
+      v.x*c + v.z*s,
+      v.y,
+      -v.x*s + v.z*c
+    );
+  }
+
+  function npcLocalToWorld(v){
+    return npc.root.position.add(rotY(v,npc.root.rotation.y));
+  }
+
+  function worldVectorToNpcLocal(v){
+    return rotY(v,-npc.root.rotation.y);
+  }
+
+  function ragPoint(name,x,y,z,radius=.10,invMass=1){
+    const p=new BABYLON.Vector3(x,y,z);
+    return {
+      name,
+      pos:p.clone(),
+      prev:p.clone(),
+      base:p.clone(),
+      radius,
+      invMass
+    };
+  }
+
+  function ragConstraint(a,b,stiffness=1){
+    return {
+      a,b,
+      len:BABYLON.Vector3.Distance(a.pos,b.pos),
+      stiffness
+    };
+  }
+
+  function makeNpcRagdoll(){
+    const p={
+      pelvis:ragPoint("pelvis",0,.67,0,.18,.55),
+      chest:ragPoint("chest",0,1.18,0,.20,.45),
+      head:ragPoint("head",0,1.72,0,.23,.72),
+
+      lShoulder:ragPoint("lShoulder",-.30,1.34,0,.10,.85),
+      lElbow:ragPoint("lElbow",-.46,1.08,.01,.09,1),
+      lHand:ragPoint("lHand",-.49,.83,.04,.09,1),
+
+      rShoulder:ragPoint("rShoulder",.30,1.34,0,.10,.85),
+      rElbow:ragPoint("rElbow",.46,1.08,.01,.09,1),
+      rHand:ragPoint("rHand",.49,.83,.04,.09,1),
+
+      lHip:ragPoint("lHip",-.14,.63,0,.11,.75),
+      lKnee:ragPoint("lKnee",-.14,.34,.02,.10,.95),
+      lFoot:ragPoint("lFoot",-.14,.10,.12,.11,1),
+
+      rHip:ragPoint("rHip",.14,.63,0,.11,.75),
+      rKnee:ragPoint("rKnee",.14,.34,.02,.10,.95),
+      rFoot:ragPoint("rFoot",.14,.10,.12,.11,1)
+    };
+
+    const constraints=[
+      ragConstraint(p.pelvis,p.chest,1),
+      ragConstraint(p.chest,p.head,.98),
+
+      ragConstraint(p.chest,p.lShoulder,.98),
+      ragConstraint(p.lShoulder,p.lElbow,.98),
+      ragConstraint(p.lElbow,p.lHand,.98),
+
+      ragConstraint(p.chest,p.rShoulder,.98),
+      ragConstraint(p.rShoulder,p.rElbow,.98),
+      ragConstraint(p.rElbow,p.rHand,.98),
+
+      ragConstraint(p.pelvis,p.lHip,.98),
+      ragConstraint(p.lHip,p.lKnee,.99),
+      ragConstraint(p.lKnee,p.lFoot,.99),
+
+      ragConstraint(p.pelvis,p.rHip,.98),
+      ragConstraint(p.rHip,p.rKnee,.99),
+      ragConstraint(p.rKnee,p.rFoot,.99),
+
+      // Structural braces keep the active ragdoll human-shaped without
+      // making it perfectly rigid.
+      ragConstraint(p.lShoulder,p.rShoulder,.94),
+      ragConstraint(p.lHip,p.rHip,.96),
+      ragConstraint(p.lShoulder,p.rHip,.84),
+      ragConstraint(p.rShoulder,p.lHip,.84),
+      ragConstraint(p.head,p.lShoulder,.76),
+      ragConstraint(p.head,p.rShoulder,.76)
+    ];
+
+    return {
+      points:p,
+      list:Object.values(p),
+      constraints,
+      activeStrength:1,
+      dead:false
+    };
+  }
+
+  function setSegment(mesh,a,b,baseHeight=1){
+    const d=b.subtract(a);
+    const len=Math.max(.001,d.length());
+    const dir=d.scale(1/len);
+
+    mesh.position.copyFrom(a.add(b).scale(.5));
+    mesh.scaling.y=len/baseHeight;
+
+    const up=new BABYLON.Vector3(0,1,0);
+    let axis=BABYLON.Vector3.Cross(up,dir);
+    const dot=BABYLON.Scalar.Clamp(BABYLON.Vector3.Dot(up,dir),-1,1);
+    const angle=Math.acos(dot);
+
+    if(axis.lengthSquared()<.000001){
+      if(dot<0) mesh.rotationQuaternion=BABYLON.Quaternion.RotationAxis(
+        new BABYLON.Vector3(1,0,0),Math.PI
+      );
+      else mesh.rotationQuaternion=BABYLON.Quaternion.Identity();
+    }else{
+      axis.normalize();
+      mesh.rotationQuaternion=BABYLON.Quaternion.RotationAxis(axis,angle);
+    }
+  }
+
+  function ragTarget(name){
+    const rd=npc.ragdoll;
+    const base=rd.points[name].base.clone();
+
+    if(npc.dead) return base;
+
+    const walking=npc.walkingNow ? 1 : 0;
+    const phase=npc.walkPhase;
+    const stride=Math.sin(phase)*.16*walking;
+    const lift=Math.max(0,Math.sin(phase))* .055*walking;
+    const liftOpp=Math.max(0,-Math.sin(phase))* .055*walking;
+
+    if(name==="lFoot"){
+      base.z+=stride;
+      base.y+=lift;
+    }else if(name==="rFoot"){
+      base.z-=stride;
+      base.y+=liftOpp;
+    }else if(name==="lKnee"){
+      base.z+=stride*.48;
+      base.y+=lift*.55;
+    }else if(name==="rKnee"){
+      base.z-=stride*.48;
+      base.y+=liftOpp*.55;
+    }else if(name==="lHand"){
+      base.z-=stride*.55;
+    }else if(name==="rHand"){
+      base.z+=stride*.55;
+    }else if(name==="lElbow"){
+      base.z-=stride*.30;
+    }else if(name==="rElbow"){
+      base.z+=stride*.30;
+    }
+
+    // Right arm follows the attack in a springy way instead of being a
+    // completely rigid animation.
+    if(npc.attackAnim>0){
+      const progress=1-(npc.attackAnim/npc.attackDuration);
+      if(name==="rHand"){
+        const arc=Math.sin(progress*Math.PI);
+        base.x=.44;
+        base.y=1.02 + arc*.13;
+        base.z=.08 + progress*.38;
+      }else if(name==="rElbow"){
+        const arc=Math.sin(progress*Math.PI);
+        base.x=.39;
+        base.y=1.18 + arc*.08;
+        base.z=.03 + progress*.18;
+      }
+    }
+
+    return base;
+  }
+
+  function solveRagConstraint(c){
+    const a=c.a,b=c.b;
+    const d=b.pos.subtract(a.pos);
+    const len=d.length();
+    if(len<.000001) return;
+
+    const error=(len-c.len)/len;
+    const wa=a.invMass,wb=b.invMass;
+    const sum=wa+wb;
+    if(sum<=0) return;
+
+    const corr=d.scale(error*c.stiffness);
+    a.pos.addInPlace(corr.scale(wa/sum));
+    b.pos.subtractInPlace(corr.scale(wb/sum));
+  }
+
+  function collideNpcRagdollPoint(p){
+    const world=npcLocalToWorld(p.pos);
+    const correction=playerSphereCorrection(world,p.radius);
+    if(!correction) return;
+
+    const localCorrection=worldVectorToNpcLocal(correction);
+    p.pos.addInPlace(localCorrection);
+
+    // Moving some of the correction into previous position kills the
+    // trampoline/bounce effect while preserving impact motion.
+    p.prev.addInPlace(localCorrection.scale(.72));
+  }
+
+  function updateNpcRagdoll(dt,active){
+    if(!npc?.ragdoll) return;
+
+    const rd=npc.ragdoll;
+    const frame=Math.min(1.4,dt*60);
+    const gravity=active ? -4.8 : -7.1;
+    const damping=active ? .91 : .965;
+
+    let strength=.18;
+    if(npc.stun>0) strength=.045;
+    else if(npc.recentlyHit>0) strength=.075;
+    else if(npc.emotion==="angry") strength=.21;
+    else if(npc.emotion==="scared") strength=.14;
+
+    for(const p of rd.list){
+      const vel=p.pos.subtract(p.prev).scale(damping);
+      p.prev.copyFrom(p.pos);
+      p.pos.addInPlace(vel);
+      p.pos.y+=gravity*dt*dt;
+
+      if(active){
+        const target=ragTarget(p.name);
+        const localStrength=
+          (p.name==="pelvis" || p.name==="chest") ? strength*1.35 :
+          p.name==="head" ? strength*1.12 :
+          strength;
+
+        p.pos.addInPlace(
+          target.subtract(p.pos).scale(localStrength*frame)
+        );
+      }
+    }
+
+    // More iterations = tighter joints. Five is a good Quest 2 compromise.
+    for(let iteration=0;iteration<5;iteration++){
+      for(const c of rd.constraints) solveRagConstraint(c);
+      for(const p of rd.list) collideNpcRagdollPoint(p);
+    }
+
+    updateNpcRagdollMeshes();
+  }
+
+  function updateNpcRagdollMeshes(){
+    if(!npc?.ragdoll) return;
+    const p=npc.ragdoll.points;
+
+    setSegment(npc.torso,p.pelvis.pos,p.chest.pos,1);
+    npc.chestPlate.position.copyFrom(p.chest.pos);
+    npc.pelvis.position.copyFrom(p.pelvis.pos);
+    npc.head.position.copyFrom(p.head.pos);
+
+    setSegment(npc.leftUpperArm,p.lShoulder.pos,p.lElbow.pos,1);
+    setSegment(npc.leftLowerArm,p.lElbow.pos,p.lHand.pos,1);
+    npc.leftHand.position.copyFrom(p.lHand.pos);
+
+    setSegment(npc.rightUpperArm,p.rShoulder.pos,p.rElbow.pos,1);
+    setSegment(npc.rightLowerArm,p.rElbow.pos,p.rHand.pos,1);
+    npc.rightHand.position.copyFrom(p.rHand.pos);
+
+    setSegment(npc.leftUpperLeg,p.lHip.pos,p.lKnee.pos,1);
+    setSegment(npc.leftLowerLeg,p.lKnee.pos,p.lFoot.pos,1);
+    npc.leftShoe.position.copyFrom(p.lFoot.pos);
+
+    setSegment(npc.rightUpperLeg,p.rHip.pos,p.rKnee.pos,1);
+    setSegment(npc.rightLowerLeg,p.rKnee.pos,p.rFoot.pos,1);
+    npc.rightShoe.position.copyFrom(p.rFoot.pos);
+
+    // Face follows the head point.
+    npc.nose.position.copyFrom(p.head.pos.add(new BABYLON.Vector3(0,-.03,.245)));
+    npc.leftEye.position.copyFrom(p.head.pos.add(new BABYLON.Vector3(-.085,.08,.225)));
+    npc.rightEye.position.copyFrom(p.head.pos.add(new BABYLON.Vector3(.085,.08,.225)));
+    npc.mouth.position.copyFrom(p.head.pos.add(new BABYLON.Vector3(0,-.11,.242)));
+
+    // Weapon is physically attached to the ragdoll right hand.
+    npc.weaponRoot.position.copyFrom(p.rHand.pos);
+  }
+
+  function applyNpcRagdollImpulse(hitWorld,impulseWorld,radius=1.0){
+    if(!npc?.ragdoll) return;
+
+    const impulseLocal=worldVectorToNpcLocal(impulseWorld);
+
+    for(const p of npc.ragdoll.list){
+      const w=npcLocalToWorld(p.pos);
+      const dist=BABYLON.Vector3.Distance(w,hitWorld);
+      if(dist>radius) continue;
+
+      const falloff=1-dist/radius;
+      const massScale=.55+p.invMass*.55;
+
+      // Verlet impulse: changing prev creates instantaneous velocity.
+      p.prev.subtractInPlace(
+        impulseLocal.scale(.020*falloff*massScale)
+      );
+    }
+  }
+
   function createNpc() {
     const root=new BABYLON.TransformNode("npcRoot",scene);
     root.position=new BABYLON.Vector3(0,0,1.8);
@@ -763,57 +1129,156 @@
     const visual=new BABYLON.TransformNode("npcVisual",scene);
     visual.parent=root;
 
-    const torso=BABYLON.MeshBuilder.CreateCapsule("npcTorso",{height:.90,radius:.29,tessellation:16},scene);
-    torso.parent=visual; torso.position.y=1.10; torso.material=MAT.npc;
+    const skinMat=mkMat("npcSkin"+Math.random(),"#e8a06f");
+    const shirtMat=mkMat("npcShirt"+Math.random(),"#f59a3d");
+    const pantsMat=mkMat("npcPants"+Math.random(),"#334155");
+    const shoeMat=mkMat("npcShoes"+Math.random(),"#111827");
+    const eyeMat=mkMat("npcEyes"+Math.random(),"#111111");
 
-    const pelvis=BABYLON.MeshBuilder.CreateSphere("npcPelvis",{diameter:.42,segments:12},scene);
-    pelvis.parent=visual;pelvis.position.y=.67;pelvis.scaling.y=.65;pelvis.material=MAT.npc;
-
-    const head=BABYLON.MeshBuilder.CreateSphere("npcHead",{diameter:.48,segments:16},scene);
-    head.parent=visual;head.position.y=1.72;head.material=MAT.npc;
-
-    function limb(name,x,y,h,r) {
-      const m=BABYLON.MeshBuilder.CreateCapsule(name,{height:h,radius:r,tessellation:12},scene);
-      m.parent=visual;m.position.set(x,y,0);m.material=MAT.npc;return m;
+    function capsule(name,radius,material){
+      const m=BABYLON.MeshBuilder.CreateCapsule(name,{
+        height:1,radius,tessellation:14
+      },scene);
+      m.parent=visual;
+      m.material=material;
+      m.rotationQuaternion=BABYLON.Quaternion.Identity();
+      return m;
     }
 
-    const leftArm=limb("leftArm",-.39,1.12,.70,.085);
-    const rightArm=limb("rightArm",.39,1.12,.70,.085);
-    const leftLeg=limb("leftLeg",-.15,.38,.76,.095);
-    const rightLeg=limb("rightLeg",.15,.38,.76,.095);
+    const torso=capsule("npcTorso",.285,shirtMat);
+
+    const chestPlate=BABYLON.MeshBuilder.CreateSphere("npcChest",{
+      diameter:.54,segments:16
+    },scene);
+    chestPlate.parent=visual;
+    chestPlate.scaling.set(1,.72,.68);
+    chestPlate.material=shirtMat;
+
+    const pelvis=BABYLON.MeshBuilder.CreateSphere("npcPelvis",{
+      diameter:.43,segments:14
+    },scene);
+    pelvis.parent=visual;
+    pelvis.scaling.y=.62;
+    pelvis.material=pantsMat;
+
+    const head=BABYLON.MeshBuilder.CreateSphere("npcHead",{
+      diameter:.49,segments:18
+    },scene);
+    head.parent=visual;
+    head.material=skinMat;
+
+    const nose=BABYLON.MeshBuilder.CreateSphere("npcNose",{
+      diameter:.09,segments:10
+    },scene);
+    nose.parent=visual;
+    nose.scaling.z=1.25;
+    nose.material=skinMat;
+
+    const leftEye=BABYLON.MeshBuilder.CreateSphere("npcLeftEye",{
+      diameter:.055,segments:10
+    },scene);
+    leftEye.parent=visual;
+    leftEye.scaling.z=.55;
+    leftEye.material=eyeMat;
+
+    const rightEye=leftEye.clone("npcRightEye");
+    rightEye.parent=visual;
+
+    const mouth=BABYLON.MeshBuilder.CreateBox("npcMouth",{
+      width:.13,height:.025,depth:.012
+    },scene);
+    mouth.parent=visual;
+    mouth.material=eyeMat;
+
+    const leftUpperArm=capsule("leftUpperArm",.088,skinMat);
+    const leftLowerArm=capsule("leftLowerArm",.077,skinMat);
+    const rightUpperArm=capsule("rightUpperArm",.088,skinMat);
+    const rightLowerArm=capsule("rightLowerArm",.077,skinMat);
+
+    const leftHand=BABYLON.MeshBuilder.CreateSphere("leftHand",{
+      diameter:.17,segments:12
+    },scene);
+    leftHand.parent=visual;
+    leftHand.material=skinMat;
+
+    const rightHand=leftHand.clone("rightHand");
+    rightHand.parent=visual;
+
+    const leftUpperLeg=capsule("leftUpperLeg",.105,pantsMat);
+    const leftLowerLeg=capsule("leftLowerLeg",.090,pantsMat);
+    const rightUpperLeg=capsule("rightUpperLeg",.105,pantsMat);
+    const rightLowerLeg=capsule("rightLowerLeg",.090,pantsMat);
+
+    const leftShoe=BABYLON.MeshBuilder.CreateBox("leftShoe",{
+      width:.20,height:.12,depth:.32
+    },scene);
+    leftShoe.parent=visual;
+    leftShoe.material=shoeMat;
+
+    const rightShoe=leftShoe.clone("rightShoe");
+    rightShoe.parent=visual;
 
     const speech=speechBubble(root);
     const hp=hpLabel(root);
     const weapon=createNpcWeapon(visual);
 
     npc={
-      root,visual,torso,pelvis,head,leftArm,rightArm,leftLeg,rightLeg,
-      weaponRoot:weapon.root,weaponTip:weapon.tip,weaponCfg:weapon.cfg,
-      parts:[torso,pelvis,head,leftArm,rightArm,leftLeg,rightLeg],
+      root,visual,
+      torso,chestPlate,pelvis,head,nose,leftEye,rightEye,mouth,
+      leftUpperArm,leftLowerArm,leftHand,
+      rightUpperArm,rightLowerArm,rightHand,
+      leftUpperLeg,leftLowerLeg,leftShoe,
+      rightUpperLeg,rightLowerLeg,rightShoe,
+
+      parts:[
+        torso,chestPlate,pelvis,head,nose,leftEye,rightEye,mouth,
+        leftUpperArm,leftLowerArm,leftHand,
+        rightUpperArm,rightLowerArm,rightHand,
+        leftUpperLeg,leftLowerLeg,leftShoe,
+        rightUpperLeg,rightLowerLeg,rightShoe
+      ],
+
+      skinParts:[
+        head,nose,leftUpperArm,leftLowerArm,leftHand,
+        rightUpperArm,rightLowerArm,rightHand
+      ],
+      shirtParts:[torso,chestPlate],
+      pantsParts:[pelvis,leftUpperLeg,leftLowerLeg,rightUpperLeg,rightLowerLeg],
+      shoeParts:[leftShoe,rightShoe],
+
+      skinMat,shirtMat,pantsMat,shoeMat,eyeMat,
       speech,hp,
-      hpValue:100,
-      maxHp:100,
+      weaponRoot:weapon.root,weaponTip:weapon.tip,weaponCfg:weapon.cfg,
+
+      hpValue:160,
+      maxHp:160,
       dead:false,
       velocity:new BABYLON.Vector3(0,0,0),
       angular:new BABYLON.Vector3(0,0,0),
       hitCooldown:0,
-      attackCooldown:.5,
+      attackCooldown:.35,
       attackAnim:0,
-      attackDuration:.56,
+      attackDuration:.48,
       attackHasHit:false,
       attackBlocked:false,
       weaponPrevTip:null,
       stun:0,
       walkPhase:0,
+      walkingNow:false,
       speechCooldown:0,
       bubbleTimer:0,
       emotion:"normal",
       recentlyHit:0,
       respawnTimer:0,
-      greeted:false
+      greeted:false,
+      deathDelay:0,
+      ragdoll:null
     };
+
+    npc.ragdoll=makeNpcRagdoll();
+    npc.hp.text.text="160 HP";
+    updateNpcRagdollMeshes();
   }
-  createNpc();
 
   function updateNpcLabel() {
     if (npc) npc.hp.text.text=`${Math.max(0,Math.ceil(npc.hpValue))} HP`;
@@ -821,24 +1286,35 @@
 
   function setNpcMaterial() {
     if (!npc || npc.dead) return;
-    let mat=MAT.npc;
-    if (npc.recentlyHit>.0) mat=MAT.npcHit;
-    else if (npc.emotion==="angry") mat=MAT.npcAngry;
-    else if (npc.emotion==="scared") mat=MAT.npcScared;
-    npc.parts.forEach(p=>p.material=mat);
-  }
 
+    if(npc.recentlyHit>0){
+      npc.skinParts.forEach(p=>p.material=MAT.npcHit);
+      npc.shirtParts.forEach(p=>p.material=MAT.npcHit);
+      npc.pantsParts.forEach(p=>p.material=MAT.npcHit);
+      return;
+    }
+
+    npc.skinParts.forEach(p=>p.material=npc.skinMat);
+    npc.shirtParts.forEach(p=>p.material=npc.shirtMat);
+    npc.pantsParts.forEach(p=>p.material=npc.pantsMat);
+    npc.shoeParts.forEach(p=>p.material=npc.shoeMat);
+    npc.leftEye.material=npc.eyeMat;
+    npc.rightEye.material=npc.eyeMat;
+    npc.mouth.material=npc.eyeMat;
+
+    // Emotion still shows subtly through the chest instead of recoloring
+    // the entire person unnaturally.
+    if(npc.emotion==="angry") npc.chestPlate.material=MAT.npcAngry;
+    else if(npc.emotion==="scared") npc.chestPlate.material=MAT.npcScared;
+  }
   function npcSphereHit(center,radius) {
-    if (!npc || npc.dead) return false;
-    const centers=[
-      [new BABYLON.Vector3(0,1.10,0),.44],
-      [new BABYLON.Vector3(0,1.72,0),.29],
-      [new BABYLON.Vector3(-.15,.38,0),.19],
-      [new BABYLON.Vector3(.15,.38,0),.19]
-    ];
-    return centers.some(([off,r])=>BABYLON.Vector3.Distance(center,npc.root.position.add(off))<radius+r);
-  }
+    if (!npc || npc.dead || !npc.ragdoll) return false;
 
+    return npc.ragdoll.list.some(p=>{
+      const w=npcLocalToWorld(p.pos);
+      return BABYLON.Vector3.Distance(center,w)<radius+p.radius;
+    });
+  }
   function resolveNpcWorld(prevY) {
     if (!npc) return;
     if (npc.root.position.y<0) {
@@ -951,50 +1427,105 @@
 
   function spawnDeathRagdoll(origin,launchDir,force) {
     const specs=[
-      {type:"capsule",r:.28,h:.72,off:[0,1.08,0]},
-      {type:"sphere",d:.47,off:[0,1.70,0]},
-      {type:"box",size:[.42,.24,.30],off:[0,.67,0]},
-      {type:"capsule",r:.09,h:.39,off:[-.34,1.29,0]},
-      {type:"capsule",r:.075,h:.36,off:[-.45,1.01,0]},
-      {type:"capsule",r:.09,h:.39,off:[.34,1.29,0]},
-      {type:"capsule",r:.075,h:.36,off:[.45,1.01,0]},
-      {type:"capsule",r:.10,h:.44,off:[-.15,.43,0]},
-      {type:"capsule",r:.085,h:.42,off:[-.15,.11,0]},
-      {type:"capsule",r:.10,h:.44,off:[.15,.43,0]},
-      {type:"capsule",r:.085,h:.42,off:[.15,.11,0]}
+      {type:"capsule",r:.29,h:.74,off:[0,1.08,0],scale:[1,1,1]},
+      {type:"sphere",d:.48,off:[0,1.71,0],scale:[1,1,1]},
+      {type:"box",size:[.43,.25,.31],off:[0,.67,0],scale:[1,1,1]},
+
+      {type:"capsule",r:.095,h:.40,off:[-.34,1.30,0],scale:[1,1,1]},
+      {type:"capsule",r:.078,h:.37,off:[-.47,1.02,0],scale:[1,1,1]},
+      {type:"sphere",d:.16,off:[-.49,.80,.02],scale:[.85,.70,1.15]},
+
+      {type:"capsule",r:.095,h:.40,off:[.34,1.30,0],scale:[1,1,1]},
+      {type:"capsule",r:.078,h:.37,off:[.47,1.02,0],scale:[1,1,1]},
+      {type:"sphere",d:.16,off:[.49,.80,.02],scale:[.85,.70,1.15]},
+
+      {type:"capsule",r:.105,h:.46,off:[-.15,.43,0],scale:[1,1,1]},
+      {type:"capsule",r:.088,h:.43,off:[-.15,.10,0],scale:[1,1,1]},
+      {type:"box",size:[.19,.11,.30],off:[-.15,-.14,.08],scale:[1,1,1]},
+
+      {type:"capsule",r:.105,h:.46,off:[.15,.43,0],scale:[1,1,1]},
+      {type:"capsule",r:.088,h:.43,off:[.15,.10,0],scale:[1,1,1]},
+      {type:"box",size:[.19,.11,.30],off:[.15,-.14,.08],scale:[1,1,1]}
     ];
 
-    for (const sp of specs) {
+    for(const sp of specs){
       let m,radius;
-      if (sp.type==="sphere") {
-        m=BABYLON.MeshBuilder.CreateSphere("deathPart",{diameter:sp.d,segments:12},scene);
+
+      if(sp.type==="sphere"){
+        m=BABYLON.MeshBuilder.CreateSphere("deathPart",{
+          diameter:sp.d,segments:14
+        },scene);
         radius=sp.d*.5;
-      } else if (sp.type==="box") {
-        m=BABYLON.MeshBuilder.CreateBox("deathPart",{width:sp.size[0],height:sp.size[1],depth:sp.size[2]},scene);
+      } else if(sp.type==="box"){
+        m=BABYLON.MeshBuilder.CreateBox("deathPart",{
+          width:sp.size[0],height:sp.size[1],depth:sp.size[2]
+        },scene);
         radius=Math.max(...sp.size)*.42;
       } else {
-        m=BABYLON.MeshBuilder.CreateCapsule("deathPart",{radius:sp.r,height:sp.h,tessellation:12},scene);
+        m=BABYLON.MeshBuilder.CreateCapsule("deathPart",{
+          radius:sp.r,height:sp.h,tessellation:14
+        },scene);
         radius=Math.max(sp.r*1.2,sp.h*.28);
       }
+
       m.material=MAT.npc;
       m.position=origin.add(new BABYLON.Vector3(...sp.off));
+      m.scaling.set(...sp.scale);
 
-      // All pieces initially travel together in the actual hit direction,
-      // then separate with only modest random scatter.
+      // Most of the velocity comes from the actual bat direction;
+      // only a small separation impulse makes the body come apart.
       const scatter=new BABYLON.Vector3(
-        (Math.random()-.5)*1.7,
-        Math.random()*1.25,
-        (Math.random()-.5)*1.7
+        (Math.random()-.5)*1.15,
+        .35+Math.random()*1.10,
+        (Math.random()-.5)*1.15
       );
-      const vel=launchDir.scale(force).add(scatter).add(new BABYLON.Vector3(0,2.0,0));
+
+      const vel=launchDir.scale(force).add(scatter);
 
       deathParts.push({
-        mesh:m,vel,radius,life:4.0,
+        mesh:m,
+        vel,
+        radius,
+        life:4.2,
         spin:new BABYLON.Vector3(
-          (Math.random()-.5)*6,
-          (Math.random()-.5)*6,
-          (Math.random()-.5)*6
+          (Math.random()-.5)*7,
+          (Math.random()-.5)*7,
+          (Math.random()-.5)*7
         )
+      });
+    }
+  }
+
+  function coolDeathBurst(origin) {
+    const sparkMat=mkMat("deathSpark"+Math.random(),"#ffd166");
+    for(let i=0;i<16;i++){
+      const s=BABYLON.MeshBuilder.CreateSphere("deathSpark",{
+        diameter:.035+Math.random()*.025,segments:6
+      },scene);
+      s.position=origin.add(new BABYLON.Vector3(
+        (Math.random()-.5)*.25,
+        .9+Math.random()*.65,
+        (Math.random()-.5)*.25
+      ));
+      s.material=sparkMat;
+
+      const v=new BABYLON.Vector3(
+        (Math.random()-.5)*4.2,
+        1.5+Math.random()*3.5,
+        (Math.random()-.5)*4.2
+      );
+      let life=.55+Math.random()*.30;
+
+      const obs=scene.onBeforeRenderObservable.add(()=>{
+        const dt=Math.min(.033,engine.getDeltaTime()/1000);
+        life-=dt;
+        v.y-=5.5*dt;
+        s.position.addInPlace(v.scale(dt));
+        s.scaling.scaleInPlace(.965);
+        if(life<=0){
+          scene.onBeforeRenderObservable.remove(obs);
+          s.dispose();
+        }
       });
     }
   }
@@ -1002,35 +1533,44 @@
   function finishNpc(hitPos,swingVel,speed) {
     if (!npc || npc.dead) return;
 
-    // Voice first, before marking dead.
     speakNpc("death",true);
 
     let dir=swingVel.clone();
-    if (dir.lengthSquared()<.001) dir=npc.root.position.subtract(hitPos);
+    if(dir.lengthSquared()<.001) dir=npc.root.position.subtract(hitPos);
     dir.normalize();
-
-    const force=Math.min(17.0,7.5+speed*.95);
-    const origin=npc.root.position.clone();
 
     npc.dead=true;
     npc.hpValue=0;
-    npc.visual.setEnabled(false);
-    npc.weaponRoot.setEnabled(false);
     npc.hp.plane.setEnabled(false);
     npc.speech.plane.setEnabled(false);
-    npc.respawnTimer=4.0;
+    npc.ragdoll.dead=true;
+    npc.respawnTimer=4.8;
 
-    spawnDeathRagdoll(origin,dir,force);
+    // Full-body launch, but the joints stay connected like a real ragdoll.
+    const force=Math.min(18,7.0+speed*.80);
+    const impulse=dir.scale(force).add(new BABYLON.Vector3(0,2.3,0));
 
-    pulse(hands.right,1,140);
+    applyNpcRagdollImpulse(hitPos,impulse,2.5);
+
+    // A little whole-body rotational asymmetry makes the fall look much
+    // more natural without randomly exploding the body.
+    for(const p of npc.ragdoll.list){
+      const side=(p.pos.x>=0?1:-1);
+      p.prev.x-=side*(Math.random()*.018);
+      p.prev.z-=(Math.random()-.5)*.024;
+    }
+
+    coolDeathBurst(npcLocalToWorld(npc.ragdoll.points.chest.pos));
+    pulse(hands.right,1,145);
     simpleHitSound(true);
   }
-
   function swingDamage(speed) {
-    // Continuous curve: every change in swing speed can produce a different
-    // damage value. Soft taps stay low; hard swings rise steeply.
-    if (speed<.50) return 0;
-    return Math.round(Math.max(2,Math.min(68,1.5 + 2.25*Math.pow(speed,1.55))));
+    // Continuous detailed curve with many possible damage values.
+    // Player damage is deliberately lower in v0.9 because the NPC is stronger.
+    if (speed<.45) return 0;
+
+    const raw = 0.8 + 1.18*Math.pow(speed,1.48);
+    return Math.round(Math.max(1,Math.min(42,raw)));
   }
 
   function damageNpc(hitPos,swingVel,speed) {
@@ -1054,9 +1594,16 @@
     if (dir.lengthSquared()<.001) dir=npc.root.position.subtract(hitPos);
     dir.normalize();
 
-    const force=Math.min(11.0,.9 + speed*.68);
-    npc.velocity.addInPlace(dir.scale(force));
-    npc.velocity.y+=Math.max(0,dir.y)*1.5;
+    const force=Math.min(6.7,.55 + speed*.40);
+    npc.velocity.addInPlace(dir.scale(force*.62));
+    npc.velocity.y+=Math.max(0,dir.y)*.85;
+
+    // The exact body area you hit now bends/wobbles physically.
+    applyNpcRagdollImpulse(
+      hitPos,
+      dir.scale(.9 + speed*.34),
+      .95
+    );
 
     if (npc.hpValue<=30) {
       npc.emotion="scared";
@@ -1195,9 +1742,9 @@
             const dir=toPlayer.normalize();
             npc.root.rotation.y=Math.atan2(dir.x,dir.z);
 
-            let speed=1.18;
-            if (npc.emotion==="angry") speed=1.55;
-            if (npc.emotion==="scared") speed=1.02;
+            let speed=1.30;
+            if (npc.emotion==="angry") speed=1.72;
+            if (npc.emotion==="scared") speed=1.18;
 
             moveNpc(dir.scale(speed*dt));
 
@@ -1210,8 +1757,8 @@
           }
 
           // Start a real weapon swing, but distance alone does NOT deal damage.
-          if (d<=1.95 && npc.stun<=0 && npc.attackAnim<=0 && npc.attackCooldown<=0) {
-            npc.attackCooldown=1.05;
+          if (d<=2.05 && npc.stun<=0 && npc.attackAnim<=0 && npc.attackCooldown<=0) {
+            npc.attackCooldown=.58;
             npc.attackAnim=npc.attackDuration;
             npc.attackHasHit=false;
             npc.attackBlocked=false;
@@ -1219,27 +1766,59 @@
             speakNpc("attack",true);
           }
 
-          // Animate weapon swing and use a swept hitbox.
+          // Animate a weapon swing that continuously aims at the player's
+          // CURRENT position, not just straight forward.
           if (npc.attackAnim>0) {
             const progress=1-(npc.attackAnim/npc.attackDuration);
             npc.attackAnim=Math.max(0,npc.attackAnim-dt);
 
-            // Wind-up -> fast strike -> follow-through.
-            let angle;
-            if (progress<.28) {
-              angle=BABYLON.Scalar.Lerp(-1.15,-1.60,progress/.28);
-            } else {
-              angle=BABYLON.Scalar.Lerp(-1.60,.72,(progress-.28)/.72);
+            // Turn toward the player during the entire swing.
+            const liveTarget=xrCamera.globalPosition.subtract(npc.root.position);
+            liveTarget.y=0;
+
+            if(liveTarget.lengthSquared()>.001){
+              liveTarget.normalize();
+              const desiredYaw=Math.atan2(liveTarget.x,liveTarget.z);
+
+              let deltaYaw=desiredYaw-npc.root.rotation.y;
+              deltaYaw=Math.atan2(Math.sin(deltaYaw),Math.cos(deltaYaw));
+              npc.root.rotation.y+=deltaYaw*Math.min(1,dt*14);
             }
 
-            npc.rightArm.rotation.x=angle*.72;
-            npc.weaponRoot.rotation.x=angle;
+            // Aim weapon height toward current chest/head height.
+            const targetWorld=xrCamera.globalPosition.add(
+              new BABYLON.Vector3(0,-.28,0)
+            );
+            const weaponWorld=npc.weaponRoot.getAbsolutePosition();
+            const aim=targetWorld.subtract(weaponWorld);
+
+            const horizontal=Math.max(.001,Math.hypot(aim.x,aim.z));
+            const pitchToPlayer=Math.atan2(aim.y,horizontal);
+
+            // Windup -> fast strike -> followthrough, but centered on the
+            // live pitch toward the player's body.
+            let swingOffset;
+            if(progress<.25){
+              swingOffset=BABYLON.Scalar.Lerp(-1.18,-1.70,progress/.25);
+            } else {
+              swingOffset=BABYLON.Scalar.Lerp(-1.70,.78,(progress-.25)/.75);
+            }
+
+            npc.weaponRoot.rotation.x=pitchToPlayer+swingOffset;
+
+            // Side angle bends the swing toward player's horizontal location.
+            const localSide=BABYLON.Scalar.Clamp(
+              liveTarget.x*Math.cos(npc.root.rotation.y) -
+              liveTarget.z*Math.sin(npc.root.rotation.y),
+              -1,1
+            );
+            npc.weaponRoot.rotation.y=localSide*.38;
 
             const tip=npc.weaponTip.getAbsolutePosition().clone();
             const prev=npc.weaponPrevTip||tip;
             npc.weaponPrevTip=tip.clone();
 
-            // You can block by putting your bat between yourself and the weapon.
+            // Block with player bat.
             if (!npc.attackBlocked && batRoot.isEnabled()) {
               const bb=batBase(),bt=batTip();
               const blockDist=Math.min(
@@ -1247,85 +1826,84 @@
                 pointSegmentDistance(prev,bb,bt)
               );
 
-              if (blockDist<.22 && progress>.30 && progress<.92) {
+              if(blockDist<.22 && progress>.25 && progress<.94){
                 npc.attackBlocked=true;
                 npc.attackAnim=0;
-                npc.stun=.48;
-                npc.velocity.addInPlace(
-                  npc.root.position.subtract(xrCamera.globalPosition)
-                    .normalize().scale(1.8)
-                );
+                npc.stun=.50;
+
+                let push=npc.root.position.subtract(xrCamera.globalPosition);
+                push.y=0;
+                if(push.lengthSquared()<.001) push.set(0,0,1);
+                push.normalize();
+
+                npc.velocity.addInPlace(push.scale(1.25));
                 pulse(hands.right,.95,110);
                 simpleHitSound(true);
                 speakNpc("angry",true);
               }
             }
 
-            // Actual body hitbox. If the weapon misses your head/chest/hips,
-            // no damage is dealt, so leaning/ducking/stepping can dodge it.
-            if (!npc.attackBlocked && !npc.attackHasHit && progress>.38) {
+            // Real swept hitbox against head/chest/hips.
+            if (!npc.attackBlocked && !npc.attackHasHit && progress>.32) {
               const hit=playerHitSpheres().some(s=>
-                segmentSphereHit(prev,tip,s.center,s.radius+.09)
+                segmentSphereHit(prev,tip,s.center,s.radius+.085)
               );
 
-              if (hit) {
+              if(hit){
                 npc.attackHasHit=true;
-                const damage=npc.weaponCfg.damage;
-                hurtPlayer(damage,npc.root.position);
+                hurtPlayer(npc.weaponCfg.damage,npc.root.position);
 
-                // Weapon-specific knockback.
                 let away=xrCamera.globalPosition.subtract(npc.root.position);
                 away.y=0;
-                if (away.lengthSquared()<.001) away.set(0,0,-1);
+                if(away.lengthSquared()<.001) away.set(0,0,-1);
                 away.normalize();
+
                 bodyVelocity.addInPlace(
-                  away.scale(npc.weaponCfg.knockback)
-                    .add(new BABYLON.Vector3(0,.65,0))
+                  away.scale(npc.weaponCfg.knockback*.62)
+                    .add(new BABYLON.Vector3(0,.38,0))
                 );
               }
             }
+
           } else {
             npc.weaponRoot.rotation.x=.10;
+            npc.weaponRoot.rotation.y=0;
           }
 
+          npc.walkingNow=walking;
           if (walking) npc.walkPhase+=dt*8.5;
-          const stride=walking?Math.sin(npc.walkPhase)*.48:0;
-          npc.leftLeg.rotation.x=stride;
-          npc.rightLeg.rotation.x=-stride;
 
-          if (npc.attackAnim<=0) {
-            npc.leftArm.rotation.x=-stride*.65;
-            npc.rightArm.rotation.x=stride*.50;
-          }
+          // The active ragdoll produces walking/arm motion physically.
+          updateNpcRagdoll(dt,true);
+        } else {
+          npc.walkingNow=false;
+          updateNpcRagdoll(dt,true);
         }
       } else {
         npc.respawnTimer-=dt;
+        npc.walkingNow=false;
+
+        // Completely limp physics: no standing springs, only joints,
+        // inertia, gravity and collisions.
+        updateNpcRagdoll(dt,false);
+
+        // Weapon stays attached to the limp right hand.
+        npc.weaponRoot.position.copyFrom(npc.ragdoll.points.rHand.pos);
+
         if (npc.respawnTimer<=0) {
           npc.root.dispose();
           createNpc();
-          npc.root.position=new BABYLON.Vector3((Math.random()-.5)*2.6,0,1.7+Math.random()*1.2);
+          npc.root.position=new BABYLON.Vector3(
+            (Math.random()-.5)*2.6,
+            0,
+            1.7+Math.random()*1.2
+          );
         }
+
       }
     }
 
-    // Detached KO body parts.
-    for (let i=deathParts.length-1;i>=0;i--) {
-      const r=deathParts[i];
-      r.life-=dt;
-      r.vel.y+=NPC_GRAVITY*dt;
-      moveDeathPart(r,dt);
-
-      r.mesh.rotation.x+=r.spin.x*dt;
-      r.mesh.rotation.y+=r.spin.y*dt;
-      r.mesh.rotation.z+=r.spin.z*dt;
-      r.vel.x*=Math.pow(.60,dt);
-      r.vel.z*=Math.pow(.60,dt);
-
-      if (r.life<=0) {
-        r.mesh.dispose();
-        deathParts.splice(i,1);
-      }
-    }
+    // Connected active-ragdoll death physics handled above.
 
     // XR player / hands / bat
     if (xrCamera && xr?.baseExperience?.state===BABYLON.WebXRState.IN_XR) {
