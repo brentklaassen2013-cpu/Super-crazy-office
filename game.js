@@ -1,5 +1,5 @@
 (() => {
-  const BUILD_VERSION="0.24.0";
+  const BUILD_VERSION="0.24.1";
   const canvas = document.getElementById("renderCanvas");
   const engine = new BABYLON.Engine(canvas, true, { stencil:true });
   const scene = new BABYLON.Scene(engine);
@@ -61,7 +61,7 @@
   const PERF={
     maxFx:320,
     maxBloodSplats:140,
-    maxDeathParts:34,
+    maxDeathParts:22,
     propSleepSpeed:.055,
     propSleepSeconds:1.15
   };
@@ -741,17 +741,17 @@
   // ------------------------------------------------------------
 
   // Baseboards / wall trim.
-  box("baseboardLeft",new BABYLON.Vector3(-4.88,.09,0),new BABYLON.Vector3(.055,.16,7.72),trimMat,false);
-  box("baseboardRight",new BABYLON.Vector3(4.88,.09,0),new BABYLON.Vector3(.055,.16,7.72),trimMat,false);
-  box("baseboardFrontL",new BABYLON.Vector3(-3.28,.09,-3.88),new BABYLON.Vector3(3.30,.16,.055),trimMat,false);
-  box("baseboardFrontR",new BABYLON.Vector3(3.28,.09,-3.88),new BABYLON.Vector3(3.30,.16,.055),trimMat,false);
+  box("baseboardLeft",new BABYLON.Vector3(-11.13,.09,-7.75),new BABYLON.Vector3(.055,.16,11.65),trimMat,false);
+  box("baseboardRight",new BABYLON.Vector3(11.13,.09,-7.75),new BABYLON.Vector3(.055,.16,11.65),trimMat,false);
+  box("baseboardFrontL",new BABYLON.Vector3(-4.98,.09,-5.08),new BABYLON.Vector3(5.00,.16,.055),trimMat,false);
+  box("baseboardFrontR",new BABYLON.Vector3(4.98,.09,-5.08),new BABYLON.Vector3(5.00,.16,.055),trimMat,false);
 
   // Carpet tile seams.
-  for(let x=-4.5;x<=4.5;x+=1){
-    box("carpetLineX"+x,new BABYLON.Vector3(x,.008,0),new BABYLON.Vector3(.009,.006,7.75),darkTrimMat,false);
+  for(let x=-10;x<=10;x+=1){
+    box("carpetLineX"+x,new BABYLON.Vector3(x,.008,-7.7),new BABYLON.Vector3(.009,.006,11.8),darkTrimMat,false);
   }
-  for(let z=-3.5;z<=3.5;z+=1){
-    box("carpetLineZ"+z,new BABYLON.Vector3(0,.009,z),new BABYLON.Vector3(9.75,.006,.009),darkTrimMat,false);
+  for(let z=-18;z<=3;z+=1){
+    box("carpetLineZ"+z,new BABYLON.Vector3(0,.009,z),new BABYLON.Vector3(10.95,.006,.009),darkTrimMat,false);
   }
 
   // Window frames and simple blinds.
@@ -1312,6 +1312,11 @@
   createKeyboard("farKeyboardR",7.3,-16.43,0);
   createChair("farChairR",7.3,-16.93,0);
 
+  createPlant("plantFarL",-9.25,-15.9);
+  createPlant("plantFarR",9.25,-15.9);
+  createBin("binFarL",-9.0,-11.8);
+  createBin("binFarR",9.0,-11.8);
+
 
   // ------------------------------------------------------------
   // Extra destructible building detail
@@ -1628,6 +1633,32 @@
     trimFxBodies();
   }
 
+
+  function destroyDeskContents(deskProp,dir,speed){
+    const cx=deskProp.root.position.x;
+    const cz=deskProp.root.position.z;
+
+    for(const other of officeProps){
+      if(other===deskProp || other.broken) continue;
+      if(!["monitor","keyboard","mouse","mug","phone","papers"].includes(other.type)) continue;
+
+      const ox=other.root.position.x;
+      const oz=other.root.position.z;
+      const dx=Math.abs(ox-cx);
+      const dz=Math.abs(oz-cz);
+
+      // close enough to be sitting on the desk surface
+      if(dx<=.95 && dz<=.58 && other.root.position.y>.78){
+        destroyOfficeProp(
+          other,
+          other.root.position.clone(),
+          dir.clone(),
+          Math.max(speed*.85, other.breakThreshold*1.7)
+        );
+      }
+    }
+  }
+
   function destroyOfficeProp(prop,hitPos,dir,speed){
     if(!prop || prop.broken) return;
     prop.broken=true;prop.loose=false;
@@ -1646,6 +1677,7 @@
     };
 
     if(prop.type==="desk"){
+      destroyDeskContents(prop,d,speed);
       chunk(new BABYLON.Vector3(0,.72,0),new BABYLON.Vector3(.70,.07,.32),deskMat,1.8);
       chunk(new BABYLON.Vector3(.36,.55,.12),new BABYLON.Vector3(.28,.45,.25),deskMat,1.6);
       for(const sx of [-1,1]) chunk(new BABYLON.Vector3(sx*.52,.33,.18),new BABYLON.Vector3(.06,.60,.06),deskMetalMat,2.2);
@@ -2011,35 +2043,35 @@
   // ------------------------------------------------------------
   // Camera-fixed player HUD: always shows your own HP.
   // ------------------------------------------------------------
-  const hudPlane = BABYLON.MeshBuilder.CreatePlane("playerHud",{width:1.05,height:.48},scene);
+  const hudPlane = BABYLON.MeshBuilder.CreatePlane("playerHud",{width:.86,height:.20},scene);
   hudPlane.setEnabled(false);
   const hudTex = BABYLON.GUI.AdvancedDynamicTexture.CreateForMesh(hudPlane,900,420);
 
   const hudBg = new BABYLON.GUI.Rectangle();
-  hudBg.cornerRadius=35;
-  hudBg.color="white";
-  hudBg.thickness=5;
-  hudBg.background="#07111FEE";
+  hudBg.cornerRadius=16;
+  hudBg.color="#ffffff";
+  hudBg.thickness=2;
+  hudBg.background="#0b1220CC";
   hudTex.addControl(hudBg);
 
   const hudStack = new BABYLON.GUI.StackPanel();
-  hudStack.paddingTop="20px";
-  hudStack.paddingBottom="20px";
-  hudStack.paddingLeft="28px";
-  hudStack.paddingRight="28px";
+  hudStack.paddingTop="8px";
+  hudStack.paddingBottom="8px";
+  hudStack.paddingLeft="14px";
+  hudStack.paddingRight="14px";
   hudBg.addControl(hudStack);
 
   const youHpText = new BABYLON.GUI.TextBlock();
-  youHpText.text="YOU 100 HP";
+  youHpText.text="HP 100 / 100";
   youHpText.color="white";
-  youHpText.fontSize=64;
+  youHpText.fontSize=30;
   youHpText.fontWeight="900";
-  youHpText.height="100px";
+  youHpText.height="42px";
   hudStack.addControl(youHpText);
 
   const hpBarBg = new BABYLON.GUI.Rectangle();
-  hpBarBg.height="42px";
-  hpBarBg.cornerRadius=20;
+  hpBarBg.height="18px";
+  hpBarBg.cornerRadius=9;
   hpBarBg.thickness=0;
   hpBarBg.background="#3f1d1d";
   hudStack.addControl(hpBarBg);
@@ -2048,17 +2080,17 @@
   hpBar.horizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
   hpBar.width=1;
   hpBar.thickness=0;
-  hpBar.cornerRadius=20;
+  hpBar.cornerRadius=9;
   hpBar.background="#22c55e";
   hpBarBg.addControl(hpBar);
 
   const gameInfoText=new BABYLON.GUI.TextBlock();
-  gameInfoText.text="LV 1 • 0 COINS";
-  gameInfoText.color="#dbeafe";gameInfoText.fontSize=35;gameInfoText.fontWeight="700";gameInfoText.height="58px";
+  gameInfoText.text="";
+  gameInfoText.color="#dbeafe";gameInfoText.fontSize=1;gameInfoText.fontWeight="700";gameInfoText.height="0px";gameInfoText.isVisible=false;
   hudStack.addControl(gameInfoText);
 
   const missionText=new BABYLON.GUI.TextBlock();
-  missionText.text="";missionText.color="#cbd5e1";missionText.fontSize=24;missionText.height="48px";
+  missionText.text="";missionText.color="#cbd5e1";missionText.fontSize=1;missionText.height="0px";missionText.isVisible=false;
   hudStack.addControl(missionText);
 
   const damageFlash = BABYLON.MeshBuilder.CreatePlane("damageFlash",{width:3.4,height:2.0},scene);
@@ -2108,7 +2140,7 @@
   let blockFlashTimer=0;
 
   function updatePlayerHud() {
-    youHpText.text=`YOU ${Math.max(0,Math.ceil(playerHP))} HP`;
+    youHpText.text=`HP ${Math.max(0,Math.ceil(playerHP))} / ${PLAYER_MAX_HP}`;
     hpBar.width=Math.max(.001,playerHP/PLAYER_MAX_HP);
     hpBar.background = playerHP>55 ? "#22c55e" : playerHP>25 ? "#f59e0b" : "#ef4444";
     gameInfoText.text=`LV ${gameState.level} • ${gameState.coins} COINS • XP ${gameState.xp}/${xpNeeded(gameState.level)}`;
@@ -2119,8 +2151,9 @@
   function attachHud() {
     if (!xrCamera) return;
     hudPlane.parent=xrCamera;
-    hudPlane.position.set(-.52,-.42,1.25);
+    hudPlane.position.set(0,-.62,1.02);
     hudPlane.rotation.set(0,Math.PI,0);
+    hudPlane.scaling.set(.95,.95,1);
     hudPlane.setEnabled(true);
 
     damageFlash.parent=xrCamera;
@@ -2189,22 +2222,22 @@
   const chestRoot = new BABYLON.TransformNode("playerBodyRoot",scene);
 
   const chest = BABYLON.MeshBuilder.CreateCapsule("playerChest",{
-    height:.145,radius:.072,tessellation:12
+    height:.090,radius:.040,tessellation:10
   },scene);
   chest.parent=chestRoot;
-  chest.position.y=-.065;
-  chest.scaling.z=.66;
+  chest.position.y=-.046;
+  chest.scaling.z=.52;
   chest.material=MAT.accent;
 
-  const belly = BABYLON.MeshBuilder.CreateSphere("playerWaist",{diameter:.095,segments:10},scene);
+  const belly = BABYLON.MeshBuilder.CreateSphere("playerWaist",{diameter:.056,segments:8},scene);
   belly.parent=chestRoot;
-  belly.position.y=-.135;
-  belly.scaling.set(1,.30,.62);
+  belly.position.y=-.082;
+  belly.scaling.set(1,.22,.42);
   belly.material=MAT.accent;
 
-  const shoulderL = BABYLON.MeshBuilder.CreateSphere("shoulderL",{diameter:.068,segments:9},scene);
+  const shoulderL = BABYLON.MeshBuilder.CreateSphere("shoulderL",{diameter:.032,segments:8},scene);
   shoulderL.parent=chestRoot;
-  shoulderL.position.set(-.078,-.005,0);
+  shoulderL.position.set(-.042,-.014,0);
   shoulderL.material=MAT.accent;
 
   const shoulderR = shoulderL.clone("shoulderR");
@@ -2226,22 +2259,23 @@
     if (f.lengthSquared()<.001) f.set(0,0,1);
     f.normalize();
 
-    // Micro torso: only a small upper-body marker under the headset.
-    const topY=Math.max(.94,head.y-.070);
-    const bottomY=Math.max(.84,head.y-.205);
+    // Very tiny torso kept lower and slightly behind the headset
+    // so it does not climb into the screen.
+    const topY=Math.max(.84,head.y-.145);
+    const bottomY=Math.max(.74,head.y-.255);
     const bodyMid=(topY+bottomY)*.5;
 
     chestRoot.position.set(
-      head.x + f.x*.045,
-      bodyMid + .032,
-      head.z + f.z*.045
+      head.x - f.x*.020,
+      bodyMid - .012,
+      head.z - f.z*.020
     );
     chestRoot.rotation.y=Math.atan2(f.x,f.z);
 
-    const bodyHeight=Math.max(.09,topY-bottomY);
-    chest.scaling.y=Math.min(.72,bodyHeight/.145);
-    belly.position.y=-Math.min(.130,bodyHeight+.015);
-    belly.scaling.y=.28;
+    const bodyHeight=Math.max(.06,topY-bottomY);
+    chest.scaling.y=Math.min(.55,bodyHeight/.090);
+    belly.position.y=-Math.min(.082,bodyHeight*.58);
+    belly.scaling.y=.18;
   }
   function keepRigAboveFloor() {
     if (!xrCamera) return;
@@ -4773,7 +4807,7 @@
       const outward=mesh.position.subtract(chestCenter);
       if(outward.lengthSquared()>.0001){
         outward.normalize();
-        vel.addInPlace(outward.scale(.55+Math.random()*.72));
+        vel.addInPlace(outward.scale(.38+Math.random()*.42));
       }
 
       const maxPieceSpeed=7.2;
@@ -4785,7 +4819,7 @@
         mesh,
         vel,
         radius,
-        life:5.6,
+        life:4.2,
         age:0,
         sleepTimer:0,
         sleeping:false,
@@ -5637,7 +5671,7 @@
             // Break the ragdoll apart from its CURRENT physical pose.
             spawnDeathRagdollFromCurrent(
               npc.deathDir,
-              Math.min(10.5,5.0+npc.deathSpeed*.38)
+              Math.min(8.8,4.2+npc.deathSpeed*.28)
             );
 
             // Very heavy stylized blood burst.
@@ -5674,7 +5708,7 @@
       r.age+=dt;
 
       if(!r.sleeping){
-        r.vel.y-=6.4*dt;
+        r.vel.y-=5.6*dt;
 
         // Extra substeps reduce tunnelling through desks/walls/floor.
         moveDeathPart(r,dt);
@@ -5683,9 +5717,9 @@
         r.mesh.rotation.y+=r.spin.y*dt;
         r.mesh.rotation.z+=r.spin.z*dt;
 
-        r.vel.x*=Math.pow(.60,dt);
-        r.vel.z*=Math.pow(.60,dt);
-        r.spin.scaleInPlace(Math.pow(.34,dt));
+        r.vel.x*=Math.pow(.46,dt);
+        r.vel.z*=Math.pow(.46,dt);
+        r.spin.scaleInPlace(Math.pow(.24,dt));
 
         const motion=r.vel.length()+r.spin.length()*.06;
         if(r.age>.65 && motion<.32){
@@ -5908,8 +5942,7 @@
     return e;
   }
 
-  makeExtraNpc(0);
-  makeExtraNpc(1);
+  // v0.24.1 stability: extra NPC spawns disabled to avoid low-quality/glitchy NPCs.
 
   function updateExtraNpcLabel(e){
     const hp=Math.max(0,Math.ceil(e.hpValue));
