@@ -1,5 +1,5 @@
 (() => {
-  const BUILD_VERSION="0.23.1";
+  const BUILD_VERSION="0.23.2";
   const canvas = document.getElementById("renderCanvas");
   const engine = new BABYLON.Engine(canvas, true, { stencil:true });
   const scene = new BABYLON.Scene(engine);
@@ -112,9 +112,9 @@
     c.fillRect(0,0,size,size);
 
     if(kind==="wood"){
-      c.strokeStyle="rgba(85,48,26,.24)";
+      c.strokeStyle="rgba(85,48,26,.075)";
       c.lineWidth=1;
-      for(let y=5;y<size;y+=8){
+      for(let y=8;y<size;y+=16){
         c.beginPath();
         for(let x=0;x<=size;x+=8){
           const yy=y+Math.sin((x+y)*.12)*2.2;
@@ -122,51 +122,51 @@
         }
         c.stroke();
       }
-      for(let i=0;i<18;i++){
-        c.fillStyle="rgba(70,40,24,.08)";
+      for(let i=0;i<5;i++){
+        c.fillStyle="rgba(70,40,24,.025)";
         c.fillRect(Math.random()*size,Math.random()*size,10+Math.random()*24,1);
       }
     }else if(kind==="fabric"){
-      c.strokeStyle="rgba(40,40,40,.10)";
+      c.strokeStyle="rgba(40,40,40,.028)";
       c.lineWidth=1;
-      for(let i=0;i<size;i+=5){
+      for(let i=0;i<size;i+=12){
         c.beginPath();c.moveTo(i,0);c.lineTo(i,size);c.stroke();
         c.beginPath();c.moveTo(0,i);c.lineTo(size,i);c.stroke();
       }
     }else if(kind==="skin"){
-      for(let i=0;i<165;i++){
-        const a=.018+Math.random()*.035;
+      for(let i=0;i<18;i++){
+        const a=.006+Math.random()*.010;
         c.fillStyle=`rgba(72,34,22,${a})`;
-        const r=.45+Math.random()*.8;
+        const r=.30+Math.random()*.45;
         c.beginPath();
         c.arc(Math.random()*size,Math.random()*size,r,0,Math.PI*2);
         c.fill();
       }
     }else if(kind==="wall"){
-      for(let i=0;i<260;i++){
+      for(let i=0;i<28;i++){
         const v=210+Math.floor(Math.random()*30);
-        c.fillStyle=`rgba(${v},${v},${v},.13)`;
+        c.fillStyle=`rgba(${v},${v},${v},.025)`;
         c.fillRect(Math.random()*size,Math.random()*size,1,1);
       }
     }else if(kind==="metal"){
-      c.strokeStyle="rgba(60,70,78,.12)";
-      for(let y=1;y<size;y+=3){
+      c.strokeStyle="rgba(60,70,78,.035)";
+      for(let y=2;y<size;y+=10){
         c.beginPath();c.moveTo(0,y);c.lineTo(size,y);c.stroke();
       }
     }else if(kind==="floor"){
-      c.strokeStyle="rgba(55,64,72,.18)";
+      c.strokeStyle="rgba(55,64,72,.055)";
       c.lineWidth=1;
       for(let i=0;i<=size;i+=24){
         c.beginPath();c.moveTo(i,0);c.lineTo(i,size);c.stroke();
         c.beginPath();c.moveTo(0,i);c.lineTo(size,i);c.stroke();
       }
-      for(let i=0;i<100;i++){
-        c.fillStyle="rgba(40,48,54,.035)";
+      for(let i=0;i<10;i++){
+        c.fillStyle="rgba(40,48,54,.012)";
         c.fillRect(Math.random()*size,Math.random()*size,2,2);
       }
     }else if(kind==="hair"){
-      c.strokeStyle="rgba(25,14,10,.18)";
-      for(let i=0;i<70;i++){
+      c.strokeStyle="rgba(25,14,10,.060)";
+      for(let i=0;i<22;i++){
         const x=Math.random()*size;
         c.beginPath();
         c.moveTo(x,0);
@@ -246,13 +246,13 @@
     hair:makeDetailTexture("texHair","hair")
   };
 
-  DETAIL_TEX.wood.uScale=2.4;DETAIL_TEX.wood.vScale=2.4;
-  DETAIL_TEX.fabric.uScale=4;DETAIL_TEX.fabric.vScale=4;
-  DETAIL_TEX.skin.uScale=3;DETAIL_TEX.skin.vScale=3;
-  DETAIL_TEX.wall.uScale=5;DETAIL_TEX.wall.vScale=5;
-  DETAIL_TEX.metal.uScale=4;DETAIL_TEX.metal.vScale=4;
-  DETAIL_TEX.floor.uScale=5;DETAIL_TEX.floor.vScale=5;
-  DETAIL_TEX.hair.uScale=4;DETAIL_TEX.hair.vScale=4;
+  DETAIL_TEX.wood.uScale=1.4;DETAIL_TEX.wood.vScale=1.4;
+  DETAIL_TEX.fabric.uScale=1.8;DETAIL_TEX.fabric.vScale=1.8;
+  DETAIL_TEX.skin.uScale=1.35;DETAIL_TEX.skin.vScale=1.35;
+  DETAIL_TEX.wall.uScale=1.7;DETAIL_TEX.wall.vScale=1.7;
+  DETAIL_TEX.metal.uScale=1.6;DETAIL_TEX.metal.vScale=1.6;
+  DETAIL_TEX.floor.uScale=1.25;DETAIL_TEX.floor.vScale=1.25;
+  DETAIL_TEX.hair.uScale=1.7;DETAIL_TEX.hair.vScale=1.7;
 
   officeFloorMat.diffuseTexture=DETAIL_TEX.floor;
   officeWallMat.diffuseTexture=DETAIL_TEX.wall;
@@ -4232,6 +4232,45 @@
       return BABYLON.Vector3.Distance(center,w)<radius+p.radius;
     });
   }
+
+  function npcBatSweepHit(prevTip,tip,base,radius=.19){
+    if(!npc || npc.dead || !npc.ragdoll) return null;
+
+    let best=null;
+    let bestDist=Infinity;
+
+    for(const p of npc.ragdoll.list){
+      const w=npcLocalToWorld(p.pos);
+      const hitRadius=radius+p.radius;
+
+      // 1) Fast swing path between previous and current bat tip.
+      const swept=segmentSphereHit(prevTip,tip,w,hitRadius);
+
+      // 2) Entire current bat shaft, so a hit near the middle of the bat counts.
+      const shaft=segmentSphereHit(base,tip,w,hitRadius*.92);
+
+      // 3) Slight fallback for slow/contact hits.
+      const tipDist=BABYLON.Vector3.Distance(tip,w);
+
+      if(swept || shaft || tipDist<hitRadius){
+        const d=Math.min(
+          pointSegmentDistance(w,prevTip,tip),
+          pointSegmentDistance(w,base,tip),
+          tipDist
+        );
+
+        if(d<bestDist){
+          bestDist=d;
+          best={
+            point:w.clone(),
+            part:p.name
+          };
+        }
+      }
+    }
+
+    return best;
+  }
   function resolveNpcWorld(prevY) {
     if (!npc) return;
     if (npc.root.position.y<0) {
@@ -4614,7 +4653,7 @@
     // Much lower continuous damage in v0.14.
     // Soft hits can do 1-3, normal swings around the middle,
     // and only very hard swings approach the cap.
-    if (speed<.42) return 0;
+    if (speed<.34) return 0;
 
     const raw = 0.35 + 0.56*Math.pow(speed,1.43);
     return Math.round(Math.max(1,Math.min(24,raw)));
@@ -5121,9 +5160,18 @@
             // Office objects and windows use the entire swept bat path.
             handleBatOfficeHit(batTipLast,tip,vel,speed);
 
-            if (speed>.50 && batHitCooldown<=0 && npcSphereHit(tip,.17)) {
-              batHitCooldown=.20;
-              damageNpc(tip,vel,speed);
+            if(speed>.42 && batHitCooldown<=0){
+              const npcHit=npcBatSweepHit(
+                batTipLast,
+                tip,
+                batBase(),
+                .205
+              );
+
+              if(npcHit){
+                batHitCooldown=.16;
+                damageNpc(npcHit.point,vel,speed);
+              }
             }
 
             const wc=surfaceContact(tip,.11);
