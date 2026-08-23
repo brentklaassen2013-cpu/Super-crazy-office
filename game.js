@@ -1,5 +1,5 @@
 (() => {
-  const BUILD_VERSION="0.18";
+  const BUILD_VERSION="0.18.1";
   const canvas = document.getElementById("renderCanvas");
   const engine = new BABYLON.Engine(canvas, true, { stencil:true });
   const scene = new BABYLON.Scene(engine);
@@ -571,7 +571,7 @@
   doorRoot.rotation.y=-.62;
   const door=childBox("doorSlab",doorRoot,new BABYLON.Vector3(.67,1.18,0),new BABYLON.Vector3(1.34,2.35,.07),deskMat,false);
   const handle=BABYLON.MeshBuilder.CreateSphere("doorHandle",{diameter:.08,segments:10},scene);
-  handle.parent=doorRoot;handle.position.set(1.18,1.15,-.07);handle.material=batMetal;
+  handle.parent=doorRoot;handle.position.set(1.18,1.15,-.07);handle.material=deskMetalMat;
 
   function createMug(name,x,z,rot=0){
     const root=new BABYLON.TransformNode(name,scene);
@@ -591,7 +591,7 @@
     const coffee=BABYLON.MeshBuilder.CreateCylinder(name+"Coffee",{
       height:.008,diameter:.095,tessellation:14
     },scene);
-    coffee.parent=root;coffee.position.y=.142;coffee.material=batDark;
+    coffee.parent=root;coffee.position.y=.142;coffee.material=darkTrimMat;
 
     return registerProp(root,[cup,handle,coffee],{
       type:"mug",mass:.28,radius:.10,minY:.02,breakThreshold:3
@@ -1359,6 +1359,10 @@
 
   loadGame();
   updateStatsUI();
+  const bootStats=document.getElementById("gameStats");
+  if(bootStats && bootStats.textContent==="Loading..."){
+    bootStats.textContent="Game loaded";
+  }
 
   // ------------------------------------------------------------
   // Player / XR globals
