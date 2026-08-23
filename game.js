@@ -1,16 +1,26 @@
 (() => {
-  const BUILD_VERSION="0.23";
+  const BUILD_VERSION="0.23.1";
   const canvas = document.getElementById("renderCanvas");
   const engine = new BABYLON.Engine(canvas, true, { stencil:true });
   const scene = new BABYLON.Scene(engine);
   scene.clearColor = new BABYLON.Color4(.025,.055,.095,1);
   scene.collisionsEnabled = true;
+  scene.imageProcessingConfiguration.contrast=1.12;
+  scene.imageProcessingConfiguration.exposure=.92;
+  scene.imageProcessingConfiguration.toneMappingEnabled=true;
+  scene.imageProcessingConfiguration.toneMappingType=BABYLON.ImageProcessingConfiguration.TONEMAPPING_ACES;
 
   const hemi = new BABYLON.HemisphericLight("hemi", new BABYLON.Vector3(0,1,0), scene);
   hemi.intensity = .9;
-  const sun = new BABYLON.DirectionalLight("sun", new BABYLON.Vector3(-.4,-1,.25), scene);
-  sun.position = new BABYLON.Vector3(3,7,-4);
-  sun.intensity = .45;
+  const sun = new BABYLON.DirectionalLight("sun", new BABYLON.Vector3(-.42,-1,.18), scene);
+  sun.position = new BABYLON.Vector3(4.5,7.5,-5.5);
+  sun.intensity = .70;
+
+  // Soft low-cost shadows: mainly the NPC and movable props cast them.
+  const shadowGen=new BABYLON.ShadowGenerator(512,sun);
+  shadowGen.useBlurExponentialShadowMap=true;
+  shadowGen.blurKernel=8;
+  shadowGen.bias=.0025;
 
   function mkMat(name, hex) {
     const m = new BABYLON.StandardMaterial(name, scene);
@@ -171,6 +181,61 @@
     return tex;
   }
 
+  function makeBumpTexture(name,kind,size=96){
+    const tex=new BABYLON.DynamicTexture(name,{width:size,height:size},scene,false);
+    const c=tex.getContext();
+    c.fillStyle="#808080";
+    c.fillRect(0,0,size,size);
+
+    const dot=(x,y,r,v)=>{
+      c.fillStyle=`rgb(${v},${v},${v})`;
+      c.beginPath();c.arc(x,y,r,0,Math.PI*2);c.fill();
+    };
+
+    if(kind==="skin"){
+      for(let i=0;i<420;i++) dot(Math.random()*size,Math.random()*size,.35+Math.random()*.65,108+Math.floor(Math.random()*45));
+    }else if(kind==="fabric"){
+      c.strokeStyle="rgba(105,105,105,.65)";c.lineWidth=1;
+      for(let i=0;i<size;i+=4){
+        c.beginPath();c.moveTo(i,0);c.lineTo(i,size);c.stroke();
+        c.beginPath();c.moveTo(0,i);c.lineTo(size,i);c.stroke();
+      }
+    }else if(kind==="wood"){
+      c.strokeStyle="rgba(105,105,105,.65)";c.lineWidth=1;
+      for(let y=4;y<size;y+=7){
+        c.beginPath();
+        for(let x=0;x<=size;x+=5){
+          const yy=y+Math.sin(x*.16+y)*1.8;
+          if(x===0)c.moveTo(x,yy);else c.lineTo(x,yy);
+        }
+        c.stroke();
+      }
+    }else if(kind==="wall" || kind==="floor"){
+      for(let i=0;i<310;i++){
+        const v=118+Math.floor(Math.random()*22);
+        c.fillStyle=`rgb(${v},${v},${v})`;
+        c.fillRect(Math.random()*size,Math.random()*size,1+Math.random()*1.5,1+Math.random()*1.5);
+      }
+    }else if(kind==="metal"){
+      c.strokeStyle="rgba(105,105,105,.55)";
+      for(let y=0;y<size;y+=3){c.beginPath();c.moveTo(0,y);c.lineTo(size,y);c.stroke();}
+    }
+    tex.update(false);
+    tex.wrapU=BABYLON.Texture.WRAP_ADDRESSMODE;
+    tex.wrapV=BABYLON.Texture.WRAP_ADDRESSMODE;
+    return tex;
+  }
+
+  const BUMP_TEX={
+    skin:makeBumpTexture("bumpSkin","skin"),
+    fabric:makeBumpTexture("bumpFabric","fabric"),
+    wood:makeBumpTexture("bumpWood","wood"),
+    wall:makeBumpTexture("bumpWall","wall"),
+    floor:makeBumpTexture("bumpFloor","floor"),
+    metal:makeBumpTexture("bumpMetal","metal")
+  };
+  Object.values(BUMP_TEX).forEach(t=>{t.uScale=4;t.vScale=4;});
+
   const DETAIL_TEX={
     wood:makeDetailTexture("texWood","wood"),
     fabric:makeDetailTexture("texFabric","fabric"),
@@ -199,6 +264,14 @@
   trimMat.diffuseTexture=DETAIL_TEX.wall;
   darkTrimMat.diffuseTexture=DETAIL_TEX.metal;
   corkMat.diffuseTexture=DETAIL_TEX.wood;
+
+  officeFloorMat.bumpTexture=BUMP_TEX.floor;officeFloorMat.bumpTexture.level=.28;
+  officeWallMat.bumpTexture=BUMP_TEX.wall;officeWallMat.bumpTexture.level=.18;
+  deskMat.bumpTexture=BUMP_TEX.wood;deskMat.bumpTexture.level=.32;
+  deskMetalMat.bumpTexture=BUMP_TEX.metal;deskMetalMat.bumpTexture.level=.24;
+  chairMat.bumpTexture=BUMP_TEX.fabric;chairMat.bumpTexture.level=.30;
+  monitorMat.bumpTexture=BUMP_TEX.metal;monitorMat.bumpTexture.level=.18;
+  keyboardMat.bumpTexture=BUMP_TEX.metal;keyboardMat.bumpTexture.level=.14;
 
   const glassMat=new BABYLON.StandardMaterial("officeGlass",scene);
   glassMat.diffuseColor=new BABYLON.Color3(.45,.72,.86);
@@ -237,6 +310,7 @@
     },scene);
     b.position.copyFrom(pos);
     b.material=material;
+    b.receiveShadows=true;
     if(collidable) addCollision(b);
     return b;
   }
@@ -1279,6 +1353,23 @@
 
       sprinklerHeads.push(root);
     }
+  }
+
+  // Extra wear/details to push the office away from flat grey primitives.
+  const scuffMat=mkMat("scuffMat","#3f454a");
+  scuffMat.alpha=.22;
+  for(let i=0;i<28;i++){
+    const scuff=BABYLON.MeshBuilder.CreateDisc("floorScuff"+i,{radius:.025+Math.random()*.07,tessellation:10},scene);
+    scuff.position.set(-4.2+Math.random()*8.4,.012,-8.3+Math.random()*11.8);
+    scuff.rotation.x=Math.PI/2;
+    scuff.scaling.set(1.5,.45,1);
+    scuff.material=scuffMat;
+  }
+
+  // Thin wall seams/panels for concrete/plaster depth.
+  for(const z of [-8,-6,-4,-2,0,2]){
+    box("wallSeamL"+z,new BABYLON.Vector3(-4.885,1.45,z),new BABYLON.Vector3(.012,2.72,.025),darkTrimMat,false);
+    box("wallSeamR"+z,new BABYLON.Vector3(4.885,1.45,z),new BABYLON.Vector3(.012,2.72,.025),darkTrimMat,false);
   }
 
   function surfaceSphereHit(surface,center,radius){
@@ -3516,6 +3607,8 @@
     }
   }
 
+  const deathParts=[];
+
   function createNpc() {
     // v0.23 no longer uses detached death pieces.
     while(deathParts.length){
@@ -3549,6 +3642,9 @@
     const eyeMat=mkMat("npcEyes"+Math.random(),"#2a211b");
     const pupilMat=mkMat("npcPupil"+Math.random(),"#090909");
     const hairMat=mkMat("npcHair"+Math.random(),"#30231c");
+    const beardMat=mkMat("npcBeard"+Math.random(),"#4b3429");
+    beardMat.alpha=.48;
+    beardMat.diffuseTexture=DETAIL_TEX.hair;
     const teethMat=mkMat("npcTeeth"+Math.random(),"#f4eee5");
 
     skinMat.diffuseTexture=DETAIL_TEX.skin;
@@ -3559,6 +3655,18 @@
     pantsDarkMat.diffuseTexture=DETAIL_TEX.fabric;
     shoeMat.diffuseTexture=DETAIL_TEX.metal;
     hairMat.diffuseTexture=DETAIL_TEX.hair;
+
+    skinMat.bumpTexture=BUMP_TEX.skin;skinMat.bumpTexture.level=.34;
+    skinDarkMat.bumpTexture=BUMP_TEX.skin;skinDarkMat.bumpTexture.level=.30;
+    shirtMat.bumpTexture=BUMP_TEX.fabric;shirtMat.bumpTexture.level=.36;
+    shirtDarkMat.bumpTexture=BUMP_TEX.fabric;shirtDarkMat.bumpTexture.level=.32;
+    pantsMat.bumpTexture=BUMP_TEX.fabric;pantsMat.bumpTexture.level=.30;
+    pantsDarkMat.bumpTexture=BUMP_TEX.fabric;pantsDarkMat.bumpTexture.level=.27;
+
+    skinMat.specularColor=new BABYLON.Color3(.08,.045,.035);
+    skinMat.specularPower=18;
+    shirtMat.specularColor=new BABYLON.Color3(.035,.035,.04);
+    shirtMat.specularPower=8;
 
     function capsule(name,radius,material){
       const m=BABYLON.MeshBuilder.CreateCapsule(name,{
@@ -3766,6 +3874,13 @@
     teeth.parent=head;teeth.position.set(0,-.102,.196);teeth.material=teethMat;
 
     // No separate chin sphere: the jaw mesh above forms the chin naturally.
+    // Thin lower-face beard/stubble patch: visual texture only, not another chin ball.
+    const beard=BABYLON.MeshBuilder.CreateSphere("npcBeardPatch",{diameter:.355,segments:16},scene);
+    beard.parent=head;
+    beard.position.set(0,-.085,-.002);
+    beard.scaling.set(.91,.55,.83);
+    beard.material=beardMat;
+
     const cheekL=BABYLON.MeshBuilder.CreateSphere("npcCheekL",{diameter:.046,segments:10},scene);
     cheekL.parent=head;
     cheekL.position.set(-.085,-.040,.145);
@@ -3787,8 +3902,12 @@
     },scene);
     hair.parent=head;
     hair.position.set(0,.135,-.055);
-    hair.scaling.set(.86,.34,.86);
+    hair.scaling.set(.74,.27,.80);
     hair.material=hairMat;
+
+    // Receding/thinning hairline for a less cartoon-like silhouette.
+    const templeL=faceSphere("npcTempleHairL",.115,[-.155,.095,-.075],hairMat,[.50,.95,.45]);
+    const templeR=faceSphere("npcTempleHairR",.115,[.155,.095,-.075],hairMat,[.50,.95,.45]);
 
     // Small side hair patches.
     for(const sx of [-1,1]){
@@ -3955,7 +4074,7 @@
       leftArmShell,rightArmShell,leftLegShell,rightLegShell,
       abdomen,torso,neck,chestPlate,pelvis,spineJoint,neckJoint,
       head,nose,leftEar,rightEar,leftEyeWhite,rightEyeWhite,leftEye,rightEye,leftPupil,rightPupil,
-      mouth,upperLip,lowerLip,teeth,cheekL,cheekR,eyebrowL,eyebrowR,hair,
+      mouth,upperLip,lowerLip,teeth,beard,cheekL,cheekR,eyebrowL,eyebrowR,hair,
       leftUpperArm,leftLowerArm,leftShoulderJoint,leftElbowJoint,leftWristJoint,leftHand,leftSleeve,
       rightUpperArm,rightLowerArm,rightShoulderJoint,rightElbowJoint,rightWristJoint,rightHand,rightSleeve,
       leftUpperLeg,leftLowerLeg,leftHipJoint,leftKneeJoint,leftAnkleJoint,leftShoe,
@@ -3967,7 +4086,7 @@
         leftArmShell,rightArmShell,leftLegShell,rightLegShell,
         abdomen,torso,neck,chestPlate,pelvis,spineJoint,neckJoint,
         head,nose,leftEar,rightEar,leftEyeWhite,rightEyeWhite,leftEye,rightEye,leftPupil,rightPupil,
-        mouth,upperLip,lowerLip,teeth,cheekL,cheekR,eyebrowL,eyebrowR,hair,
+        mouth,upperLip,lowerLip,teeth,beard,cheekL,cheekR,eyebrowL,eyebrowR,hair,
         leftUpperArm,leftLowerArm,leftShoulderJoint,leftElbowJoint,leftWristJoint,leftHand,leftSleeve,
         rightUpperArm,rightLowerArm,rightShoulderJoint,rightElbowJoint,rightWristJoint,rightHand,rightSleeve,
         leftUpperLeg,leftLowerLeg,leftHipJoint,leftKneeJoint,leftAnkleJoint,leftShoe,
@@ -4001,7 +4120,7 @@
       ],
 
       skinMat,skinDarkMat,shirtMat,shirtDarkMat,pantsMat,pantsDarkMat,shoeMat,
-      eyeMat,eyeWhiteMat,pupilMat,hairMat,
+      eyeMat,eyeWhiteMat,pupilMat,hairMat,beardMat,
       speech,hp,
       weaponRoot:weapon.root,weaponTip:weapon.tip,weaponCfg:weapon.cfg,
 
@@ -4041,6 +4160,10 @@
       deathSpeed:0,
       ragdoll:null
     };
+
+    npc.parts.forEach(m=>{
+      if(m && m.getClassName && m.getClassName()!=="TransformNode") shadowGen.addShadowCaster(m);
+    });
 
     npc.ragdoll=makeNpcRagdoll();
     updateNpcLabel();
@@ -4098,6 +4221,7 @@
     npc.eyebrowL.material=npc.hairMat;
     npc.eyebrowR.material=npc.hairMat;
     npc.hair.material=npc.hairMat;
+    if(npc.beard) npc.beard.material=npc.beardMat;
     npc.teeth.material=npc.eyeWhiteMat;
   }
   function npcSphereHit(center,radius) {
@@ -4174,8 +4298,6 @@
       resolveNpcWorld(py);
     }
   }
-
-  const deathParts=[];
 
   function resolveDeathPart(r) {
     const radius=r.radius||.15;
