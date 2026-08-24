@@ -1,5 +1,5 @@
 (() => {
-  const BUILD_VERSION="0.35.6";
+  const BUILD_VERSION="0.36.0";
   const canvas = document.getElementById("renderCanvas");
   const engine = new BABYLON.Engine(canvas, true, { stencil:true });
   const scene = new BABYLON.Scene(engine);
@@ -2952,11 +2952,78 @@ Trigger = toggle
 Grip = back`;
   }
 
+  const NATIVE_PLATFORM=(()=>{
+    try{return !!window.CrazyOfficeNative;}catch(_){return false;}
+  })();
+
+  function nativePlatformName(){
+    try{return window.CrazyOfficeNative?.platformName?.()||"WEBXR";}catch(_){return "WEBXR";}
+  }
+
+  function requestNativePurchase(product){
+    if(!product?.sku)return false;
+    try{
+      if(window.CrazyOfficeNative?.purchase){
+        window.CrazyOfficeNative.purchase(product.sku);
+        lastLobbyMessage=`OPENING META PURCHASE • ${product.price}`;
+        return true;
+      }
+    }catch(_){}
+    return false;
+  }
+
+  // Native shell calls this only after platform-side verification succeeds.
+  // Never grant paid content merely because the browser says "success".
+  window.crazyOfficeVerifiedPurchase=function(payload){
+    try{
+      const r=typeof payload==="string"?JSON.parse(payload):payload;
+      if(!r||r.verified!==true||typeof r.sku!=="string")return false;
+
+      const gemPack=GEM_PACKS.find(x=>x.sku===r.sku);
+      if(gemPack){
+        gameState.gems=Math.max(0,(gameState.gems||0)+gemPack.gems);
+        saveGame();
+        lastLobbyMessage=`PURCHASE VERIFIED • +${gemPack.gems} GEMS`;
+        refreshLobby();
+        return true;
+      }
+
+      const bundle=BUNDLES.find(x=>x.sku===r.sku);
+      if(bundle){
+        gameState.coins=Math.max(0,(gameState.coins||0)+(bundle.coins||0));
+        gameState.gems=Math.max(0,(gameState.gems||0)+(bundle.gems||0));
+        if(bundle.bat){
+          gameState.bats=gameState.bats||{};
+          const s=gameState.bats[bundle.bat]||{count:0,level:1,xp:0};
+          s.count=Math.max(1,(s.count||0)+1);
+          gameState.bats[bundle.bat]=s;
+        }
+        if(bundle.skin){
+          gameState.skins=gameState.skins||{};
+          gameState.skins[bundle.skin]=true;
+        }
+        if(bundle.cosmetic){
+          gameState.cosmetics=gameState.cosmetics||{};
+          gameState.cosmetics[bundle.cosmetic]=true;
+        }
+        saveGame();
+        lastLobbyMessage=`PURCHASE VERIFIED • ${bundle.name}`;
+        refreshLobby();
+        return true;
+      }
+    }catch(_){}
+    return false;
+  };
+
   function requestPaidProduct(product){
     if(!product)return false;
     if(OWNER_ACCESS){
       lastLobbyMessage="OWNER MODE • PURCHASE NOT NEEDED";
       return false;
+    }
+    if(NATIVE_PLATFORM&&requestNativePurchase(product)){
+      refreshLobby();
+      return true;
     }
     lastLobbyMessage=`${product.price} • META IAP NOT CONNECTED IN WEBXR`;
     return false;
