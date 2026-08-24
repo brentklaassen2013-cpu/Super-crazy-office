@@ -1,7 +1,7 @@
 (()=>{
 "use strict";
 
-const BUILD="MOVEMENT ALPHA 0.4.1";
+const BUILD="MOVEMENT ALPHA 0.4.2";
 const canvas=document.getElementById("renderCanvas");
 const statusEl=document.getElementById("status");
 const startBtn=document.getElementById("startBtn");
@@ -237,6 +237,7 @@ function updateHand(h,dt){
       correction.z*=1.18;
       correction.y*=1.18;
 
+      // GRIP MODE ONLY: visually stick the hand to the grabbed point.
       h.mesh.position.copyFrom(h.gripAnchor);
       h.wasTouching=true;
 
@@ -271,7 +272,9 @@ function updateHand(h,dt){
       correction.scaleInPlace(1.62);
     }
 
-    h.mesh.position.copyFrom(hit.point);
+    // NORMAL MODE: visual hand always follows the real controller.
+    // Surface contact affects movement only, never the visible hand position.
+    h.mesh.position.copyFrom(desired);
     h.wasTouching=true;
   }else{
     // On release, keep only horizontal momentum.
@@ -479,8 +482,19 @@ setupXR();
 scene.onBeforeRenderObservable.add(()=>{
   const dt=Math.min(.025,engine.getDeltaTime()/1000);
   updateMovement(dt);
+
   for(const h of Object.values(hands)){
     if(h.controller)hideNativeControllerVisuals(h.controller);
+
+    // Final visual sync: unless grip is actively holding an anchor,
+    // the custom hand follows the tracked controller every frame.
+    if(h.node && !(h.grip && h.gripAnchor)){
+      const p=worldPos(h);
+      if(p){
+        h.mesh.position.copyFrom(clampArm(p));
+        h.mesh.setEnabled(true);
+      }
+    }
   }
 });
 
