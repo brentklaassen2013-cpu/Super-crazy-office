@@ -1,5 +1,5 @@
 (() => {
-  const BUILD_VERSION="0.37.0";
+  const BUILD_VERSION="0.37.1";
   const canvas = document.getElementById("renderCanvas");
   const engine = new BABYLON.Engine(canvas, true, { stencil:true });
   const scene = new BABYLON.Scene(engine);
@@ -4166,6 +4166,13 @@ Grip = back`;
     return new BABYLON.Vector3(arenaCenter.x,0,arenaCenter.z-2.8);
   }
   function goLobby(fromNetwork=false){
+    clearRuntimeMap();
+    for(const m of lobbyMeshes){ if(m && !m.isDisposed?.())m.setEnabled(true); }
+    lobbyLogo?.setEnabled?.(true);
+    cameraPedestal?.setEnabled?.(true);
+    cameraPedestalRing?.setEnabled?.(true);
+    cameraPedestalSign?.setEnabled?.(true);
+
     gameMode="lobby";
     if(xrCamera){
       teleportPlayerXZ(30,-6);
@@ -4185,8 +4192,14 @@ for(const [,p] of net.players){p.inMatch=false;p.reportedInMatch=false;}const wa
     }
     net.matchMembers.clear();
     if(npc)npc.netTargetId=null;quickMenuDebounce=0;groundSlamCooldown=0;combatInputPrev.trigger=false;combatInputPrev.grip=false;chargeTime=0;batTipLast=null;batBaseLast=null;playerDowned=false;downedTimer=0;if(batThrown&&!attachBatToRightHand()){batRoot.parent=null;batRoot.setEnabled(false);}closeQuickMenu();gameMode="lobby";setMusicMode("normal");clearRuntimeMap();lobbySub="main";lobbyIndex=0;lastLobbyMessage="";mirror.setEnabled(true);mirrorFrame.setEnabled(true);lobbyScreen.setEnabled(true);if(xrCamera){teleportPlayerXZ(30,-6);keepRigAboveFloor();}if(npc?.root)npc.root.setEnabled(false);extraNpcs.forEach(e=>e.root.setEnabled(false));if(!cameraHeld)placeCameraOnPedestal();syncOwnerGiftVisual();refreshLobby();ensurePublicLobby();}
-  function startMap(forcedModifier=null){hidePack2();const wasHolstered=batHolstered;batHolstered=false;if(wasHolstered&&!attachBatToSelectedHand()){batRoot.parent=null;batRoot.setEnabled(false);}mapEventText="";mapEventTextTimer=0;quickMenuDebounce=0;groundSlamCooldown=0;combatInputPrev.trigger=false;combatInputPrev.grip=false;chargeTime=0;batTipLast=null;batBaseLast=null;if(batThrown&&!attachBatToRightHand()){batRoot.parent=null;batRoot.setEnabled(false);}gameMode="map";
-    if(gameState.selectedMap==="office")setTimeout(cleanupOfficeFloatingProps,0);syncOwnerGiftVisual();playerDowned=false;downedTimer=0;resetRunStats(forcedModifier);playerHP=PLAYER_MAX_HP;playerDead=false;playerInvuln=1.0;deathTimer=0;deathPlane?.setEnabled?.(false);hudPlane?.setEnabled?.(true);setMusicMode(currentMapProgress().level>=10?"boss":"normal");gameMode="map";buildRuntimeMap(gameState.selectedMap);mirror.setEnabled(false);mirrorFrame.setEnabled(false);lobbyScreen.setEnabled(false);if(!cameraHeld)vrCameraRoot.setEnabled(false);if(xrCamera){const p=getMapSpawn();teleportPlayerXZ(p.x,p.z);keepRigAboveFloor();}if(npc?.root)npc.root.dispose();createNpc();configureNpcForCurrentLevel();npc.root.setEnabled(true);npc.root.position.copyFrom(getNpcSpawnPosition());configureExtraSquad();applyBatLook();applySkinLook();}
+  function startMap(forcedModifier=null){
+    for(const m of lobbyMeshes){ if(m && !m.isDisposed?.())m.setEnabled(false); }
+    lobbyLogo?.setEnabled?.(false);
+    cameraPedestal?.setEnabled?.(false);
+    cameraPedestalRing?.setEnabled?.(false);
+    cameraPedestalSign?.setEnabled?.(false);
+hidePack2();const wasHolstered=batHolstered;batHolstered=false;if(wasHolstered&&!attachBatToSelectedHand()){batRoot.parent=null;batRoot.setEnabled(false);}mapEventText="";mapEventTextTimer=0;quickMenuDebounce=0;groundSlamCooldown=0;combatInputPrev.trigger=false;combatInputPrev.grip=false;chargeTime=0;batTipLast=null;batBaseLast=null;if(batThrown&&!attachBatToRightHand()){batRoot.parent=null;batRoot.setEnabled(false);}gameMode="map";
+    if(gameState.selectedMap==="office")setTimeout(()=>{removeLegacyOfficeObjects();cleanupOfficeFloatingProps();},0);syncOwnerGiftVisual();playerDowned=false;downedTimer=0;resetRunStats(forcedModifier);playerHP=PLAYER_MAX_HP;playerDead=false;playerInvuln=1.0;deathTimer=0;deathPlane?.setEnabled?.(false);hudPlane?.setEnabled?.(true);setMusicMode(currentMapProgress().level>=10?"boss":"normal");gameMode="map";buildRuntimeMap(gameState.selectedMap);mirror.setEnabled(false);mirrorFrame.setEnabled(false);lobbyScreen.setEnabled(false);if(!cameraHeld)vrCameraRoot.setEnabled(false);if(xrCamera){const p=getMapSpawn();teleportPlayerXZ(p.x,p.z);keepRigAboveFloor();}if(npc?.root)npc.root.dispose();createNpc();configureNpcForCurrentLevel();npc.root.setEnabled(true);npc.root.position.copyFrom(getNpcSpawnPosition());configureExtraSquad();applyBatLook();applySkinLook();}
   function applyBatLook(){const b=selectedBatData(),c=BABYLON.Color3.FromHexString(b.color);batWood.diffuseColor=c;batWood.emissiveColor=c.scale(b.rarity==="Mythic"?.14:b.rarity==="Legendary"?.08:.02);}
 
   let chestRoot=null;
@@ -5020,172 +5033,119 @@ for(const [,p] of net.players){p.inMatch=false;p.reportedInMatch=false;}const wa
   }
 
   function updateHandLocomotion(h,worldPos,trackPos,dt) {
-    let didGroundSlam=false;
-    h.landingSuppress=Math.max(0,(h.landingSuppress||0)-dt);
-
     const head=xrCamera?.globalPosition||xrCamera?.position||BABYLON.Vector3.Zero();
-    const relTrack=trackPos.subtract(head);
+    const rel=trackPos.subtract(head);
 
-    let c=surfaceContact(worldPos);
-    if(!c && worldPos.y<HAND_RADIUS+.025){
-      c={
+    let contact=surfaceContact(worldPos);
+    if(!contact && worldPos.y<HAND_RADIUS+.02){
+      contact={
         surface:ground,
         point:new BABYLON.Vector3(worldPos.x,0,worldPos.z),
         normal:new BABYLON.Vector3(0,1,0)
       };
     }
 
-    if(h.waitClear && !c)h.waitClear=false;
+    // Instant release: if the physical hand is no longer touching anything,
+    // the locomotion contact ends immediately. No sticky planted state.
+    if(!contact){
+      h.contact=false;
+      h.anchor=null;
+      h.normal=null;
+      h.plantRel=null;
+      h.waitClear=false;
+      h.landingSuppress=0;
+      h.trackLast=trackPos.clone();
+      h.relLast=rel.clone();
+      h.mesh.position.copyFrom(safeVisibleHandPosition(worldPos));
+      return;
+    }
 
-    if(!h.contact && c && !h.waitClear){
+    const n=contact.normal.clone();
+    const isFloor=n.y>.65;
+
+    if(!h.contact){
       h.contact=true;
-      h.normal=c.normal.clone();
-      h.anchor=c.point.add(h.normal.scale(HAND_RADIUS+.014));
-      h.plantTrack=trackPos.clone();
-      h.plantRel=relTrack.clone();
-      h.mesh.position.copyFrom(safeVisibleHandPosition(h.anchor));
+      h.anchor=contact.point.add(n.scale(HAND_RADIUS+.012));
+      h.normal=n.clone();
+      h.plantRel=rel.clone();
 
-      const isFloorLike=h.normal.y>.72;
+      // Only a short fall-settle period prevents landing bounce.
+      const downward=bodyVelocity.y<-.45;
+      h.landingSuppress=(isFloor&&downward)?.055:0;
 
-      // IMPORTANT: slam speed is controller motion RELATIVE TO THE HEAD.
-      // Falling with both hands down therefore cannot trigger a launch.
-      let slamSpeed=0;
-      if(h.relLast){
-        const relDelta=relTrack.subtract(h.relLast);
-        slamSpeed=Math.max(
-          0,
-          -BABYLON.Vector3.Dot(relDelta,h.normal)/Math.max(dt,.008)
-        );
-      }
-
-      const actualHandSlam=
-        isFloorLike &&
-        slamSpeed>=GROUND_SLAM_MIN_SPEED &&
-        groundSlamCooldown<=0;
-
-      if(actualHandSlam){
-        const t=BABYLON.Scalar.Clamp(
-          (slamSpeed-GROUND_SLAM_MIN_SPEED)/4.5,
-          0,1
-        );
-        const upBoost=BABYLON.Scalar.Lerp(1.20,GROUND_SLAM_MAX_BOOST,t);
-
-        const relDelta=h.relLast.subtract(relTrack);
-        const hv=relDelta.scale(1/Math.max(dt,.008));
-        hv.y=0;
-        if(hv.length()>4.2)hv.normalize().scaleInPlace(4.2);
-
-        bodyVelocity.x+=hv.x*.40;
-        bodyVelocity.z+=hv.z*.40;
-        bodyVelocity.y=Math.max(bodyVelocity.y,upBoost);
-
-        didGroundSlam=true;
-        groundSlamCooldown=.32;
-        pulse(h,.85,70);
-      }else{
-        // A hand touching the floor during a landing gets a brief settling
-        // phase. It can grip/drag sideways, but cannot spring the body upward.
-        if(isFloorLike)h.landingSuppress=.08;
-        pulse(h,.30,28);
-      }
-    }
-
-    if(h.contact && h.normal && h.plantRel && h.relLast && !didGroundSlam){
-      const n=h.normal;
-      const fromPlant=relTrack.subtract(h.plantRel);
-      const outward=BABYLON.Vector3.Dot(fromPlant,n);
-
-      if(outward>.035 || BABYLON.Vector3.Distance(worldPos,h.anchor)>.36){
-        h.contact=false;
-        h.waitClear=!!c;
-        h.normal=null;
-        h.anchor=null;
-        h.plantTrack=null;
-        h.plantRel=null;
-      }else{
-        // Use controller motion relative to the head. This removes the
-        // positive-feedback bounce loop caused by body/gravity motion.
-        const delta=relTrack.subtract(h.relLast);
-        const normalDelta=BABYLON.Vector3.Dot(delta,n);
-        const tangent=delta.subtract(n.scale(normalDelta));
-
-        let effective=tangent;
-
-        // Deliberately pushing a planted hand INTO a surface still moves the rig.
-        if(normalDelta<0){
-          const pushInto=n.scale(normalDelta);
-          const gain=(n.y>.60 && h.landingSuppress<=0)
-            ? Math.min(FLOOR_LIFT_BOOST,2.15)
-            : 1.0;
-          effective=tangent.add(pushInto.scale(gain));
-        }
-
-        let rigDelta=effective.scale(-PUSH_GAIN);
-
-        // During landing settle, floor contact may move you sideways but never up.
-        if(n.y>.60 && h.landingSuppress>0 && rigDelta.y>0){
-          rigDelta.y=0;
-        }
-
-        if(n.y>.60 && xrCamera){
-          let forward=xrCamera.getForwardRay(1).direction.clone();
-          forward.y=0;
-          if(forward.lengthSquared()>.001){
-            forward.normalize();
-            const forwardAmount=BABYLON.Vector3.Dot(rigDelta,forward);
-            const forwardPart=forward.scale(forwardAmount);
-            const sidePart=rigDelta.subtract(forwardPart);
-            rigDelta=forwardAmount>0
-              ? forwardPart.scale(Math.min(FLOOR_FORWARD_BOOST,1.25))
-                  .add(sidePart.scale(Math.min(FLOOR_SIDE_BOOST,1.15)))
-              : forwardPart.add(sidePart.scale(Math.min(FLOOR_SIDE_BOOST,1.15)));
-          }
-        }
-
-        // Smaller per-frame correction removes hand jitter on Quest.
-        const max=.14;
-        if(rigDelta.length()>max)rigDelta=rigDelta.normalize().scale(max);
-
-        if(rigDelta.length()>.0010){
-          xrCamera.position.addInPlace(rigDelta);
-          keepRigAboveFloor();
-
-          const impulse=rigDelta.scale(1/Math.max(dt,.008));
-
-          // Only horizontal momentum comes from normal planted movement.
-          bodyVelocity.x=BABYLON.Scalar.Lerp(bodyVelocity.x,impulse.x,.10);
-          bodyVelocity.z=BABYLON.Scalar.Lerp(bodyVelocity.z,impulse.z,.10);
-
-          // Vertical momentum is allowed only from a deliberate pushing motion
-          // after the landing settle window, and is kept modest.
-          if(n.y>.60 && h.landingSuppress<=0 && rigDelta.y>0){
-            // Deliberate downward hand push should lift the body.
-            // Keep it separate from landing suppression so walking/climbing works.
-            bodyVelocity.y=Math.max(
-              bodyVelocity.y,
-              Math.min(3.35,impulse.y*.28)
-            );
-          }
-
-          bodyVelocity.x=BABYLON.Scalar.Clamp(bodyVelocity.x,-6.2,6.2);
-          bodyVelocity.y=BABYLON.Scalar.Clamp(bodyVelocity.y,-6.8,4.2);
-          bodyVelocity.z=BABYLON.Scalar.Clamp(bodyVelocity.z,-6.2,6.2);
+      // Intentional slam uses controller velocity RELATIVE TO HEAD.
+      if(isFloor && h.relLast && groundSlamCooldown<=0){
+        const relDelta=rel.subtract(h.relLast);
+        const into=-BABYLON.Vector3.Dot(relDelta,n)/Math.max(dt,.008);
+        if(into>=GROUND_SLAM_MIN_SPEED){
+          const t=BABYLON.Scalar.Clamp((into-GROUND_SLAM_MIN_SPEED)/4.5,0,1);
+          bodyVelocity.y=Math.max(bodyVelocity.y,BABYLON.Scalar.Lerp(1.25,GROUND_SLAM_MAX_BOOST,t));
+          groundSlamCooldown=.30;
+          pulse(h,.85,65);
         }
       }
     }
 
-    if(h.contact && h.anchor){
-      h.mesh.position.copyFrom(safeVisibleHandPosition(h.anchor));
-    }else{
-      const vc=surfaceContact(worldPos);
-      if(vc)h.mesh.position.copyFrom(
-        safeVisibleHandPosition(vc.point.add(vc.normal.scale(HAND_RADIUS+.012)))
-      );
-      else h.mesh.position.copyFrom(safeVisibleHandPosition(worldPos));
+    h.landingSuppress=Math.max(0,(h.landingSuppress||0)-dt);
+
+    if(h.relLast){
+      const delta=rel.subtract(h.relLast);
+
+      // Hand pushing INTO the contacted surface moves the player away from it.
+      const into=BABYLON.Vector3.Dot(delta,n);
+      const tangent=delta.subtract(n.scale(into));
+
+      let rigDelta=tangent.scale(-1.0);
+
+      if(into<0){
+        // Strong, immediate push-off. This is the main Gorilla-Tag-style lift.
+        const pushGain=isFloor?2.25:1.55;
+        rigDelta.addInPlace(n.scale(-into*pushGain));
+      }
+
+      // During the tiny landing absorption window, only block accidental upward
+      // spring; after that, upward push is fully allowed.
+      if(isFloor && h.landingSuppress>0 && rigDelta.y>0){
+        rigDelta.y=0;
+      }
+
+      const maxStep=.16;
+      if(rigDelta.length()>maxStep)rigDelta.normalize().scaleInPlace(maxStep);
+
+      if(rigDelta.length()>.0008){
+        xrCamera.position.addInPlace(rigDelta);
+        keepRigAboveFloor();
+
+        const impulse=rigDelta.scale(1/Math.max(dt,.008));
+        bodyVelocity.x=BABYLON.Scalar.Lerp(bodyVelocity.x,impulse.x,.16);
+        bodyVelocity.z=BABYLON.Scalar.Lerp(bodyVelocity.z,impulse.z,.16);
+
+        // Crucial fix: upward hand push is not clamped away.
+        if(rigDelta.y>0 && h.landingSuppress<=0){
+          bodyVelocity.y=Math.max(bodyVelocity.y,Math.min(4.2,impulse.y*.34));
+        }
+
+        bodyVelocity.x=BABYLON.Scalar.Clamp(bodyVelocity.x,-7.0,7.0);
+        bodyVelocity.y=BABYLON.Scalar.Clamp(bodyVelocity.y,-7.5,5.0);
+        bodyVelocity.z=BABYLON.Scalar.Clamp(bodyVelocity.z,-7.0,7.0);
+      }
     }
+
+    // If the hand moves clearly away from the contact surface, release at once.
+    const signedAway=BABYLON.Vector3.Dot(worldPos.subtract(contact.point),n);
+    if(signedAway>HAND_RADIUS+.07){
+      h.contact=false;
+      h.anchor=null;
+      h.normal=null;
+      h.plantRel=null;
+      h.waitClear=false;
+    }
+
+    if(h.contact && h.anchor)h.mesh.position.copyFrom(safeVisibleHandPosition(h.anchor));
+    else h.mesh.position.copyFrom(safeVisibleHandPosition(worldPos));
 
     h.trackLast=trackPos.clone();
-    h.relLast=relTrack.clone();
+    h.relLast=rel.clone();
   }
 
   // ------------------------------------------------------------
@@ -9224,9 +9184,12 @@ FREE HAND + TRIGGER`;
           captureTrackedHeadHeight();
           startBackgroundMusic();
 
-          // First headset entry ALWAYS starts in the central lobby.
+          // TRUE CLEAN START: headset always boots into the new central lobby.
           gameMode="lobby";
           firstVrLobbySpawnDone=true;
+          clearRuntimeMap();
+          if(npc?.root)npc.root.setEnabled(false);
+          extraNpcs.forEach(e=>e.root.setEnabled(false));
           goLobby(true);
           bodyVelocity.set(0,0,0);
           batTipLast=null;
@@ -9254,6 +9217,26 @@ FREE HAND + TRIGGER`;
 
 
   let primaryNpcWatchTimer=0;
+
+
+  function removeLegacyOfficeObjects(){
+    const badTokens=[
+      "rear","meeting","bookshelf","printer","watercooler","whiteboard",
+      "securitycam","wid desk","far desk","deep desk","mug","mousepad",
+      "pencup","stapler","conference","cable","doorframe","openofficedoor"
+    ];
+    const keepPrefixes=[
+      "clean","office","arena","ground","player","bat","npc","hud","quickmenu"
+    ];
+    for(const m of [...scene.meshes]){
+      if(!m || m.isDisposed?.())continue;
+      const n=(m.name||"").toLowerCase();
+      if(n.startsWith("clean"))continue;
+      if(badTokens.some(t=>n.includes(t.replace(" ","")))){
+        try{m.dispose();}catch(_){}
+      }
+    }
+  }
 
   function cleanupOfficeFloatingProps(){
     // v0.37 clean rebuild: legacy floating/detail props are no longer created.
@@ -9835,9 +9818,10 @@ FREE HAND + TRIGGER`;
         const planted=hands.left.contact||hands.right.contact;
 
         // Normal gravity with retained air momentum.
-        if (!planted) {
-          bodyVelocity.y+=PLAYER_GRAVITY*dt;
-        } else if(bodyVelocity.y<0) {
+        // Gravity is continuous. Floor contact may absorb downward landing
+        // velocity, but it never cancels a deliberate upward hand push.
+        bodyVelocity.y+=PLAYER_GRAVITY*dt;
+        if(planted && bodyVelocity.y<0 && Math.abs(bodyVelocity.y)<1.2){
           bodyVelocity.y=0;
         }
 
