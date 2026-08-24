@@ -1,5 +1,5 @@
 (() => {
-  const BUILD_VERSION="0.36.7";
+  const BUILD_VERSION="0.37.0";
   const canvas = document.getElementById("renderCanvas");
   const engine = new BABYLON.Engine(canvas, true, { stencil:true });
   const scene = new BABYLON.Scene(engine);
@@ -778,718 +778,128 @@
     });
   }
 
-  // Main office furniture layout.
+  // Main office furniture layout — CLEAN REBUILD.
+  // Four side workstations leave a large, readable combat lane in the center.
   const deskLayout=[
-    [-2.65,-1.25,0],
-    [1.55,-1.25,0],
-    [-2.65,1.35,Math.PI],
-    [1.55,1.35,Math.PI]
+    [-7.25,-5.8, Math.PI/2],
+    [ 7.25,-5.8,-Math.PI/2],
+    [-7.25,-12.2,Math.PI/2],
+    [ 7.25,-12.2,-Math.PI/2]
   ];
 
   deskLayout.forEach((d,i)=>{
-    createDesk("desk"+i,d[0],d[1],d[2]);
-
-    const facing=d[2];
-    const monitorZ=d[1]+(facing===0?.10:-.10);
-    createMonitor("monitor"+i,d[0],monitorZ,facing);
-    createKeyboard("keyboard"+i,d[0],d[1]+(facing===0?-.22:.22),facing);
-
-    createChair(
-      "chair"+i,
-      d[0],
-      d[1]+(facing===0?-.72:.72),
-      facing
-    );
+    createDesk("cleanDesk"+i,d[0],d[1],d[2]);
+    const side=d[0]<0?1:-1;
+    createMonitor("cleanMonitor"+i,d[0]+side*.08,d[1],d[2]);
+    createKeyboard("cleanKeyboard"+i,d[0]+side*.18,d[1],d[2]);
+    createChair("cleanChair"+i,d[0]+side*.95,d[1],d[2]);
   });
 
-  deskLayout.forEach((d,i)=>{
-    const cable=BABYLON.MeshBuilder.CreateTorus("monitorCable"+i,{diameter:.28,thickness:.012,tessellation:14},scene);
-    cable.position.set(d[0]+.30,.53,d[1]+.25);
-    cable.rotation.x=Math.PI/2;cable.material=darkTrimMat;
-
-    // Treat the loose cable/ring as a physical desk item.
-    registerProp(cable,[cable],{
-      type:"cable",mass:.06,radius:.15,minY:.02,breakThreshold:99,hp:4
-    });
-  });
-
-  createBin("binA",-4.15,-2.7);
-  createBin("binB",4.05,2.6);
-  createPlant("plantA",-4.28,2.65);
-  createPlant("plantB",4.25,-2.65);
-
-  // Low office divider/cabinet.
-  box("cabinetA",new BABYLON.Vector3(-4.10,.55,.05),new BABYLON.Vector3(.62,1.10,2.0),deskMetalMat,true);
-  box("cabinetB",new BABYLON.Vector3(4.10,.55,.05),new BABYLON.Vector3(.62,1.10,2.0),deskMetalMat,true);
+  createBin("cleanBinL",-9.0,-8.8);
+  createBin("cleanBinR", 9.0,-8.8);
+  createPlant("cleanPlantL",-9.2,-15.8);
+  createPlant("cleanPlantR", 9.2,-15.8);
 
   // ------------------------------------------------------------
-  // Office detail pass
+  // CRAZY OFFICE v0.37 CLEAN OFFICE DESIGN
   // ------------------------------------------------------------
 
-  // Baseboards / wall trim.
-  box("baseboardLeft",new BABYLON.Vector3(-11.13,.09,-7.75),new BABYLON.Vector3(.055,.16,11.65),trimMat,false);
-  box("baseboardRight",new BABYLON.Vector3(11.13,.09,-7.75),new BABYLON.Vector3(.055,.16,11.65),trimMat,false);
-  box("baseboardFrontL",new BABYLON.Vector3(-4.98,.09,-5.08),new BABYLON.Vector3(5.00,.16,.055),trimMat,false);
-  box("baseboardFrontR",new BABYLON.Vector3(4.98,.09,-5.08),new BABYLON.Vector3(5.00,.16,.055),trimMat,false);
+  const cleanBlue=mkMat("cleanBlue","#0f84c9");
+  cleanBlue.emissiveColor=BABYLON.Color3.FromHexString("#0f84c9").scale(.12);
+  const cleanDark=mkMat("cleanDark","#141b26");
+  const cleanPanel=mkMat("cleanPanel","#e8edf2");
 
-  // Carpet tile seams.
-  for(let x=-10;x<=10;x+=1){
-    box("carpetLineX"+x,new BABYLON.Vector3(x,.008,-7.7),new BABYLON.Vector3(.009,.006,11.8),darkTrimMat,false);
-  }
-  for(let z=-18;z<=3;z+=1){
-    box("carpetLineZ"+z,new BABYLON.Vector3(0,.009,z),new BABYLON.Vector3(10.95,.006,.009),darkTrimMat,false);
-  }
+  box("cleanCenterLane",
+      new BABYLON.Vector3(0,.012,-9.1),
+      new BABYLON.Vector3(5.2,.018,18.0),
+      cleanDark,false);
 
-  // Window frames and simple blinds.
-  for(const x of [-5.66,-1.89,1.89,5.66]){
-    box("windowFrameTop"+x,new BABYLON.Vector3(x,3.05,3.91),new BABYLON.Vector3(3.25,.055,.07),darkTrimMat,false);
-    box("windowFrameBottom"+x,new BABYLON.Vector3(x,.61,3.91),new BABYLON.Vector3(3.25,.055,.07),darkTrimMat,false);
-    box("windowFrameL"+x,new BABYLON.Vector3(x-1.60,1.83,3.91),new BABYLON.Vector3(.05,2.42,.07),darkTrimMat,false);
-    box("windowFrameR"+x,new BABYLON.Vector3(x+1.60,1.83,3.91),new BABYLON.Vector3(.05,2.42,.07),darkTrimMat,false);
-    box("windowCross"+x,new BABYLON.Vector3(x,1.84,3.91),new BABYLON.Vector3(3.20,.035,.055),darkTrimMat,false);
-
-    for(let i=0;i<4;i++){
-      box(
-        "blind"+x+"_"+i,
-        new BABYLON.Vector3(x,2.42-i*.11,3.86),
-        new BABYLON.Vector3(2.52,.018,.045),
-        trimMat,false
-      );
-    }
+  for(const z of [-2.4,-6.0,-9.6,-13.2,-16.8]){
+    box("cleanLeftPanel"+z,
+        new BABYLON.Vector3(-11.13,2.25,z),
+        new BABYLON.Vector3(.055,3.65,2.5),
+        (Math.round(Math.abs(z)*10)%2)?cleanBlue:cleanPanel,false);
+    box("cleanRightPanel"+z,
+        new BABYLON.Vector3(11.13,2.25,z),
+        new BABYLON.Vector3(.055,3.65,2.5),
+        (Math.round(Math.abs(z)*10)%2)?cleanPanel:cleanBlue,false);
   }
 
-  // Door frame and open door.
-  box("doorFrameL",new BABYLON.Vector3(-1.55,1.25,-3.86),new BABYLON.Vector3(.10,2.50,.11),darkTrimMat,false);
-  box("doorFrameR",new BABYLON.Vector3(1.55,1.25,-3.86),new BABYLON.Vector3(.10,2.50,.11),darkTrimMat,false);
-  box("doorFrameTop",new BABYLON.Vector3(0,2.48,-3.86),new BABYLON.Vector3(3.18,.10,.11),darkTrimMat,false);
+  box("cleanOfficeLogoPanel",
+      new BABYLON.Vector3(0,2.45,-19.34),
+      new BABYLON.Vector3(7.2,2.4,.08),
+      cleanDark,false);
 
-  const doorRoot=new BABYLON.TransformNode("openOfficeDoor",scene);
-  doorRoot.position.set(-1.46,0,-3.73);
-  doorRoot.rotation.y=-.62;
-  const door=childBox("doorSlab",doorRoot,new BABYLON.Vector3(.67,1.18,0),new BABYLON.Vector3(1.34,2.35,.07),deskMat,false);
-  const handle=BABYLON.MeshBuilder.CreateSphere("doorHandle",{diameter:.08,segments:10},scene);
-  handle.parent=doorRoot;handle.position.set(1.18,1.15,-.07);handle.material=deskMetalMat;
+  const officeLogoPlane=BABYLON.MeshBuilder.CreatePlane("cleanOfficeLogo",{width:6.6,height:1.7},scene);
+  officeLogoPlane.position.set(0,2.45,-19.28);
+  const officeLogoGui=BABYLON.GUI.AdvancedDynamicTexture.CreateForMesh(officeLogoPlane,1024,256);
+  const officeLogoText=new BABYLON.GUI.TextBlock();
+  officeLogoText.text="CRAZY OFFICE";
+  officeLogoText.color="#67e8f9";
+  officeLogoText.fontSize=104;
+  officeLogoText.fontWeight="900";
+  officeLogoGui.addControl(officeLogoText);
 
-  function createMug(name,x,z,rot=0){
+  for(const z of [-2.5,-7.2,-11.9,-16.6]){
+    box("cleanCeilingStrip"+z,
+        new BABYLON.Vector3(0,4.69,z),
+        new BABYLON.Vector3(7.0,.035,.16),
+        lightPanelMat,false);
+  }
+
+  box("cleanLeftBumper",
+      new BABYLON.Vector3(-10.95,.28,-9.0),
+      new BABYLON.Vector3(.22,.56,20.5),
+      cleanDark,true);
+  box("cleanRightBumper",
+      new BABYLON.Vector3(10.95,.28,-9.0),
+      new BABYLON.Vector3(.22,.56,20.5),
+      cleanDark,true);
+
+  function createCleanCabinet(name,x,z){
     const root=new BABYLON.TransformNode(name,scene);
-    root.position.set(x,.84,z);root.rotation.y=rot;
-
-    const cup=BABYLON.MeshBuilder.CreateCylinder(name+"Cup",{
-      height:.14,diameterTop:.12,diameterBottom:.105,tessellation:14
-    },scene);
-    cup.parent=root;cup.position.y=.07;cup.material=mugMat;
-
-    const handle=BABYLON.MeshBuilder.CreateTorus(name+"Handle",{
-      diameter:.10,thickness:.022,tessellation:12
-    },scene);
-    handle.parent=root;handle.position.set(.07,.075,0);
-    handle.rotation.z=Math.PI/2;handle.material=mugMat;
-
-    const coffee=BABYLON.MeshBuilder.CreateCylinder(name+"Coffee",{
-      height:.008,diameter:.095,tessellation:14
-    },scene);
-    coffee.parent=root;coffee.position.y=.142;coffee.material=darkTrimMat;
-
-    return registerProp(root,[cup,handle,coffee],{
-      type:"mug",mass:.28,radius:.10,minY:.02,breakThreshold:3
+    root.position.set(x,0,z);
+    const body=childBox(name+"Body",root,
+      new BABYLON.Vector3(0,.95,0),
+      new BABYLON.Vector3(.82,1.9,.58),
+      cleanDark,true);
+    const face=childBox(name+"Face",root,
+      new BABYLON.Vector3(0,.96,-.302),
+      new BABYLON.Vector3(.70,1.72,.025),
+      deskMetalMat,false);
+    for(let y=.32;y<1.62;y+=.28){
+      childBox(name+"Slot"+y,root,
+        new BABYLON.Vector3(0,y,-.322),
+        new BABYLON.Vector3(.54,.045,.015),
+        cleanBlue,false);
+    }
+    return registerProp(root,[body,face],{
+      type:"cabinet",mass:11,radius:.58,minY:0,breakThreshold:10,hp:38
     });
   }
+  createCleanCabinet("cleanCabinetL",-4.7,-16.3);
+  createCleanCabinet("cleanCabinetR", 4.7,-16.3);
 
-  function createMouse(name,x,z,rot=0){
-    const root=new BABYLON.TransformNode(name,scene);
-    root.position.set(x,.835,z);root.rotation.y=rot;
+  const receptionRoot=new BABYLON.TransformNode("cleanReception",scene);
+  receptionRoot.position.set(0,0,-15.2);
+  const receptionBody=childBox("cleanReceptionBody",receptionRoot,
+    new BABYLON.Vector3(0,.55,0),
+    new BABYLON.Vector3(3.8,1.1,.72),
+    deskMat,true);
+  const receptionTop=childBox("cleanReceptionTop",receptionRoot,
+    new BABYLON.Vector3(0,1.12,0),
+    new BABYLON.Vector3(4.1,.09,.84),
+    cleanPanel,true);
+  registerProp(receptionRoot,[receptionBody,receptionTop],{
+    type:"desk",mass:18,radius:2.05,minY:0,breakThreshold:12,hp:62
+  });
 
-    const mouse=BABYLON.MeshBuilder.CreateSphere(name+"Body",{diameter:.12,segments:12},scene);
-    mouse.parent=root;mouse.scaling.set(.72,.34,1.05);mouse.material=keyboardMat;
-
-    const wheel=BABYLON.MeshBuilder.CreateCylinder(name+"Wheel",{
-      height:.022,diameter:.026,tessellation:9
-    },scene);
-    wheel.parent=root;wheel.position.set(0,.038,-.025);wheel.rotation.z=Math.PI/2;wheel.material=darkTrimMat;
-
-    return registerProp(root,[mouse,wheel],{
-      type:"mouse",mass:.12,radius:.08,minY:.02,breakThreshold:6
-    });
-  }
-
-  function createPaperStack(name,x,z,rot=0){
-    const root=new BABYLON.TransformNode(name,scene);
-    root.position.set(x,.84,z);root.rotation.y=rot;
-    const papers=[];
-    for(let i=0;i<5;i++){
-      const p=childBox(
-        name+"Paper"+i,root,
-        new BABYLON.Vector3((i%2)*.006,i*.006,(i%3)*.004),
-        new BABYLON.Vector3(.27,.005,.20),
-        paperMat,false
-      );
-      p.rotation.y=(i-2)*.025;
-      papers.push(p);
+  for(const p of officeProps){
+    if(!p?.root)continue;
+    if(p.root.position.y>1.25){
+      p.root.position.y=0;
+      p.initialPosition.y=0;
     }
-    return registerProp(root,papers,{
-      type:"papers",mass:.10,radius:.16,minY:.01,breakThreshold:7
-    });
-  }
-
-  function createDeskPhone(name,x,z,rot=0){
-    const root=new BABYLON.TransformNode(name,scene);
-    root.position.set(x,.84,z);root.rotation.y=rot;
-    const base=childBox(name+"Base",root,new BABYLON.Vector3(0,.035,0),new BABYLON.Vector3(.27,.07,.19),keyboardMat,false);
-    const handset=childBox(name+"Handset",root,new BABYLON.Vector3(0,.095,0),new BABYLON.Vector3(.25,.055,.065),darkTrimMat,false);
-    for(const sx of [-1,1]){
-      const ear=BABYLON.MeshBuilder.CreateSphere(name+"Ear"+sx,{diameter:.075,segments:9},scene);
-      ear.parent=root;ear.position.set(sx*.105,.10,0);ear.scaling.set(.72,1,.90);ear.material=darkTrimMat;
-    }
-    return registerProp(root,[base,handset],{
-      type:"phone",mass:.42,radius:.17,minY:.02,breakThreshold:5
-    });
-  }
-
-  deskLayout.forEach((d,i)=>{
-    const facing=d[2];
-    const front=(facing===0?-1:1);
-    createMug("mug"+i,d[0]-.50,d[1]+front*.16,facing);
-    createMouse("mouse"+i,d[0]+.39,d[1]+front*.22,facing);
-    createPaperStack("papers"+i,d[0]-.25,d[1]-front*.17,facing);
-    if(i===1) createDeskPhone("deskPhone",d[0]+.48,d[1]-front*.15,facing);
-  });
-
-  // Whiteboard with frame and sticky notes.
-  const whiteboardRoot=new BABYLON.TransformNode("whiteboard",scene);
-  whiteboardRoot.position.set(-4.84,1.62,-1.45);
-  whiteboardRoot.rotation.y=Math.PI/2;
-  const whiteboard=childBox("whiteboardPanel",whiteboardRoot,new BABYLON.Vector3(0,0,0),new BABYLON.Vector3(2.10,1.05,.035),boardMat,false);
-  childBox("whiteboardTop",whiteboardRoot,new BABYLON.Vector3(0,.55,-.01),new BABYLON.Vector3(2.22,.055,.055),darkTrimMat,false);
-  childBox("whiteboardBottom",whiteboardRoot,new BABYLON.Vector3(0,-.55,-.01),new BABYLON.Vector3(2.22,.055,.055),darkTrimMat,false);
-  childBox("whiteboardL",whiteboardRoot,new BABYLON.Vector3(-1.08,0,-.01),new BABYLON.Vector3(.055,1.15,.055),darkTrimMat,false);
-  childBox("whiteboardR",whiteboardRoot,new BABYLON.Vector3(1.08,0,-.01),new BABYLON.Vector3(.055,1.15,.055),darkTrimMat,false);
-  for(let i=0;i<7;i++){
-    const note=childBox(
-      "sticky"+i,whiteboardRoot,
-      new BABYLON.Vector3(-.75+(i%4)*.42,.25-Math.floor(i/4)*.40,-.025),
-      new BABYLON.Vector3(.22,.18,.007),
-      i%3===0?paperMat:i%3===1?blueMat:redMat,
-      false
-    );
-    note.rotation.z=(i-3)*.025;
-  }
-
-  // Wall clock.
-  const clockRoot=new BABYLON.TransformNode("clockRoot",scene);
-  clockRoot.position.set(4.84,2.22,-1.65);
-  clockRoot.rotation.y=-Math.PI/2;
-  const clockFace=BABYLON.MeshBuilder.CreateCylinder("clockFace",{
-    height:.035,diameter:.48,tessellation:24
-  },scene);
-  clockFace.parent=clockRoot;clockFace.rotation.z=Math.PI/2;clockFace.material=boardMat;
-  const clockRim=BABYLON.MeshBuilder.CreateTorus("clockRim",{
-    diameter:.49,thickness:.025,tessellation:24
-  },scene);
-  clockRim.parent=clockRoot;clockRim.rotation.z=Math.PI/2;clockRim.material=darkTrimMat;
-
-  // Bookshelf.
-  const shelfRoot=new BABYLON.TransformNode("bookshelf",scene);
-  shelfRoot.position.set(4.55,0,2.50);
-  childBox("shelfBody",shelfRoot,new BABYLON.Vector3(0,.82,0),new BABYLON.Vector3(.72,1.64,.38),darkTrimMat,false);
-  for(let y of [.32,.76,1.20]){
-    childBox("shelf"+y,shelfRoot,new BABYLON.Vector3(0,y,0),new BABYLON.Vector3(.67,.045,.36),trimMat,false);
-  }
-  const bookMats=[bookMatA,bookMatB,bookMatC,paperMat];
-  let bi=0;
-  for(let row=0;row<3;row++){
-    for(let col=0;col<5;col++){
-      const h=.22+((col+row)%3)*.045;
-      const bk=childBox(
-        "book"+bi,shelfRoot,
-        new BABYLON.Vector3(-.24+col*.12,.39+row*.44+h/2,.01),
-        new BABYLON.Vector3(.075,h,.25),
-        bookMats[bi%bookMats.length],false
-      );
-      bk.rotation.z=(col%2?.025:-.02);
-      bi++;
-    }
-  }
-
-  // Printer/copier.
-  const printerRoot=new BABYLON.TransformNode("printer",scene);
-  printerRoot.position.set(3.90,1.12,-.15);
-  const printerBody=childBox("printerBody",printerRoot,new BABYLON.Vector3(0,.20,0),new BABYLON.Vector3(.55,.38,.48),trimMat,false);
-  const printerTop=childBox("printerTop",printerRoot,new BABYLON.Vector3(0,.43,.02),new BABYLON.Vector3(.48,.10,.42),darkTrimMat,false);
-  const printerScreen=childBox("printerScreen",printerRoot,new BABYLON.Vector3(.16,.47,-.215),new BABYLON.Vector3(.14,.08,.015),screenMat,false);
-  const paperTray=childBox("paperTray",printerRoot,new BABYLON.Vector3(0,.08,-.27),new BABYLON.Vector3(.42,.045,.18),darkTrimMat,false);
-
-  // Water cooler.
-  const coolerRoot=new BABYLON.TransformNode("waterCooler",scene);
-  coolerRoot.position.set(-4.25,0,-2.15);
-  const coolerBody=childBox("coolerBody",coolerRoot,new BABYLON.Vector3(0,.48,0),new BABYLON.Vector3(.38,.86,.35),trimMat,false);
-  const bottleMat=new BABYLON.StandardMaterial("waterBottleMat",scene);
-  bottleMat.diffuseColor=new BABYLON.Color3(.35,.65,.82);bottleMat.alpha=.42;
-  const bottle=BABYLON.MeshBuilder.CreateCylinder("waterBottle",{
-    height:.46,diameterTop:.22,diameterBottom:.30,tessellation:16
-  },scene);
-  bottle.parent=coolerRoot;bottle.position.y=1.05;bottle.material=bottleMat;
-  const tapBlue=BABYLON.MeshBuilder.CreateSphere("tapBlue",{diameter:.055,segments:8},scene);
-  tapBlue.parent=coolerRoot;tapBlue.position.set(-.07,.58,-.19);tapBlue.material=blueMat;
-  const tapRed=tapBlue.clone("tapRed");tapRed.parent=coolerRoot;tapRed.position.x=.07;tapRed.material=redMat;
-
-  registerProp(doorRoot,[door,handle],{
-    type:"door",mass:8.5,radius:.82,minY:0,breakThreshold:7.8,hp:32
-  });
-  registerProp(whiteboardRoot,[whiteboard],{
-    type:"whiteboard",mass:4.5,radius:1.0,minY:.45,breakThreshold:8.5,hp:24
-  });
-  registerProp(printerRoot,[printerBody,printerTop,printerScreen,paperTray],{
-    type:"printer",mass:5.5,radius:.45,minY:.70,breakThreshold:5.8,hp:22
-  });
-  registerProp(coolerRoot,[coolerBody,bottle,tapBlue,tapRed],{
-    type:"cooler",mass:4.0,radius:.42,minY:0,breakThreshold:5.5,hp:20
-  });
-
-  // Fire extinguisher.
-  const extinguisher=BABYLON.MeshBuilder.CreateCylinder("extinguisher",{
-    height:.62,diameter:.20,tessellation:16
-  },scene);
-  extinguisher.position.set(2.05,.32,-3.72);extinguisher.material=redMat;
-  const extingTop=BABYLON.MeshBuilder.CreateCylinder("extinguisherTop",{
-    height:.08,diameter:.12,tessellation:12
-  },scene);
-  extingTop.position.set(2.05,.67,-3.72);extingTop.material=darkTrimMat;
-
-  // Ceiling air vents.
-  for(const x of [-3.3,3.3]){
-    const vent=box("ceilingVent"+x,new BABYLON.Vector3(x,2.93,2.15),new BABYLON.Vector3(.72,.025,.42),darkTrimMat,false);
-    for(let i=0;i<5;i++){
-      box(
-        "ventSlat"+x+"_"+i,
-        new BABYLON.Vector3(x-.26+i*.13,2.912,2.15),
-        new BABYLON.Vector3(.025,.012,.34),
-        trimMat,false
-      );
-    }
-  }
-
-
-  // Extra detail in the SAME office footprint.
-  function makeMousePad(name,x,z,rot=0){
-    const root=new BABYLON.TransformNode(name,scene);
-    root.position.set(x,.833,z);root.rotation.y=rot;
-    const pad=childBox(name+"Pad",root,new BABYLON.Vector3(),new BABYLON.Vector3(.30,.008,.24),darkTrimMat,false);
-    return registerProp(root,[pad],{type:"mousepad",mass:.08,radius:.17,minY:.01,breakThreshold:20,hp:5});
-  }
-
-  function makePenCup(name,x,z){
-    const root=new BABYLON.TransformNode(name,scene);
-    root.position.set(x,.84,z);
-    const cup=BABYLON.MeshBuilder.CreateCylinder(name+"Cup",{height:.14,diameter:.10,tessellation:14},scene);
-    cup.parent=root;cup.position.y=.07;cup.material=deskMetalMat;
-    const parts=[cup];
-    for(let i=0;i<4;i++){
-      const pen=BABYLON.MeshBuilder.CreateCylinder(name+"Pen"+i,{height:.20,diameter:.012,tessellation:7},scene);
-      pen.parent=root;pen.position.set((i-1.5)*.015,.15,(i%2)*.018-.009);
-      pen.rotation.z=(i-1.5)*.08;pen.material=i%2?blueMat:redMat;parts.push(pen);
-    }
-    return registerProp(root,parts,{type:"pencup",mass:.22,radius:.11,minY:.02,breakThreshold:5,hp:6});
-  }
-
-  function makeStapler(name,x,z,rot=0){
-    const root=new BABYLON.TransformNode(name,scene);
-    root.position.set(x,.84,z);root.rotation.y=rot;
-    const base=childBox(name+"Base",root,new BABYLON.Vector3(0,.018,0),new BABYLON.Vector3(.16,.03,.055),darkTrimMat,false);
-    const top=childBox(name+"Top",root,new BABYLON.Vector3(0,.045,-.005),new BABYLON.Vector3(.15,.035,.05),deskMetalMat,false);
-    top.rotation.x=-.12;
-    return registerProp(root,[base,top],{type:"stapler",mass:.18,radius:.10,minY:.02,breakThreshold:7,hp:7});
-  }
-
-  deskLayout.forEach((d,i)=>{
-    const facing=d[2], f=facing===0?-1:1;
-    makeMousePad("mousePad"+i,d[0]+.38,d[1]+f*.22,facing);
-    makePenCup("penCup"+i,d[0]-.58,d[1]-f*.18);
-    if(i%2===0) makeStapler("stapler"+i,d[0]+.55,d[1]-f*.18,facing);
-  });
-
-  for(const [x,z,ry] of [
-    [-4.87,-2.8,Math.PI/2],[-4.87,1.9,Math.PI/2],
-    [4.87,-2.5,-Math.PI/2],[4.87,2.0,-Math.PI/2]
-  ]){
-    const outlet=box("wallOutlet"+x+z,new BABYLON.Vector3(x,.34,z),new BABYLON.Vector3(.08,.12,.018),paperMat,false);
-    outlet.rotation.y=ry;
-  }
-
-  const smoke=BABYLON.MeshBuilder.CreateCylinder("smokeDetector",{height:.045,diameter:.24,tessellation:20},scene);
-  smoke.position.set(0,2.93,-2.2);smoke.material=trimMat;
-
-  const camRoot=new BABYLON.TransformNode("securityCamera",scene);
-  camRoot.position.set(4.55,2.48,-3.45);camRoot.rotation.y=-2.25;
-  childBox("securityCamBody",camRoot,new BABYLON.Vector3(),new BABYLON.Vector3(.26,.14,.16),trimMat,false);
-  const lens=BABYLON.MeshBuilder.CreateCylinder("securityCamLens",{height:.055,diameter:.08,tessellation:14},scene);
-  lens.parent=camRoot;lens.position.set(0,0,-.11);lens.rotation.x=Math.PI/2;lens.material=darkTrimMat;
-
-  // floor paper clutter removed in v0.23.4
-
-
-  // ------------------------------------------------------------
-  // LARGE REAR OFFICE WING (z -4 to -9)
-  // Same building, now more than 60% deeper.
-  // ------------------------------------------------------------
-
-  // Baseboards in the new wing.
-  box("rearBaseboardWall",new BABYLON.Vector3(0,.09,-8.88),new BABYLON.Vector3(9.70,.16,.055),trimMat,false);
-  box("rearLeftBaseboard",new BABYLON.Vector3(-4.88,.09,-6.5),new BABYLON.Vector3(.055,.16,4.75),trimMat,false);
-  box("rearRightBaseboard",new BABYLON.Vector3(4.88,.09,-6.5),new BABYLON.Vector3(.055,.16,4.75),trimMat,false);
-
-  // Corridor flooring strips.
-  for(let z=-4.5;z>=-8.5;z-=1){
-    box(
-      "rearCarpetSeam"+z,
-      new BABYLON.Vector3(0,.009,z),
-      new BABYLON.Vector3(9.7,.006,.009),
-      darkTrimMat,false
-    );
-  }
-
-  // Two interior glass meeting-room walls with open doors.
-  const meetingGlassMat=new BABYLON.StandardMaterial("meetingGlass",scene);
-  meetingGlassMat.diffuseColor=new BABYLON.Color3(.55,.75,.84);
-  meetingGlassMat.alpha=.22;
-  meetingGlassMat.specularColor=new BABYLON.Color3(.85,.9,.95);
-  meetingGlassMat.backFaceCulling=false;
-
-  // Left meeting room partition.
-  box("meetingLeftWallA",new BABYLON.Vector3(-2.95,1.48,-5.15),new BABYLON.Vector3(3.65,2.88,.055),meetingGlassMat,true);
-  box("meetingLeftWallB",new BABYLON.Vector3(-.55,1.48,-5.15),new BABYLON.Vector3(.82,2.88,.055),meetingGlassMat,true);
-
-  // Right office / break area partition.
-  box("meetingRightWallA",new BABYLON.Vector3(.75,1.48,-6.4),new BABYLON.Vector3(.055,2.88,4.95),meetingGlassMat,true);
-
-  // Metal framing on meeting glass.
-  for(const x of [-4.72,-3.70,-2.68,-1.66,-.64]){
-    box("meetingFrame"+x,new BABYLON.Vector3(x,1.48,-5.12),new BABYLON.Vector3(.032,2.9,.07),darkTrimMat,false);
-  }
-  for(const y of [.62,1.55,2.45]){
-    box("meetingFrameY"+y,new BABYLON.Vector3(-2.72,y,-5.12),new BABYLON.Vector3(4.0,.028,.07),darkTrimMat,false);
-  }
-
-  function createConferenceTable(){
-    const root=new BABYLON.TransformNode("conferenceTable",scene);
-    root.position.set(-2.25,0,-7.05);
-
-    const top=childBox(
-      "conferenceTop",root,
-      new BABYLON.Vector3(0,.76,0),
-      new BABYLON.Vector3(3.55,.10,1.18),
-      deskMat,true
-    );
-
-    // Rounded-looking center sections using cylinders.
-    const legs=[];
-    for(const x of [-1.25,1.25]){
-      const leg=childCylinder(
-        "conferenceLeg"+x,root,
-        new BABYLON.Vector3(x,.37,0),
-        .70,.15,deskMetalMat
-      );
-      legs.push(leg);
-      const foot=childBox(
-        "conferenceFoot"+x,root,
-        new BABYLON.Vector3(x,.06,0),
-        new BABYLON.Vector3(.65,.055,.45),
-        deskMetalMat,false
-      );
-      legs.push(foot);
-    }
-
-    // Cable/power hatch.
-    const hatch=childBox(
-      "conferencePowerHatch",root,
-      new BABYLON.Vector3(0,.818,0),
-      new BABYLON.Vector3(.42,.018,.16),
-      darkTrimMat,false
-    );
-
-    return registerProp(root,[top,...legs,hatch],{
-      type:"desk",mass:22,radius:1.45,minY:0,breakThreshold:12,hp:70
-    });
-  }
-
-  createConferenceTable();
-
-  // Six meeting chairs.
-  [
-    [-3.55,-6.55,Math.PI/2],[-3.55,-7.55,Math.PI/2],
-    [-.95,-6.55,-Math.PI/2],[-.95,-7.55,-Math.PI/2],
-    [-2.25,-6.15,Math.PI],[-2.25,-7.95,0]
-  ].forEach((p,i)=>createChair("meetingChair"+i,p[0],p[1],p[2]));
-
-  // Large conference display.
-  const bigScreen=box(
-    "conferenceDisplay",
-    new BABYLON.Vector3(-2.25,1.70,-8.87),
-    new BABYLON.Vector3(1.85,1.05,.055),
-    monitorMat,false
-  );
-  const bigScreenInner=box(
-    "conferenceDisplayInner",
-    new BABYLON.Vector3(-2.25,1.70,-8.835),
-    new BABYLON.Vector3(1.72,.92,.012),
-    screenMat,false
-  );
-  const cam=BABYLON.MeshBuilder.CreateSphere("conferenceCamera",{diameter:.055,segments:9},scene);
-  cam.position.set(-2.25,2.28,-8.80);cam.material=darkTrimMat;
-
-  // Break-room counter on right.
-  const counterRoot=new BABYLON.TransformNode("breakCounter",scene);
-  counterRoot.position.set(2.90,0,-7.95);
-  const counter=childBox(
-    "breakCounterBody",counterRoot,
-    new BABYLON.Vector3(0,.48,0),
-    new BABYLON.Vector3(3.30,.92,.62),
-    trimMat,true
-  );
-  const counterTop=childBox(
-    "breakCounterTop",counterRoot,
-    new BABYLON.Vector3(0,.97,0),
-    new BABYLON.Vector3(3.42,.08,.70),
-    deskMat,false
-  );
-  registerProp(counterRoot,[counter,counterTop],{
-    type:"desk",mass:20,radius:1.2,minY:0,breakThreshold:13,hp:65
-  });
-
-  // Kitchen sink.
-  const sink=BABYLON.MeshBuilder.CreateBox("breakSink",{
-    width:.58,height:.035,depth:.38
-  },scene);
-  sink.position.set(2.55,1.025,-7.95);sink.material=deskMetalMat;
-  const faucet=BABYLON.MeshBuilder.CreateTorus("breakFaucet",{
-    diameter:.22,thickness:.025,tessellation:16
-  },scene);
-  faucet.position.set(2.55,1.16,-7.78);faucet.rotation.x=Math.PI/2;faucet.material=deskMetalMat;
-
-  // Coffee machine.
-  const coffeeRoot=new BABYLON.TransformNode("coffeeMachine",scene);
-  coffeeRoot.position.set(3.55,1.02,-7.93);
-  const coffeeBody=childBox("coffeeBody",coffeeRoot,new BABYLON.Vector3(0,.20,0),new BABYLON.Vector3(.42,.42,.33),monitorMat,false);
-  const coffeePanel=childBox("coffeePanel",coffeeRoot,new BABYLON.Vector3(0,.22,-.18),new BABYLON.Vector3(.28,.18,.015),screenMat,false);
-  const nozzle=childCylinder("coffeeNozzle",coffeeRoot,new BABYLON.Vector3(0,.03,-.19),.10,.035,deskMetalMat);
-  registerProp(coffeeRoot,[coffeeBody,coffeePanel,nozzle],{
-    type:"printer",mass:3.5,radius:.28,minY:.95,breakThreshold:5.5,hp:18
-  });
-
-  // Fridge.
-  const fridgeRoot=new BABYLON.TransformNode("officeFridge",scene);
-  fridgeRoot.position.set(4.22,0,-6.85);
-  const fridge=childBox(
-    "officeFridgeBody",fridgeRoot,
-    new BABYLON.Vector3(0,.92,0),
-    new BABYLON.Vector3(.72,1.84,.68),
-    trimMat,true
-  );
-  const fridgeLine=childBox(
-    "officeFridgeLine",fridgeRoot,
-    new BABYLON.Vector3(0,1.17,-.35),
-    new BABYLON.Vector3(.66,.025,.015),
-    darkTrimMat,false
-  );
-  const fridgeHandle=childBox(
-    "officeFridgeHandle",fridgeRoot,
-    new BABYLON.Vector3(.25,1.12,-.37),
-    new BABYLON.Vector3(.035,.62,.03),
-    deskMetalMat,false
-  );
-  registerProp(fridgeRoot,[fridge,fridgeLine,fridgeHandle],{
-    type:"cooler",mass:18,radius:.60,minY:0,breakThreshold:11,hp:55
-  });
-
-  // Lockers.
-  for(let i=0;i<4;i++){
-    const x=.95+i*.58;
-    const locker=box(
-      "locker"+i,
-      new BABYLON.Vector3(x,.95,-8.72),
-      new BABYLON.Vector3(.52,1.88,.42),
-      deskMetalMat,false
-    );
-    const doorDetail=box(
-      "lockerDoor"+i,
-      new BABYLON.Vector3(x,.95,-8.49),
-      new BABYLON.Vector3(.46,1.72,.025),
-      darkTrimMat,false
-    );
-    for(let s=0;s<4;s++){
-      box(
-        "lockerVent"+i+"_"+s,
-        new BABYLON.Vector3(x,.50+s*.08,-8.47),
-        new BABYLON.Vector3(.22,.018,.01),
-        trimMat,false
-      );
-    }
-  }
-
-  // Wall posters / notice frames.
-  for(let i=0;i<4;i++){
-    const z=-5.0-i*.80;
-    const frame=box(
-      "hallFrame"+i,
-      new BABYLON.Vector3(4.86,1.55,z),
-      new BABYLON.Vector3(.025,.62,.45),
-      darkTrimMat,false
-    );
-    const poster=box(
-      "hallPoster"+i,
-      new BABYLON.Vector3(4.84,1.55,z),
-      new BABYLON.Vector3(.015,.54,.37),
-      i%2?blueMat:paperMat,false
-    );
-  }
-
-  // Small wall lamps and emergency exit sign.
-  const exitMat=mkMat("exitSignMat","#19a95b");
-  exitMat.emissiveColor=new BABYLON.Color3(.06,.55,.20);
-  const exitSign=box(
-    "exitSign",
-    new BABYLON.Vector3(0,2.48,-8.87),
-    new BABYLON.Vector3(.65,.24,.04),
-    exitMat,false
-  );
-
-  // Extra desk cluster in the new wing.
-  createDesk("rearDeskA",1.65,-5.15,0);
-  createMonitor("rearMonitorA",1.65,-5.03,0);
-  createKeyboard("rearKeyboardA",1.65,-5.38,0);
-  createChair("rearChairA",1.65,-5.88,0);
-
-  createDesk("rearDeskB",3.45,-5.15,0);
-  createMonitor("rearMonitorB",3.45,-5.03,0);
-  createKeyboard("rearKeyboardB",3.45,-5.38,0);
-  createChair("rearChairB",3.45,-5.88,0);
-
-  createDesk("wideDeskL",-6.45,-9.55,0);
-  createMonitor("wideMonitorL",-6.45,-9.43,0);
-  createKeyboard("wideKeyboardL",-6.45,-9.78,0);
-  createChair("wideChairL",-6.45,-10.28,0);
-
-  createDesk("wideDeskR",6.45,-9.55,0);
-  createMonitor("wideMonitorR",6.45,-9.43,0);
-  createKeyboard("wideKeyboardR",6.45,-9.78,0);
-  createChair("wideChairR",6.45,-10.28,0);
-
-  createDesk("deepDeskL",-5.0,-13.0,Math.PI);
-  createMonitor("deepMonitorL",-5.0,-13.12,Math.PI);
-  createKeyboard("deepKeyboardL",-5.0,-12.77,Math.PI);
-  createChair("deepChairL",-5.0,-12.20,Math.PI);
-
-  createDesk("deepDeskR",5.0,-13.0,Math.PI);
-  createMonitor("deepMonitorR",5.0,-13.12,Math.PI);
-  createKeyboard("deepKeyboardR",5.0,-12.77,Math.PI);
-  createChair("deepChairR",5.0,-12.20,Math.PI);
-
-  createDesk("farDeskL",-7.3,-16.2,0);
-  createMonitor("farMonitorL",-7.3,-16.08,0);
-  createKeyboard("farKeyboardL",-7.3,-16.43,0);
-  createChair("farChairL",-7.3,-16.93,0);
-
-  createDesk("farDeskC",0,-16.2,0);
-  createMonitor("farMonitorC",0,-16.08,0);
-  createKeyboard("farKeyboardC",0,-16.43,0);
-  createChair("farChairC",0,-16.93,0);
-
-  createDesk("farDeskR",7.3,-16.2,0);
-  createMonitor("farMonitorR",7.3,-16.08,0);
-  createKeyboard("farKeyboardR",7.3,-16.43,0);
-  createChair("farChairR",7.3,-16.93,0);
-
-  createPlant("plantFarL",-9.25,-15.9);
-  createPlant("plantFarR",9.25,-15.9);
-  createBin("binFarL",-9.0,-11.8);
-  createBin("binFarR",9.0,-11.8);
-
-
-  // ------------------------------------------------------------
-  // Extra destructible building detail
-  // ------------------------------------------------------------
-  function createBreakableCeilingLight(name,x,z){
-    const root=new BABYLON.TransformNode(name,scene);
-    root.position.set(x,2.88,z);
-
-    const frame=childBox(
-      name+"Frame",root,new BABYLON.Vector3(),
-      new BABYLON.Vector3(.80,.055,.34),
-      darkTrimMat,false
-    );
-    const lens=childBox(
-      name+"Lens",root,new BABYLON.Vector3(0,-.034,0),
-      new BABYLON.Vector3(.71,.018,.27),
-      lightPanelMat,false
-    );
-
-    return registerProp(root,[frame,lens],{
-      type:"light",mass:.8,radius:.43,minY:.10,breakThreshold:3.4,hp:8
-    });
-  }
-
-  for(const [x,z] of [
-    [-2.7,-4.8],[0,-4.8],[2.7,-4.8],
-    [-2.7,-7.4],[0,-7.4],[2.7,-7.4]
-  ]){
-    createBreakableCeilingLight("breakLight"+x+"_"+z,x,z);
-  }
-
-  // Fire alarm: destroying it activates the sprinklers.
-  const alarmRoot=new BABYLON.TransformNode("fireAlarmRoot",scene);
-  alarmRoot.position.set(-4.82,1.42,-5.9);
-  const alarmBox=childBox(
-    "fireAlarmBox",alarmRoot,new BABYLON.Vector3(),
-    new BABYLON.Vector3(.08,.28,.22),
-    redMat,false
-  );
-  const alarmButton=childBox(
-    "fireAlarmButton",alarmRoot,new BABYLON.Vector3(-.045,0,0),
-    new BABYLON.Vector3(.018,.10,.10),
-    paperMat,false
-  );
-  registerProp(alarmRoot,[alarmBox,alarmButton],{
-    type:"alarm",mass:.4,radius:.18,minY:1.10,breakThreshold:4.2,hp:9
-  });
-
-  // Sprinkler heads throughout both office sections.
-  for(const x of [-3,0,3]){
-    for(const z of [-1.5,-5.2,-7.7]){
-      const root=new BABYLON.TransformNode("sprinkler"+x+"_"+z,scene);
-      root.position.set(x,2.89,z);
-
-      const stem=BABYLON.MeshBuilder.CreateCylinder("sprinklerStem",{
-        height:.10,diameter:.035,tessellation:10
-      },scene);
-      stem.parent=root;
-      stem.position.y=-.04;
-      stem.material=deskMetalMat;
-
-      const head=BABYLON.MeshBuilder.CreateCylinder("sprinklerHead",{
-        height:.025,diameter:.095,tessellation:12
-      },scene);
-      head.parent=root;
-      head.position.y=-.10;
-      head.material=deskMetalMat;
-
-      sprinklerHeads.push(root);
-    }
-  }
-
-  // Extra wear/details to push the office away from flat grey primitives.
-  const scuffMat=mkMat("scuffMat","#3f454a");
-  scuffMat.alpha=.22;
-  for(let i=0;i<28;i++){
-    const scuff=BABYLON.MeshBuilder.CreateDisc("floorScuff"+i,{radius:.025+Math.random()*.07,tessellation:10},scene);
-    scuff.position.set(-4.2+Math.random()*8.4,.012,-8.3+Math.random()*11.8);
-    scuff.rotation.x=Math.PI/2;
-    scuff.scaling.set(1.5,.45,1);
-    scuff.material=scuffMat;
-  }
-
-  // Thin wall seams/panels for concrete/plaster depth.
-  for(const z of [-8,-6,-4,-2,0,2]){
-    box("wallSeamL"+z,new BABYLON.Vector3(-4.885,1.45,z),new BABYLON.Vector3(.012,2.72,.025),darkTrimMat,false);
-    box("wallSeamR"+z,new BABYLON.Vector3(4.885,1.45,z),new BABYLON.Vector3(.012,2.72,.025),darkTrimMat,false);
   }
 
   function surfaceSphereHit(surface,center,radius){
@@ -2414,30 +1824,82 @@
   }
 
   const LOBBY_CENTER=new BABYLON.Vector3(30,0,-6),RUNTIME_CENTER=new BABYLON.Vector3(66,0,-6);
-  const lobbyFloorMat=mkMat("lobbyFloorMat","#202b38"),lobbyWallMat=mkMat("lobbyWallMat","#334155"),lobbyAccent=mkMat("lobbyAccent","#1688c8");
-  const lobbyMeshes=[];
-  function lobbyBox(n,p,s,m=lobbyWallMat,c=true){const x=box(n,p,s,m,c);lobbyMeshes.push(x);return x;}
-  lobbyBox("lobbyFloor",new BABYLON.Vector3(30,-.12,-6),new BABYLON.Vector3(14,.24,14),lobbyFloorMat,true);
-  lobbyBox("lobbyBack",new BABYLON.Vector3(30,2.1,-13),new BABYLON.Vector3(14,4.2,.2));
-  lobbyBox("lobbyLeft",new BABYLON.Vector3(23,2.1,-6),new BABYLON.Vector3(.2,4.2,14));
-  lobbyBox("lobbyRight",new BABYLON.Vector3(37,2.1,-6),new BABYLON.Vector3(.2,4.2,14));
-  lobbyBox("lobbyFrontL",new BABYLON.Vector3(25.3,2.1,1),new BABYLON.Vector3(4.6,4.2,.2));
-  lobbyBox("lobbyFrontR",new BABYLON.Vector3(34.7,2.1,1),new BABYLON.Vector3(4.6,4.2,.2));
-  [[25,-10.8,"BAT"],[28.35,-10.8,"SKIN"],[31.7,-10.8,"MAP"],[35,-10.8,"BUNDLE"]].forEach((d,i)=>lobbyBox("lobbyStand"+i,new BABYLON.Vector3(d[0],.55,d[1]),new BABYLON.Vector3(2.3,1.1,.7),i===3?darkTrimMat:lobbyAccent));
 
-  // Move the existing mirror out of the Office and into the lobby.
-  mirrorFrame.position.set(23.12,1.78,-6);mirror.position.set(23.015,1.78,-6);mirror.rotation.y=Math.PI/2;mirrorTex.mirrorPlane=new BABYLON.Plane(1,0,0,-23.0);
+  const lobbyFloorMat=mkMat("lobbyFloorMat","#0e1522");
+  const lobbyWallMat=mkMat("lobbyWallMat","#182334");
+  const lobbyAccent=mkMat("lobbyAccent","#1fc7e8");
+  lobbyAccent.emissiveColor=BABYLON.Color3.FromHexString("#1fc7e8").scale(.35);
+  const lobbyGold=mkMat("lobbyGold","#ffc857");
+
+  const lobbyMeshes=[];
+  function lobbyBox(n,p,s,m=lobbyWallMat,c=true){
+    const x=box(n,p,s,m,c);lobbyMeshes.push(x);return x;
+  }
+
+  lobbyBox("lobbyFloor",new BABYLON.Vector3(30,-.12,-6),new BABYLON.Vector3(18,.24,18),lobbyFloorMat,true);
+  lobbyBox("lobbyRoof",new BABYLON.Vector3(30,4.65,-6),new BABYLON.Vector3(18,.18,18),lobbyWallMat,true);
+  lobbyBox("lobbyBack",new BABYLON.Vector3(30,2.25,-15),new BABYLON.Vector3(18,4.7,.28));
+  lobbyBox("lobbyFront",new BABYLON.Vector3(30,2.25,3),new BABYLON.Vector3(18,4.7,.28));
+  lobbyBox("lobbyLeft",new BABYLON.Vector3(21,2.25,-6),new BABYLON.Vector3(.28,4.7,18));
+  lobbyBox("lobbyRight",new BABYLON.Vector3(39,2.25,-6),new BABYLON.Vector3(.28,4.7,18));
+
+  lobbyBox("lobbyCenterPad",new BABYLON.Vector3(30,.015,-6),
+    new BABYLON.Vector3(6,.025,6),mkMat("lobbyPad","#15283a"),false);
+  const lobbyRing=BABYLON.MeshBuilder.CreateTorus("lobbyNeonRing",{
+    diameter:5.0,thickness:.055,tessellation:48
+  },scene);
+  lobbyRing.position.set(30,.06,-6);
+  lobbyRing.rotation.x=Math.PI/2;
+  lobbyRing.material=lobbyAccent;
+  lobbyMeshes.push(lobbyRing);
+
+  const stationDefs=[
+    ["PLAY",24.0,-11.6,lobbyAccent],
+    ["CRATES",36.0,-11.6,lobbyGold],
+    ["LOADOUT",24.0,-2.0,lobbyGold],
+    ["TEST LAB",36.0,-2.0,lobbyAccent]
+  ];
+  for(const [label,x,z,mat] of stationDefs){
+    lobbyBox("station_"+label,new BABYLON.Vector3(x,.62,z),
+      new BABYLON.Vector3(3.0,1.25,1.10),mat,true);
+    const sign=BABYLON.MeshBuilder.CreatePlane("stationSign_"+label,{width:2.5,height:.55},scene);
+    sign.position.set(x,1.48,z-.57);
+    const adt=BABYLON.GUI.AdvancedDynamicTexture.CreateForMesh(sign,512,128);
+    const t=new BABYLON.GUI.TextBlock();
+    t.text=label;t.color="white";t.fontSize=62;t.fontWeight="900";
+    adt.addControl(t);
+  }
+
+  const lobbyLogo=BABYLON.MeshBuilder.CreatePlane("lobbyLogo",{width:8.2,height:1.35},scene);
+  lobbyLogo.position.set(30,3.35,-14.82);
+  const lobbyLogoGui=BABYLON.GUI.AdvancedDynamicTexture.CreateForMesh(lobbyLogo,1200,220);
+  const lobbyLogoText=new BABYLON.GUI.TextBlock();
+  lobbyLogoText.text="CRAZY OFFICE";
+  lobbyLogoText.color="#6ee7f9";
+  lobbyLogoText.fontSize=128;
+  lobbyLogoText.fontWeight="900";
+  lobbyLogoGui.addControl(lobbyLogoText);
+
+  for(const x of [24.5,30,35.5]){
+    lobbyBox("lobbyLight"+x,new BABYLON.Vector3(x,4.52,-6),
+      new BABYLON.Vector3(2.8,.035,.22),lightPanelMat,false);
+  }
+
+  mirrorFrame.position.set(21.18,1.78,-6);
+  mirror.position.set(21.08,1.78,-6);
+  mirror.rotation.y=Math.PI/2;
+  mirrorTex.mirrorPlane=new BABYLON.Plane(1,0,0,-21.06);
 
   let gameMode="lobby",runtimeMapRoot=null,runtimeColliders=[],lobbySelection=0,lobbySub="main",lobbyIndex=0,lastLobbyMessage="";
   let lobbyAvatarPreviewRoot=null,lobbyBatPreviewRoot=null,practiceDummy=null;
   let practiceDummyHitFlash=0,practiceDummyLastHit=0,practiceDummyBestHit=0;
   let batHolstered=false,holsterCooldown=0;
   const lobbyMenu=["PLAY / MAPS","BAT CRATE — 750 COINS","SKIN CRATE — 650 COINS","MAP CRATE — 1200 COINS","GEM CRATE — 80 GEMS","BAT INVENTORY","SKIN INVENTORY","COSMETIC SHOP","POTATO COLOR MIXER","MODES — NORMAL/SURVIVAL/ENDLESS/HARDCORE","DAILY + WEEKLY MISSIONS","COLLECTION","TRADING — ONLINE BUILD","PUBLIC LOBBY • UP TO 8","BUNDLES — €4.99 / €8.00","AUDIO / CAMERA / TRAINING (also in menu)","CONTROL SETUP","AVATAR PREVIEW","BAT INSPECT","PRACTICE DUMMY","NPC DIFFICULTY","HAND CALIBRATION","BAT HOLSTER","GEM SHOP • REAL MONEY",...(OWNER_ACCESS?["OWNER VAULT / GIVEAWAY"]:[])];
-  const lobbyScreen=BABYLON.MeshBuilder.CreatePlane("lobbyScreen",{width:4.5,height:3.25},scene);lobbyScreen.position.set(30,2.15,-12.82);lobbyScreen.isPickable=false;
-  const lobbyGui=BABYLON.GUI.AdvancedDynamicTexture.CreateForMesh(lobbyScreen,1100,800),lobbyBg=new BABYLON.GUI.Rectangle();lobbyBg.background="#07111FEE";lobbyBg.color="#5dd6ff";lobbyBg.thickness=5;lobbyBg.cornerRadius=26;lobbyGui.addControl(lobbyBg);
+  const lobbyScreen=BABYLON.MeshBuilder.CreatePlane("lobbyScreen",{width:4.5,height:3.25},scene);lobbyScreen.position.set(30,2.18,-13.95);lobbyScreen.isPickable=false;
+  const lobbyGui=BABYLON.GUI.AdvancedDynamicTexture.CreateForMesh(lobbyScreen,1100,800),lobbyBg=new BABYLON.GUI.Rectangle();lobbyBg.background="#08111CEE";lobbyBg.color="#5dd6ff";lobbyBg.thickness=5;lobbyBg.cornerRadius=26;lobbyGui.addControl(lobbyBg);
   const lobbyText=new BABYLON.GUI.TextBlock();lobbyText.color="white";lobbyText.fontSize=28;lobbyText.fontWeight="700";lobbyText.textHorizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;lobbyText.textVerticalAlignment=BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;lobbyText.paddingTop="25px";lobbyText.paddingLeft="30px";lobbyText.paddingRight="25px";lobbyText.textWrapping=true;lobbyBg.addControl(lobbyText);
   const wrap=(i,n)=>n?((i%n)+n)%n:0;
-  function lobbyMain(){lobbyText.fontSize=OWNER_ACCESS?22:23;const b=selectedBatData(),s=selectedBatState();let t=`POTATO BRAWL LOBBY${OWNER_ACCESS?" • OWNER":""}
+  function lobbyMain(){lobbyText.fontSize=OWNER_ACCESS?22:23;const b=selectedBatData(),s=selectedBatState();let t=`CRAZY OFFICE${OWNER_ACCESS?" • OWNER":""}
 🪙 ${gameState.coins}   💎 ${gameState.gems}\n${b.name} Lv.${s.level} • ${b.ability}\n\n`;lobbyMenu.forEach((x,i)=>t+=`${i===lobbySelection?"▶ ":"   "}${x}\n`);if(lastLobbyMessage)t+=`\n${lastLobbyMessage}`;return t;}
   function lobbyMaps(){const ids=ownedMapIds(),id=ids[wrap(lobbyIndex,ids.length)]||"office",m=MAP_CATALOG.find(x=>x.id===id),p=gameState.mapProgress[id];return `MAP SELECT\n\n${lobbyIndex+1}/${ids.length} ${m.name}\n${m.rarity} • Level ${p.level}/10\nWave KOs ${p.waveKills}/3 • Boss wins ${p.bossWins}\nMode: ${gameState.mode}\n\nStick = change • Trigger = PLAY • Grip = back`;}
   function lobbyBats(){const ids=ownedBatIds(),id=ids[wrap(lobbyIndex,ids.length)]||"office",b=BAT_CATALOG.find(x=>x.id===id),s=gameState.bats[id];return `BAT INVENTORY\n\n${b.name}\n${b.rarity}\nAbility: ${b.ability}\nLEVEL ${s.level}/50 • XP ${s.level>=50?"MAX":`${s.xp}/${batXpNeeded(s.level)}`}\nCopies: ${s.count}\n\nTrigger = equip • Stick = next • Grip = back`;}
@@ -2959,7 +2421,7 @@ Stick = browse • Trigger = select • Grip = back`;
     for(const c of COSMETIC_CATALOG)gameState.cosmetics[c.id]=true;
 
     saveGame();
-    lastLobbyMessage="TEST MODE ON • EVERYTHING UNLOCKED";
+    lastLobbyMessage="TEST MODE ON • MAPS / BATS / SKINS / COSMETICS UNLOCKED FOR TESTING";
   }
 
   function disableFreeTestMode(){
@@ -4706,7 +4168,7 @@ Grip = back`;
   function goLobby(fromNetwork=false){
     gameMode="lobby";
     if(xrCamera){
-      teleportPlayerXZ(30,-5);
+      teleportPlayerXZ(30,-6);
       keepRigAboveFloor();
       bodyVelocity.set(0,0,0);
     }
@@ -4722,9 +4184,9 @@ for(const [,p] of net.players){p.inMatch=false;p.reportedInMatch=false;}const wa
       }
     }
     net.matchMembers.clear();
-    if(npc)npc.netTargetId=null;quickMenuDebounce=0;groundSlamCooldown=0;combatInputPrev.trigger=false;combatInputPrev.grip=false;chargeTime=0;batTipLast=null;batBaseLast=null;playerDowned=false;downedTimer=0;if(batThrown&&!attachBatToRightHand()){batRoot.parent=null;batRoot.setEnabled(false);}closeQuickMenu();gameMode="lobby";setMusicMode("normal");clearRuntimeMap();lobbySub="main";lobbyIndex=0;lastLobbyMessage="";mirror.setEnabled(true);mirrorFrame.setEnabled(true);lobbyScreen.setEnabled(true);if(xrCamera){teleportPlayerXZ(30,-5);keepRigAboveFloor();}if(npc?.root)npc.root.setEnabled(false);extraNpcs.forEach(e=>e.root.setEnabled(false));syncOwnerGiftVisual();refreshLobby();ensurePublicLobby();}
+    if(npc)npc.netTargetId=null;quickMenuDebounce=0;groundSlamCooldown=0;combatInputPrev.trigger=false;combatInputPrev.grip=false;chargeTime=0;batTipLast=null;batBaseLast=null;playerDowned=false;downedTimer=0;if(batThrown&&!attachBatToRightHand()){batRoot.parent=null;batRoot.setEnabled(false);}closeQuickMenu();gameMode="lobby";setMusicMode("normal");clearRuntimeMap();lobbySub="main";lobbyIndex=0;lastLobbyMessage="";mirror.setEnabled(true);mirrorFrame.setEnabled(true);lobbyScreen.setEnabled(true);if(xrCamera){teleportPlayerXZ(30,-6);keepRigAboveFloor();}if(npc?.root)npc.root.setEnabled(false);extraNpcs.forEach(e=>e.root.setEnabled(false));if(!cameraHeld)placeCameraOnPedestal();syncOwnerGiftVisual();refreshLobby();ensurePublicLobby();}
   function startMap(forcedModifier=null){hidePack2();const wasHolstered=batHolstered;batHolstered=false;if(wasHolstered&&!attachBatToSelectedHand()){batRoot.parent=null;batRoot.setEnabled(false);}mapEventText="";mapEventTextTimer=0;quickMenuDebounce=0;groundSlamCooldown=0;combatInputPrev.trigger=false;combatInputPrev.grip=false;chargeTime=0;batTipLast=null;batBaseLast=null;if(batThrown&&!attachBatToRightHand()){batRoot.parent=null;batRoot.setEnabled(false);}gameMode="map";
-    if(gameState.selectedMap==="office")setTimeout(cleanupOfficeFloatingProps,0);syncOwnerGiftVisual();playerDowned=false;downedTimer=0;resetRunStats(forcedModifier);playerHP=PLAYER_MAX_HP;playerDead=false;playerInvuln=1.0;deathTimer=0;deathPlane?.setEnabled?.(false);hudPlane?.setEnabled?.(true);setMusicMode(currentMapProgress().level>=10?"boss":"normal");gameMode="map";buildRuntimeMap(gameState.selectedMap);mirror.setEnabled(false);mirrorFrame.setEnabled(false);lobbyScreen.setEnabled(false);if(xrCamera){const p=getMapSpawn();teleportPlayerXZ(p.x,p.z);keepRigAboveFloor();}if(npc?.root)npc.root.dispose();createNpc();configureNpcForCurrentLevel();npc.root.setEnabled(true);npc.root.position.copyFrom(getNpcSpawnPosition());configureExtraSquad();applyBatLook();applySkinLook();}
+    if(gameState.selectedMap==="office")setTimeout(cleanupOfficeFloatingProps,0);syncOwnerGiftVisual();playerDowned=false;downedTimer=0;resetRunStats(forcedModifier);playerHP=PLAYER_MAX_HP;playerDead=false;playerInvuln=1.0;deathTimer=0;deathPlane?.setEnabled?.(false);hudPlane?.setEnabled?.(true);setMusicMode(currentMapProgress().level>=10?"boss":"normal");gameMode="map";buildRuntimeMap(gameState.selectedMap);mirror.setEnabled(false);mirrorFrame.setEnabled(false);lobbyScreen.setEnabled(false);if(!cameraHeld)vrCameraRoot.setEnabled(false);if(xrCamera){const p=getMapSpawn();teleportPlayerXZ(p.x,p.z);keepRigAboveFloor();}if(npc?.root)npc.root.dispose();createNpc();configureNpcForCurrentLevel();npc.root.setEnabled(true);npc.root.position.copyFrom(getNpcSpawnPosition());configureExtraSquad();applyBatLook();applySkinLook();}
   function applyBatLook(){const b=selectedBatData(),c=BABYLON.Color3.FromHexString(b.color);batWood.diffuseColor=c;batWood.emissiveColor=c.scale(b.rarity==="Mythic"?.14:b.rarity==="Legendary"?.08:.02);}
 
   let chestRoot=null;
@@ -9396,47 +8858,216 @@ function attachBatToRightHand(){return attachBatToSelectedHand();}
   }
 
   // ------------------------------------------------------------
-  // Handheld VR camera
+  // PHYSICAL VR CAMERA — v0.37 CLEAN REBUILD
   // ------------------------------------------------------------
-  let cameraHeld=false,cameraCooldown=0;
-  const vrCameraRoot=new BABYLON.TransformNode("vrCameraRoot",scene);
-  const vrCameraBody=BABYLON.MeshBuilder.CreateBox("vrCameraBody",{width:.19,height:.12,depth:.08},scene);
-  vrCameraBody.parent=vrCameraRoot;vrCameraBody.material=darkTrimMat;
-  const vrCameraLens=BABYLON.MeshBuilder.CreateCylinder("vrCameraLens",{diameter:.065,height:.05,tessellation:16},scene);
-  vrCameraLens.parent=vrCameraRoot;vrCameraLens.rotation.x=Math.PI/2;vrCameraLens.position.z=-.06;vrCameraLens.material=lobbyAccent;
-  const vrCameraScreen=BABYLON.MeshBuilder.CreatePlane("vrCameraScreen",{width:.12,height:.065},scene);
-  vrCameraScreen.parent=vrCameraRoot;vrCameraScreen.position.z=.041;vrCameraScreen.rotation.y=Math.PI;
-  const vrCamGui=BABYLON.GUI.AdvancedDynamicTexture.CreateForMesh(vrCameraScreen,320,180);
-  const vrCamText=new BABYLON.GUI.TextBlock();vrCamText.text="CAM";vrCamText.color="white";vrCamText.fontSize=62;vrCamGui.addControl(vrCamText);
-  vrCameraRoot.setEnabled(false);
+  let cameraHeld=false;
+  let cameraHeldBy=null;
+  let cameraCooldown=0;
+  let cameraGripLatch={left:false,right:false};
+  let cameraButtonTriggerLatch=false;
+  let cameraPlacedPosition=new BABYLON.Vector3(35.9,1.18,-5.8);
+
+  const vrCameraRoot=new BABYLON.TransformNode("physicalCameraRoot",scene);
+
+  const camBlack=mkMat("physicalCameraBlack","#111827");
+  const camBlue=mkMat("physicalCameraBlue","#22d3ee");
+  camBlue.emissiveColor=BABYLON.Color3.FromHexString("#22d3ee").scale(.55);
+  const camButtonMat=mkMat("physicalCameraButton","#f8fafc");
+  const camHotMat=mkMat("physicalCameraHot","#fb7185");
+
+  const vrCameraBody=BABYLON.MeshBuilder.CreateBox("physicalCameraBody",{width:.25,height:.15,depth:.11},scene);
+  vrCameraBody.parent=vrCameraRoot;vrCameraBody.material=camBlack;
+
+  const vrCameraGrip=BABYLON.MeshBuilder.CreateBox("physicalCameraGrip",{width:.07,height:.16,depth:.075},scene);
+  vrCameraGrip.parent=vrCameraRoot;vrCameraGrip.position.set(.145,-.035,.00);vrCameraGrip.material=camBlack;
+
+  const vrCameraLens=BABYLON.MeshBuilder.CreateCylinder("physicalCameraLens",{diameter:.085,height:.065,tessellation:18},scene);
+  vrCameraLens.parent=vrCameraRoot;vrCameraLens.rotation.x=Math.PI/2;vrCameraLens.position.z=-.085;vrCameraLens.material=camBlue;
+
+  const vrCameraScreen=BABYLON.MeshBuilder.CreatePlane("physicalCameraScreen",{width:.20,height:.105},scene);
+  vrCameraScreen.parent=vrCameraRoot;vrCameraScreen.position.set(-.01,.01,.058);vrCameraScreen.rotation.y=Math.PI;
+
+  const vrCamGui=BABYLON.GUI.AdvancedDynamicTexture.CreateForMesh(vrCameraScreen,640,340);
+  const vrCamBg=new BABYLON.GUI.Rectangle();
+  vrCamBg.background="#07111F";vrCamBg.color="#22d3ee";vrCamBg.thickness=6;vrCamBg.cornerRadius=18;
+  vrCamGui.addControl(vrCamBg);
+
+  const vrCamText=new BABYLON.GUI.TextBlock();
+  vrCamText.color="white";vrCamText.fontSize=35;vrCamText.fontWeight="800";vrCamText.textWrapping=true;
+  vrCamBg.addControl(vrCamText);
+
+  const cameraButtons=[];
+  function makePhysicalCamButton(id,x){
+    const b=BABYLON.MeshBuilder.CreateBox("physicalCameraBtn_"+id,{width:.043,height:.025,depth:.018},scene);
+    b.parent=vrCameraRoot;b.position.set(x,-.092,.063);b.material=camButtonMat;
+    b.metadata={cameraButton:id,label:id};cameraButtons.push(b);return b;
+  }
+  makePhysicalCamButton("MODE",-.085);
+  makePhysicalCamButton("DIST",-.028);
+  makePhysicalCamButton("HEIGHT",.029);
+  makePhysicalCamButton("SMOOTH",.086);
+
+  const shutter=BABYLON.MeshBuilder.CreateCylinder("physicalCameraShutter",{height:.025,diameter:.045,tessellation:12},scene);
+  shutter.parent=vrCameraRoot;shutter.position.set(-.085,.088,0);shutter.material=camHotMat;
+  shutter.metadata={cameraButton:"PHOTO",label:"PHOTO"};cameraButtons.push(shutter);
+
+  const cameraPedestal=BABYLON.MeshBuilder.CreateCylinder("cameraPedestal",{height:1.0,diameterTop:.58,diameterBottom:.72,tessellation:18},scene);
+  cameraPedestal.position.set(35.9,.50,-5.8);cameraPedestal.material=lobbyWallMat;addCollision(cameraPedestal);
+
+  const cameraPedestalRing=BABYLON.MeshBuilder.CreateTorus("cameraPedestalRing",{diameter:.58,thickness:.035,tessellation:24},scene);
+  cameraPedestalRing.position.set(35.9,1.02,-5.8);cameraPedestalRing.rotation.x=Math.PI/2;cameraPedestalRing.material=lobbyAccent;
+
+  const cameraPedestalSign=BABYLON.MeshBuilder.CreatePlane("cameraPedestalSign",{width:1.45,height:.38},scene);
+  cameraPedestalSign.position.set(35.9,1.45,-6.12);
+  const cameraPedestalGui=BABYLON.GUI.AdvancedDynamicTexture.CreateForMesh(cameraPedestalSign,512,128);
+  const cameraPedestalText=new BABYLON.GUI.TextBlock();
+  cameraPedestalText.text="PHYSICAL CAMERA";cameraPedestalText.color="#67e8f9";cameraPedestalText.fontSize=48;cameraPedestalText.fontWeight="900";
+  cameraPedestalGui.addControl(cameraPedestalText);
+
+  function cameraModeCycle(){
+    const modes=["1ST","3RD","FOLLOW","SELFIE","BOSS","FREE"];
+    const cur=modes.indexOf(gameState.settings.cameraMode);
+    gameState.settings.cameraMode=modes[(cur+1+modes.length)%modes.length];saveGame();
+  }
+  function cameraDistanceCycle(){
+    const vals=[1.2,1.8,2.5,3.2,4.0];
+    const cur=vals.findIndex(v=>Math.abs(v-(gameState.settings.cameraDistance||1.8))<.15);
+    gameState.settings.cameraDistance=vals[(cur+1+vals.length)%vals.length];saveGame();
+  }
+  function cameraHeightCycle(){
+    const vals=[0,.25,.5,.8,1.1];
+    const cur=vals.findIndex(v=>Math.abs(v-(gameState.settings.cameraHeight??.35))<.14);
+    gameState.settings.cameraHeight=vals[(cur+1+vals.length)%vals.length];saveGame();
+  }
+  function cameraSmoothCycle(){
+    const vals=[.04,.10,.18,.30,.45];
+    const cur=vals.findIndex(v=>Math.abs(v-(gameState.settings.cameraSmooth||.18))<.045);
+    gameState.settings.cameraSmooth=vals[(cur+1+vals.length)%vals.length];saveGame();
+  }
+
+  function refreshPhysicalCameraScreen(activeButton=""){
+    const m=gameState.settings.cameraMode||"FOLLOW";
+    const d=(gameState.settings.cameraDistance||1.8).toFixed(1);
+    const h=(gameState.settings.cameraHeight??.35).toFixed(2);
+    const s=(gameState.settings.cameraSmooth||.18).toFixed(2);
+    vrCamText.text=`CRAZY CAM
+${activeButton?"> "+activeButton+" <":"GRIP TO HOLD"}
+MODE ${m}
+DIST ${d}m  HEIGHT ${h}m
+SMOOTH ${s}
+FREE HAND + TRIGGER`;
+  }
+
+  function placeCameraOnPedestal(){
+    cameraHeld=false;cameraHeldBy=null;vrCameraRoot.parent=null;
+    vrCameraRoot.position.copyFrom(cameraPlacedPosition);
+    vrCameraRoot.rotationQuaternion=BABYLON.Quaternion.RotationYawPitchRoll(Math.PI,0,0);
+    vrCameraRoot.setEnabled(gameMode==="lobby");
+    refreshPhysicalCameraScreen();
+  }
+
+  function handWorldPosition(side){
+    const h=hands[side];if(!h?.node)return null;
+    return h.node.getAbsolutePosition?.()||h.node.position;
+  }
+
+  function pickupPhysicalCamera(side){
+    const h=hands[side];if(!h?.node)return false;
+    cameraHeld=true;cameraHeldBy=side;vrCameraRoot.parent=h.node;
+    vrCameraRoot.position.set(side==="left"?.04:-.04,.015,-.11);
+    vrCameraRoot.rotationQuaternion=BABYLON.Quaternion.RotationYawPitchRoll(Math.PI,0,0);
+    refreshPhysicalCameraScreen();pulse(h,.35,40);return true;
+  }
+
+  function dropPhysicalCamera(){
+    if(!cameraHeld)return;
+    const world=vrCameraRoot.getAbsolutePosition().clone();
+    const rot=vrCameraRoot.absoluteRotationQuaternion?.clone()||BABYLON.Quaternion.Identity();
+    vrCameraRoot.parent=null;vrCameraRoot.position.copyFrom(world);vrCameraRoot.rotationQuaternion=rot;
+    cameraHeld=false;cameraHeldBy=null;
+    if(gameMode==="lobby"){
+      cameraPlacedPosition=world.clone();cameraPlacedPosition.y=Math.max(.18,cameraPlacedPosition.y);
+    }else placeCameraOnPedestal();
+    refreshPhysicalCameraScreen();
+  }
+
+  function cameraFreeHand(){return !cameraHeldBy?null:(cameraHeldBy==="left"?"right":"left");}
+
+  function activatePhysicalCameraButton(id){
+    if(id==="MODE")cameraModeCycle();
+    else if(id==="DIST")cameraDistanceCycle();
+    else if(id==="HEIGHT")cameraHeightCycle();
+    else if(id==="SMOOTH")cameraSmoothCycle();
+    else if(id==="PHOTO")takeGamePhoto();
+    refreshPhysicalCameraScreen(id);playImpactSound("metal",.28);
+  }
+
+  function updatePhysicalCamera(dt){
+    cameraCooldown=Math.max(0,cameraCooldown-dt);
+
+    for(const side of ["left","right"]){
+      const pressed=btn(hands[side],1);
+      if(pressed&&!cameraGripLatch[side]){
+        cameraGripLatch[side]=true;
+        if(cameraHeld&&cameraHeldBy===side)dropPhysicalCamera();
+        else if(!cameraHeld){
+          const hp=handWorldPosition(side),cp=vrCameraRoot.getAbsolutePosition();
+          if(hp&&BABYLON.Vector3.Distance(hp,cp)<.30)pickupPhysicalCamera(side);
+        }
+      }
+      if(!pressed)cameraGripLatch[side]=false;
+    }
+
+    if(!cameraHeld){
+      vrCameraRoot.setEnabled(gameMode==="lobby");
+      return;
+    }
+
+    const freeSide=cameraFreeHand();
+    const hp=handWorldPosition(freeSide);
+    let nearest=null,nearestD=.14;
+    if(hp){
+      for(const b of cameraButtons){
+        const d=BABYLON.Vector3.Distance(hp,b.getAbsolutePosition());
+        if(d<nearestD){nearest=b;nearestD=d;}
+      }
+    }
+
+    refreshPhysicalCameraScreen(nearest?.metadata?.label||"");
+    const trig=btn(hands[freeSide],0);
+    if(trig&&!cameraButtonTriggerLatch&&nearest){
+      cameraButtonTriggerLatch=true;
+      activatePhysicalCameraButton(nearest.metadata.cameraButton);
+      pulse(hands[freeSide],.30,35);
+    }
+    if(!trig)cameraButtonTriggerLatch=false;
+  }
 
   function toggleCameraHeld(){
-    cameraHeld=!cameraHeld;vrCameraRoot.setEnabled(cameraHeld);
-    lastLobbyMessage=cameraHeld?"Camera ON — use right secondary button for photo.":"Camera OFF";if(quickMenuOpen)refreshQuickMenu();
+    if(cameraHeld)dropPhysicalCamera();else placeCameraOnPedestal();
+    lastLobbyMessage="Physical camera is on the CAMERA pedestal.";
+    if(quickMenuOpen)refreshQuickMenu();
   }
-  function updateVrCamera(dt){
-    cameraCooldown=Math.max(0,cameraCooldown-dt);
-    const camHand=hands[oppositeHand(dominantHandSide())];
-    if(!cameraHeld||!camHand?.grip)return;
-    const wm=camHand.grip.getWorldMatrix();
-    vrCameraRoot.position.copyFrom(BABYLON.Vector3.TransformCoordinates(new BABYLON.Vector3(.08,.055,-.11),wm));
-    vrCameraRoot.rotationQuaternion=camHand.grip.rotationQuaternion?.clone()||BABYLON.Quaternion.Identity();
-  }
+
+  function updateVrCamera(dt){updatePhysicalCamera(dt);}
+
   function takeGamePhoto(){
-    if(!cameraHeld||cameraCooldown>0)return;
+    if(cameraCooldown>0)return;
     cameraCooldown=.8;playImpactSound("metal",.35);
-    let ok=false;
-    try{ok=captureWithContentCamera();}catch(_){}
+    let ok=false;try{ok=captureWithContentCamera();}catch(_){}
     if(!ok){
       try{
         const canvas=engine.getRenderingCanvas(),data=canvas.toDataURL("image/png");
-        const a=document.createElement("a");a.href=data;a.download=`potato-brawl-${Date.now()}.png`;
+        const a=document.createElement("a");a.href=data;a.download=`crazy-office-${Date.now()}.png`;
         document.body.appendChild(a);a.click();a.remove();
       }catch(_){}
     }
-    lastLobbyMessage=`Photo • ${gameState.settings.cameraMode} • ${gameState.settings.cameraAspect}`;
+    lastLobbyMessage=`Photo • ${gameState.settings.cameraMode}`;
     if(gameMode==="lobby")refreshLobby();
   }
+
+  refreshPhysicalCameraScreen();
+  placeCameraOnPedestal();
 
 
   // ------------------------------------------------------------
@@ -9625,34 +9256,9 @@ function attachBatToRightHand(){return attachBatToSelectedHand();}
   let primaryNpcWatchTimer=0;
 
   function cleanupOfficeFloatingProps(){
-    if(gameState.selectedMap!=="office")return;
-
-    const suspicious=[
-      "floating","hover","showcase","demo","preview","displaybat",
-      "testprop","debugprop","airprop","hangingprop"
-    ];
-
-    for(const m of scene.meshes){
-      if(!m || m.isDisposed?.())continue;
-      const n=(m.name||"").toLowerCase();
-
-      // Remove leftover test/display props, not structural map pieces.
-      if(suspicious.some(s=>n.includes(s))){
-        if(!n.includes("window") && !n.includes("wall") && !n.includes("ceiling")){
-          try{m.dispose();}catch(_){}
-        }
-      }
-    }
-
-    // Also kill loose office props that spawn unnaturally high in the air.
-    for(const p of officeProps){
-      const mesh=p?.mesh;
-      if(!mesh || mesh.isDisposed?.())continue;
-      if(mesh.position.y>3.25 && !/light|ceiling|window/i.test(mesh.name||"")){
-        try{mesh.dispose();}catch(_){}
-      }
-    }
+    // v0.37 clean rebuild: legacy floating/detail props are no longer created.
   }
+
 
   function ensurePrimaryNpcPresent(dt){
     if(gameMode!=="map")return;
