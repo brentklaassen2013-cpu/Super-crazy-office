@@ -1,5 +1,5 @@
 (() => {
-  const BUILD_VERSION="0.36.6";
+  const BUILD_VERSION="0.36.7";
   const canvas = document.getElementById("renderCanvas");
   const engine = new BABYLON.Engine(canvas, true, { stencil:true });
   const scene = new BABYLON.Scene(engine);
@@ -4703,7 +4703,14 @@ Grip = back`;
 
     return new BABYLON.Vector3(arenaCenter.x,0,arenaCenter.z-2.8);
   }
-  function goLobby(fromNetwork=false){for(const [,p] of net.players){p.inMatch=false;p.reportedInMatch=false;}const wasHolstered=batHolstered;batHolstered=false;if(wasHolstered&&!attachBatToSelectedHand()){batRoot.parent=null;batRoot.setEnabled(false);}
+  function goLobby(fromNetwork=false){
+    gameMode="lobby";
+    if(xrCamera){
+      teleportPlayerXZ(30,-5);
+      keepRigAboveFloor();
+      bodyVelocity.set(0,0,0);
+    }
+for(const [,p] of net.players){p.inMatch=false;p.reportedInMatch=false;}const wasHolstered=batHolstered;batHolstered=false;if(wasHolstered&&!attachBatToSelectedHand()){batRoot.parent=null;batRoot.setEnabled(false);}
     mapEventText="";mapEventTextTimer=0;
     playerDead=false;playerDowned=false;downedTimer=0;deathTimer=0;playerHP=PLAYER_MAX_HP;playerInvuln=.5;
     deathPlane?.setEnabled?.(false);hudPlane?.setEnabled?.(true);
@@ -4716,7 +4723,8 @@ Grip = back`;
     }
     net.matchMembers.clear();
     if(npc)npc.netTargetId=null;quickMenuDebounce=0;groundSlamCooldown=0;combatInputPrev.trigger=false;combatInputPrev.grip=false;chargeTime=0;batTipLast=null;batBaseLast=null;playerDowned=false;downedTimer=0;if(batThrown&&!attachBatToRightHand()){batRoot.parent=null;batRoot.setEnabled(false);}closeQuickMenu();gameMode="lobby";setMusicMode("normal");clearRuntimeMap();lobbySub="main";lobbyIndex=0;lastLobbyMessage="";mirror.setEnabled(true);mirrorFrame.setEnabled(true);lobbyScreen.setEnabled(true);if(xrCamera){teleportPlayerXZ(30,-5);keepRigAboveFloor();}if(npc?.root)npc.root.setEnabled(false);extraNpcs.forEach(e=>e.root.setEnabled(false));syncOwnerGiftVisual();refreshLobby();ensurePublicLobby();}
-  function startMap(forcedModifier=null){hidePack2();const wasHolstered=batHolstered;batHolstered=false;if(wasHolstered&&!attachBatToSelectedHand()){batRoot.parent=null;batRoot.setEnabled(false);}mapEventText="";mapEventTextTimer=0;quickMenuDebounce=0;groundSlamCooldown=0;combatInputPrev.trigger=false;combatInputPrev.grip=false;chargeTime=0;batTipLast=null;batBaseLast=null;if(batThrown&&!attachBatToRightHand()){batRoot.parent=null;batRoot.setEnabled(false);}gameMode="map";syncOwnerGiftVisual();playerDowned=false;downedTimer=0;resetRunStats(forcedModifier);playerHP=PLAYER_MAX_HP;playerDead=false;playerInvuln=1.0;deathTimer=0;deathPlane?.setEnabled?.(false);hudPlane?.setEnabled?.(true);setMusicMode(currentMapProgress().level>=10?"boss":"normal");gameMode="map";buildRuntimeMap(gameState.selectedMap);mirror.setEnabled(false);mirrorFrame.setEnabled(false);lobbyScreen.setEnabled(false);if(xrCamera){const p=getMapSpawn();teleportPlayerXZ(p.x,p.z);keepRigAboveFloor();}if(npc?.root)npc.root.dispose();createNpc();configureNpcForCurrentLevel();npc.root.setEnabled(true);npc.root.position.copyFrom(getNpcSpawnPosition());configureExtraSquad();applyBatLook();applySkinLook();}
+  function startMap(forcedModifier=null){hidePack2();const wasHolstered=batHolstered;batHolstered=false;if(wasHolstered&&!attachBatToSelectedHand()){batRoot.parent=null;batRoot.setEnabled(false);}mapEventText="";mapEventTextTimer=0;quickMenuDebounce=0;groundSlamCooldown=0;combatInputPrev.trigger=false;combatInputPrev.grip=false;chargeTime=0;batTipLast=null;batBaseLast=null;if(batThrown&&!attachBatToRightHand()){batRoot.parent=null;batRoot.setEnabled(false);}gameMode="map";
+    if(gameState.selectedMap==="office")setTimeout(cleanupOfficeFloatingProps,0);syncOwnerGiftVisual();playerDowned=false;downedTimer=0;resetRunStats(forcedModifier);playerHP=PLAYER_MAX_HP;playerDead=false;playerInvuln=1.0;deathTimer=0;deathPlane?.setEnabled?.(false);hudPlane?.setEnabled?.(true);setMusicMode(currentMapProgress().level>=10?"boss":"normal");gameMode="map";buildRuntimeMap(gameState.selectedMap);mirror.setEnabled(false);mirrorFrame.setEnabled(false);lobbyScreen.setEnabled(false);if(xrCamera){const p=getMapSpawn();teleportPlayerXZ(p.x,p.z);keepRigAboveFloor();}if(npc?.root)npc.root.dispose();createNpc();configureNpcForCurrentLevel();npc.root.setEnabled(true);npc.root.position.copyFrom(getNpcSpawnPosition());configureExtraSquad();applyBatLook();applySkinLook();}
   function applyBatLook(){const b=selectedBatData(),c=BABYLON.Color3.FromHexString(b.color);batWood.diffuseColor=c;batWood.emissiveColor=c.scale(b.rarity==="Mythic"?.14:b.rarity==="Legendary"?.08:.02);}
 
   let chestRoot=null;
@@ -5466,6 +5474,7 @@ Grip = back`;
   const HAND_RADIUS=.105;
   let groundSlamCooldown=0;
   let xrStandingHeadHeight=1.62;
+  let firstVrLobbySpawnDone=false;
   function captureTrackedHeadHeight(){
     if(!xrCamera)return;
     const y=Number((xrCamera.globalPosition||xrCamera.position)?.y);
@@ -5614,7 +5623,7 @@ Grip = back`;
       }else{
         // A hand touching the floor during a landing gets a brief settling
         // phase. It can grip/drag sideways, but cannot spring the body upward.
-        if(isFloorLike)h.landingSuppress=.16;
+        if(isFloorLike)h.landingSuppress=.08;
         pulse(h,.30,28);
       }
     }
@@ -5644,7 +5653,7 @@ Grip = back`;
         if(normalDelta<0){
           const pushInto=n.scale(normalDelta);
           const gain=(n.y>.60 && h.landingSuppress<=0)
-            ? Math.min(FLOOR_LIFT_BOOST,1.45)
+            ? Math.min(FLOOR_LIFT_BOOST,2.15)
             : 1.0;
           effective=tangent.add(pushInto.scale(gain));
         }
@@ -5672,7 +5681,7 @@ Grip = back`;
         }
 
         // Smaller per-frame correction removes hand jitter on Quest.
-        const max=.085;
+        const max=.14;
         if(rigDelta.length()>max)rigDelta=rigDelta.normalize().scale(max);
 
         if(rigDelta.length()>.0010){
@@ -5688,9 +5697,11 @@ Grip = back`;
           // Vertical momentum is allowed only from a deliberate pushing motion
           // after the landing settle window, and is kept modest.
           if(n.y>.60 && h.landingSuppress<=0 && rigDelta.y>0){
+            // Deliberate downward hand push should lift the body.
+            // Keep it separate from landing suppression so walking/climbing works.
             bodyVelocity.y=Math.max(
               bodyVelocity.y,
-              Math.min(1.15,impulse.y*.10)
+              Math.min(3.35,impulse.y*.28)
             );
           }
 
@@ -9581,6 +9592,10 @@ function attachBatToRightHand(){return attachBatToSelectedHand();}
           if(mirrorTex)mirrorTex.refreshRate=0;
           captureTrackedHeadHeight();
           startBackgroundMusic();
+
+          // First headset entry ALWAYS starts in the central lobby.
+          gameMode="lobby";
+          firstVrLobbySpawnDone=true;
           goLobby(true);
           bodyVelocity.set(0,0,0);
           batTipLast=null;
@@ -9608,6 +9623,37 @@ function attachBatToRightHand(){return attachBatToSelectedHand();}
 
 
   let primaryNpcWatchTimer=0;
+
+  function cleanupOfficeFloatingProps(){
+    if(gameState.selectedMap!=="office")return;
+
+    const suspicious=[
+      "floating","hover","showcase","demo","preview","displaybat",
+      "testprop","debugprop","airprop","hangingprop"
+    ];
+
+    for(const m of scene.meshes){
+      if(!m || m.isDisposed?.())continue;
+      const n=(m.name||"").toLowerCase();
+
+      // Remove leftover test/display props, not structural map pieces.
+      if(suspicious.some(s=>n.includes(s))){
+        if(!n.includes("window") && !n.includes("wall") && !n.includes("ceiling")){
+          try{m.dispose();}catch(_){}
+        }
+      }
+    }
+
+    // Also kill loose office props that spawn unnaturally high in the air.
+    for(const p of officeProps){
+      const mesh=p?.mesh;
+      if(!mesh || mesh.isDisposed?.())continue;
+      if(mesh.position.y>3.25 && !/light|ceiling|window/i.test(mesh.name||"")){
+        try{mesh.dispose();}catch(_){}
+      }
+    }
+  }
+
   function ensurePrimaryNpcPresent(dt){
     if(gameMode!=="map")return;
     if(net.connected&&!net.isHost)return;
