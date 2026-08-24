@@ -1,5 +1,5 @@
 (() => {
-  const BUILD_VERSION="0.36.5";
+  const BUILD_VERSION="0.36.6";
   const canvas = document.getElementById("renderCanvas");
   const engine = new BABYLON.Engine(canvas, true, { stencil:true });
   const scene = new BABYLON.Scene(engine);
@@ -418,9 +418,15 @@
     MAT.wall,
     true
   );
-  windowSafety.visibility=.22;
-  windowSafety.material=glassMat;
+  windowSafety.visibility=1;
+  windowSafety.material=MAT.wall;
   windowSafety.isPickable=false;
+
+  // Visible frame: the player now sees the same closed boundary as the hitbox.
+  box("officeOuterTop",new BABYLON.Vector3(0,4.38,4.12),new BABYLON.Vector3(22.8,.85,.34),MAT.wall,true);
+  box("officeOuterBottom",new BABYLON.Vector3(0,.34,4.12),new BABYLON.Vector3(22.8,.68,.34),MAT.wall,true);
+  box("officeOuterLeft",new BABYLON.Vector3(-10.86,2.30,4.12),new BABYLON.Vector3(1.08,3.3,.34),MAT.wall,true);
+  box("officeOuterRight",new BABYLON.Vector3(10.86,2.30,4.12),new BABYLON.Vector3(1.08,3.3,.34),MAT.wall,true);
 
   // Extra collision skin removes edge/corner escape gaps in the office.
   const officeSafetySkin=[];
@@ -4049,8 +4055,10 @@ Grip = back`;
         const s=getMapSpawn();
         const slot=Math.max(1,Math.min(3,Number(d.slot)||1));
         const offsets=[0,1.1,-1.1,2.0];
-        xrCamera.position.x=s.x+offsets[slot];
-        xrCamera.position.z=s.z+.35+(slot===3?.5:0);
+        teleportPlayerXZ(
+          s.x+offsets[slot],
+          s.z+.35+(slot===3?.5:0)
+        );
       }
     }else if(d.t==="matchWaiting"){
       net.matchMembers.clear();
@@ -4171,8 +4179,7 @@ Grip = back`;
 
     if(xrCamera){
       const s=getMapSpawn();
-      xrCamera.position.x=s.x-2.0;
-      xrCamera.position.z=s.z+.35;
+      teleportPlayerXZ(s.x-2.0,s.z+.35);
     }
   }
 
@@ -4667,9 +4674,35 @@ Grip = back`;
   function refreshLobby(){if(lobbySub!=="main")lobbyText.fontSize=28;if(lobbySub!=="avatar")showAvatarPreview(false);if(lobbySub!=="inspect")showBatPreview(false);if(lobbySub!=="practice")showPracticeDummy(false);if(gameState.pendingDuplicate)lobbyText.text=lobbyDup();else if(lobbySub==="maps")lobbyText.text=lobbyMaps();else if(lobbySub==="bats")lobbyText.text=lobbyBats();else if(lobbySub==="skins")lobbyText.text=lobbySkins();else if(lobbySub==="cosmetics")lobbyText.text=lobbyCosmetics();else if(lobbySub==="colors")lobbyText.text=lobbyPotatoColors();else if(lobbySub==="bundles")lobbyText.text=lobbyBundles();else if(lobbySub==="gemshop")lobbyText.text=lobbyGemShop();else if(lobbySub==="settings")lobbyText.text=lobbySettings();else if(lobbySub==="controls")lobbyText.text=lobbyControls();else if(lobbySub==="prematch")lobbyText.text=lobbyPrematch();else if(lobbySub==="avatar")lobbyText.text=lobbyAvatarPreview();else if(lobbySub==="inspect")lobbyText.text=lobbyBatInspect();else if(lobbySub==="practice")lobbyText.text=lobbyPractice();else if(lobbySub==="difficulty")lobbyText.text=lobbyDifficulty();else if(lobbySub==="calibration")lobbyText.text=lobbyHandCalibration();else if(lobbySub==="holster")lobbyText.text=lobbyHolster();else if(lobbySub==="testmode")lobbyText.text=lobbyTestMode();else if(lobbySub==="owner")lobbyText.text=lobbyOwnerVault();else if(lobbySub==="trading")lobbyText.text=lobbyOnline("TRADING");else if(lobbySub==="multi")lobbyText.text=lobbyMultiplayer();else lobbyText.text=lobbyMain();}
   function clearRuntimeMap(){runtimeColliders.forEach(removeCollision);runtimeColliders=[];if(runtimeMapRoot){runtimeMapRoot.dispose(false,true);runtimeMapRoot=null;}}
   function mapTheme(id){return {school:["#9aa5b1","#e6dfc7","#4d6985"],house:["#8d7761","#e9dfd0","#6b8a63"],supermarket:["#7a8794","#e6e8eb","#dc4d41"],gym:["#343c48","#c9ced5","#e87235"],hotel:["#7a695d","#e5ded6","#a77a48"],bank:["#5a6773","#dde2e6","#92773f"],metro:["#39434f","#9ba4ad","#d6a627"],factory:["#333b43","#727b82","#d56d28"],cinema:["#231f2e","#5f596c","#b83a4c"],arcade:["#242038","#493d67","#ff4fb7"],city:["#414b55","#8f9ba5","#3d8dc4"],forest:["#53664b","#31452e","#77945d"],beach:["#d2b87c","#8ed0dd","#f4d35e"],construction:["#655c50","#8f8a82","#f0a52b"],mall:["#89949f","#e4e7e9","#6fa7c7"],police:["#3d4d63","#d9dde3","#315fa8"],hospital:["#a9b8bd","#e9eeee","#49a6a6"],lab:["#7f8992","#d9e1e6","#67c6d5"],stadium:["#4f6751","#9aa0a6","#5d9f61"],castle:["#66635c","#8b877e","#8b2635"],farm:["#7a684d","#71845a","#d4aa58"],pirate:["#5d4936","#7a6b5b","#a73c2e"],amusement:["#6c76a2","#d4d6e1","#e85d75"],volcano:["#352a2a","#5b3c36","#e65325"],space:["#242c38","#586477","#62a5d8"],alien:["#2d2940","#4b3c66","#7ad36f"]}[id]||["#555f68","#c8cdd2","#4c91c4"];}
-  function buildRuntimeMap(id){clearRuntimeMap();if(id==="office")return;runtimeMapRoot=new BABYLON.TransformNode("runtime_"+id,scene);runtimeMapRoot.position.copyFrom(RUNTIME_CENTER);const [fh,wh,ah]=mapTheme(id),fm=mkMat("floor_"+id,fh),wm=mkMat("wall_"+id,wh),am=mkMat("accent_"+id,ah);const add=(n,world,s,mat,c=true)=>{const m=BABYLON.MeshBuilder.CreateBox(n,{width:s.x,height:s.y,depth:s.z},scene);m.parent=runtimeMapRoot;m.position.copyFrom(world.subtract(RUNTIME_CENTER));m.material=mat;if(c){addCollision(m);runtimeColliders.push(m);}return m;};add("arenaFloor",new BABYLON.Vector3(66,-.12,-6),new BABYLON.Vector3(18,.24,18),fm);add("arenaBack",new BABYLON.Vector3(66,2.6,-15),new BABYLON.Vector3(18.6,5.4,.45),wm);add("arenaLeft",new BABYLON.Vector3(57,2.6,-6),new BABYLON.Vector3(.45,5.4,18.6),wm);add("arenaRight",new BABYLON.Vector3(75,2.6,-6),new BABYLON.Vector3(.45,5.4,18.6),wm);add("arenaFront",new BABYLON.Vector3(66,2.6,3),new BABYLON.Vector3(18.6,5.4,.45),wm);add("arenaCeiling",new BABYLON.Vector3(66,5.25,-6),new BABYLON.Vector3(18.6,.45,18.6),wm);for(let i=0;i<10;i++){const a=i/10*Math.PI*2,r=3.8+(i%3)*.9;add("mapProp"+i,new BABYLON.Vector3(66+Math.cos(a)*r,.55,-6+Math.sin(a)*r),new BABYLON.Vector3(.7+(i%2)*.35,1.1,.7),i%2?am:wm);}add("bossPlatform",new BABYLON.Vector3(66,.08,-12.5),new BABYLON.Vector3(4.5,.16,2.5),am);}
-  const getMapSpawn=()=>gameState.selectedMap==="office"?new BABYLON.Vector3(0,.62,-1.5):new BABYLON.Vector3(66,.62,-3);
-  function getNpcSpawnPosition(){const c=gameState.selectedMap==="office"?new BABYLON.Vector3(0,0,-6):RUNTIME_CENTER;return new BABYLON.Vector3(c.x+(Math.random()-.5)*3.2,0,c.z-3.7+Math.random()*1.2);}
+  function buildRuntimeMap(id){clearRuntimeMap();if(id==="office")return;runtimeMapRoot=new BABYLON.TransformNode("runtime_"+id,scene);runtimeMapRoot.position.copyFrom(RUNTIME_CENTER);const [fh,wh,ah]=mapTheme(id),fm=mkMat("floor_"+id,fh),wm=mkMat("wall_"+id,wh),am=mkMat("accent_"+id,ah);const add=(n,world,s,mat,c=true)=>{const m=BABYLON.MeshBuilder.CreateBox(n,{width:s.x,height:s.y,depth:s.z},scene);m.parent=runtimeMapRoot;m.position.copyFrom(world.subtract(RUNTIME_CENTER));m.material=mat;if(c){addCollision(m);runtimeColliders.push(m);}return m;};add("arenaFloor",new BABYLON.Vector3(66,-.12,-6),new BABYLON.Vector3(18,.24,18),fm);add("arenaBack",new BABYLON.Vector3(66,2.55,-15),new BABYLON.Vector3(19.2,5.3,.60),wm);add("arenaLeft",new BABYLON.Vector3(57,2.55,-6),new BABYLON.Vector3(.60,5.3,19.2),wm);add("arenaRight",new BABYLON.Vector3(75,2.55,-6),new BABYLON.Vector3(.60,5.3,19.2),wm);add("arenaFront",new BABYLON.Vector3(66,2.55,3),new BABYLON.Vector3(19.2,5.3,.60),wm);add("arenaCeiling",new BABYLON.Vector3(66,5.08,-6),new BABYLON.Vector3(19.2,.45,19.2),wm);for(let i=0;i<10;i++){const a=i/10*Math.PI*2,r=3.8+(i%3)*.9;add("mapProp"+i,new BABYLON.Vector3(66+Math.cos(a)*r,.55,-6+Math.sin(a)*r),new BABYLON.Vector3(.7+(i%2)*.35,1.1,.7),i%2?am:wm);}add("bossPlatform",new BABYLON.Vector3(66,.08,-12.5),new BABYLON.Vector3(4.5,.16,2.5),am);}
+  const getMapSpawn=()=>gameState.selectedMap==="office"?new BABYLON.Vector3(0,0,-1.5):new BABYLON.Vector3(66,0,-3);
+  function getNpcSpawnPosition(){
+    const arenaCenter=gameState.selectedMap==="office"
+      ? new BABYLON.Vector3(0,0,-6.0)
+      : RUNTIME_CENTER.clone();
+
+    if(xrCamera && isInXR()){
+      const p=playerWorldPos();
+      let f=xrCamera.getForwardRay(1).direction.clone();
+      f.y=0;
+      if(f.lengthSquared()<.001)f.set(0,0,-1);
+      f.normalize();
+
+      // Spawn 3–4 m in front of the player and clamp inside the arena.
+      const candidate=p.add(f.scale(3.6));
+      if(gameState.selectedMap==="office"){
+        candidate.x=BABYLON.Scalar.Clamp(candidate.x,-8.5,8.5);
+        candidate.z=BABYLON.Scalar.Clamp(candidate.z,-16.5,1.8);
+      }else{
+        candidate.x=BABYLON.Scalar.Clamp(candidate.x,RUNTIME_CENTER.x-7.2,RUNTIME_CENTER.x+7.2);
+        candidate.z=BABYLON.Scalar.Clamp(candidate.z,RUNTIME_CENTER.z-7.2,RUNTIME_CENTER.z+7.2);
+      }
+      candidate.y=0;
+      return candidate;
+    }
+
+    return new BABYLON.Vector3(arenaCenter.x,0,arenaCenter.z-2.8);
+  }
   function goLobby(fromNetwork=false){for(const [,p] of net.players){p.inMatch=false;p.reportedInMatch=false;}const wasHolstered=batHolstered;batHolstered=false;if(wasHolstered&&!attachBatToSelectedHand()){batRoot.parent=null;batRoot.setEnabled(false);}
     mapEventText="";mapEventTextTimer=0;
     playerDead=false;playerDowned=false;downedTimer=0;deathTimer=0;playerHP=PLAYER_MAX_HP;playerInvuln=.5;
@@ -4682,8 +4715,8 @@ Grip = back`;
       }
     }
     net.matchMembers.clear();
-    if(npc)npc.netTargetId=null;quickMenuDebounce=0;groundSlamCooldown=0;combatInputPrev.trigger=false;combatInputPrev.grip=false;chargeTime=0;batTipLast=null;batBaseLast=null;playerDowned=false;downedTimer=0;if(batThrown&&!attachBatToRightHand()){batRoot.parent=null;batRoot.setEnabled(false);}closeQuickMenu();gameMode="lobby";setMusicMode("normal");clearRuntimeMap();lobbySub="main";lobbyIndex=0;lastLobbyMessage="";mirror.setEnabled(true);mirrorFrame.setEnabled(true);lobbyScreen.setEnabled(true);if(xrCamera){xrCamera.position.set(30,.08,-5);bodyVelocity.set(0,0,0);keepRigAboveFloor();}if(npc?.root)npc.root.setEnabled(false);extraNpcs.forEach(e=>e.root.setEnabled(false));syncOwnerGiftVisual();refreshLobby();ensurePublicLobby();}
-  function startMap(forcedModifier=null){hidePack2();const wasHolstered=batHolstered;batHolstered=false;if(wasHolstered&&!attachBatToSelectedHand()){batRoot.parent=null;batRoot.setEnabled(false);}mapEventText="";mapEventTextTimer=0;quickMenuDebounce=0;groundSlamCooldown=0;combatInputPrev.trigger=false;combatInputPrev.grip=false;chargeTime=0;batTipLast=null;batBaseLast=null;if(batThrown&&!attachBatToRightHand()){batRoot.parent=null;batRoot.setEnabled(false);}gameMode="map";syncOwnerGiftVisual();playerDowned=false;downedTimer=0;resetRunStats(forcedModifier);playerHP=PLAYER_MAX_HP;playerDead=false;playerInvuln=1.0;deathTimer=0;deathPlane?.setEnabled?.(false);hudPlane?.setEnabled?.(true);setMusicMode(currentMapProgress().level>=10?"boss":"normal");gameMode="map";buildRuntimeMap(gameState.selectedMap);mirror.setEnabled(false);mirrorFrame.setEnabled(false);lobbyScreen.setEnabled(false);if(xrCamera){const p=getMapSpawn();xrCamera.position.set(p.x,p.y,p.z);bodyVelocity.set(0,0,0);keepRigAboveFloor();}if(npc?.root)npc.root.dispose();createNpc();configureNpcForCurrentLevel();npc.root.setEnabled(true);npc.root.position.copyFrom(getNpcSpawnPosition());configureExtraSquad();applyBatLook();applySkinLook();}
+    if(npc)npc.netTargetId=null;quickMenuDebounce=0;groundSlamCooldown=0;combatInputPrev.trigger=false;combatInputPrev.grip=false;chargeTime=0;batTipLast=null;batBaseLast=null;playerDowned=false;downedTimer=0;if(batThrown&&!attachBatToRightHand()){batRoot.parent=null;batRoot.setEnabled(false);}closeQuickMenu();gameMode="lobby";setMusicMode("normal");clearRuntimeMap();lobbySub="main";lobbyIndex=0;lastLobbyMessage="";mirror.setEnabled(true);mirrorFrame.setEnabled(true);lobbyScreen.setEnabled(true);if(xrCamera){teleportPlayerXZ(30,-5);keepRigAboveFloor();}if(npc?.root)npc.root.setEnabled(false);extraNpcs.forEach(e=>e.root.setEnabled(false));syncOwnerGiftVisual();refreshLobby();ensurePublicLobby();}
+  function startMap(forcedModifier=null){hidePack2();const wasHolstered=batHolstered;batHolstered=false;if(wasHolstered&&!attachBatToSelectedHand()){batRoot.parent=null;batRoot.setEnabled(false);}mapEventText="";mapEventTextTimer=0;quickMenuDebounce=0;groundSlamCooldown=0;combatInputPrev.trigger=false;combatInputPrev.grip=false;chargeTime=0;batTipLast=null;batBaseLast=null;if(batThrown&&!attachBatToRightHand()){batRoot.parent=null;batRoot.setEnabled(false);}gameMode="map";syncOwnerGiftVisual();playerDowned=false;downedTimer=0;resetRunStats(forcedModifier);playerHP=PLAYER_MAX_HP;playerDead=false;playerInvuln=1.0;deathTimer=0;deathPlane?.setEnabled?.(false);hudPlane?.setEnabled?.(true);setMusicMode(currentMapProgress().level>=10?"boss":"normal");gameMode="map";buildRuntimeMap(gameState.selectedMap);mirror.setEnabled(false);mirrorFrame.setEnabled(false);lobbyScreen.setEnabled(false);if(xrCamera){const p=getMapSpawn();teleportPlayerXZ(p.x,p.z);keepRigAboveFloor();}if(npc?.root)npc.root.dispose();createNpc();configureNpcForCurrentLevel();npc.root.setEnabled(true);npc.root.position.copyFrom(getNpcSpawnPosition());configureExtraSquad();applyBatLook();applySkinLook();}
   function applyBatLook(){const b=selectedBatData(),c=BABYLON.Color3.FromHexString(b.color);batWood.diffuseColor=c;batWood.emissiveColor=c.scale(b.rarity==="Mythic"?.14:b.rarity==="Legendary"?.08:.02);}
 
   let chestRoot=null;
@@ -5067,7 +5100,7 @@ Grip = back`;
     bodyVelocity.set(0,0,0);
     if (xrCamera) {
       const sp=getMapSpawn();
-      xrCamera.position.set(sp.x,.08,sp.z);
+      teleportPlayerXZ(sp.x,sp.z);
       keepRigAboveFloor();
       resolvePlayerWorldCollision();
     }
@@ -5195,10 +5228,11 @@ Grip = back`;
   }
   function keepRigAboveFloor() {
     if (!xrCamera) return;
-    const floorY=gameMode==="map"?.10:0;
-    if (xrCamera.position.y<floorY) xrCamera.position.y=floorY;
-    if (xrCamera.position.y<=floorY+.001 && bodyVelocity.y<0) {
-      xrCamera.position.y=floorY;
+    // Head may crouch naturally, but it may never be driven into the floor.
+    const minHeadY=.32;
+    if (xrCamera.position.y<minHeadY) xrCamera.position.y=minHeadY;
+    if (xrCamera.position.y<=minHeadY+.001 && bodyVelocity.y<0) {
+      xrCamera.position.y=minHeadY;
       bodyVelocity.y=0;
     }
   }
@@ -5355,8 +5389,8 @@ Grip = back`;
   // Hands
   // ------------------------------------------------------------
   const hands={
-    left:{controller:null,node:null,mesh:null,trackLast:null,contact:false,anchor:null,normal:null,plantTrack:null,waitClear:false},
-    right:{controller:null,node:null,mesh:null,trackLast:null,contact:false,anchor:null,normal:null,plantTrack:null,waitClear:false}
+    left:{controller:null,node:null,mesh:null,trackLast:null,relLast:null,contact:false,anchor:null,normal:null,plantTrack:null,plantRel:null,waitClear:false,landingSuppress:0},
+    right:{controller:null,node:null,mesh:null,trackLast:null,relLast:null,contact:false,anchor:null,normal:null,plantTrack:null,plantRel:null,waitClear:false,landingSuppress:0}
   };
 
   function makeHand(side) {
@@ -5431,6 +5465,24 @@ Grip = back`;
 
   const HAND_RADIUS=.105;
   let groundSlamCooldown=0;
+  let xrStandingHeadHeight=1.62;
+  function captureTrackedHeadHeight(){
+    if(!xrCamera)return;
+    const y=Number((xrCamera.globalPosition||xrCamera.position)?.y);
+    if(Number.isFinite(y) && y>.85 && y<2.25)xrStandingHeadHeight=y;
+  }
+  function teleportPlayerXZ(x,z){
+    if(!xrCamera)return;
+    xrCamera.position.x=x;
+    xrCamera.position.z=z;
+    // Never deliberately place the headset at floor level.
+    const currentY=Number(xrCamera.position.y);
+    xrCamera.position.y=(Number.isFinite(currentY)&&currentY>.85)
+      ? currentY
+      : xrStandingHeadHeight;
+    bodyVelocity.set(0,0,0);
+  }
+
   const GROUND_SLAM_MIN_SPEED=5.20;
   const GROUND_SLAM_MAX_BOOST=3.85;
   function closestPointAabb(p,mesh) {
@@ -5498,8 +5550,12 @@ Grip = back`;
 
   function updateHandLocomotion(h,worldPos,trackPos,dt) {
     let didGroundSlam=false;
-    let c=surfaceContact(worldPos);
+    h.landingSuppress=Math.max(0,(h.landingSuppress||0)-dt);
 
+    const head=xrCamera?.globalPosition||xrCamera?.position||BABYLON.Vector3.Zero();
+    const relTrack=trackPos.subtract(head);
+
+    let c=surfaceContact(worldPos);
     if(!c && worldPos.y<HAND_RADIUS+.025){
       c={
         surface:ground,
@@ -5508,123 +5564,155 @@ Grip = back`;
       };
     }
 
-    if (h.waitClear && !c) h.waitClear=false;
+    if(h.waitClear && !c)h.waitClear=false;
 
-    if (!h.contact && c && !h.waitClear) {
+    if(!h.contact && c && !h.waitClear){
       h.contact=true;
       h.normal=c.normal.clone();
       h.anchor=c.point.add(h.normal.scale(HAND_RADIUS+.014));
       h.plantTrack=trackPos.clone();
+      h.plantRel=relTrack.clone();
       h.mesh.position.copyFrom(safeVisibleHandPosition(h.anchor));
 
-      // One-shot hard ground slam. Normal gravity stays active after the launch.
-      // It only fires on a fresh floor contact, so landing never auto-bounces.
       const isFloorLike=h.normal.y>.72;
+
+      // IMPORTANT: slam speed is controller motion RELATIVE TO THE HEAD.
+      // Falling with both hands down therefore cannot trigger a launch.
       let slamSpeed=0;
-      if(h.trackLast){
-        const handDelta=trackPos.subtract(h.trackLast);
-        slamSpeed=Math.max(0,-BABYLON.Vector3.Dot(handDelta,h.normal)/Math.max(dt,.008));
+      if(h.relLast){
+        const relDelta=relTrack.subtract(h.relLast);
+        slamSpeed=Math.max(
+          0,
+          -BABYLON.Vector3.Dot(relDelta,h.normal)/Math.max(dt,.008)
+        );
       }
 
-      if(isFloorLike && slamSpeed>=GROUND_SLAM_MIN_SPEED && groundSlamCooldown<=0){
-        const t=BABYLON.Scalar.Clamp((slamSpeed-GROUND_SLAM_MIN_SPEED)/4.5,0,1);
-        const upBoost=BABYLON.Scalar.Lerp(1.30,GROUND_SLAM_MAX_BOOST,t);
+      const actualHandSlam=
+        isFloorLike &&
+        slamSpeed>=GROUND_SLAM_MIN_SPEED &&
+        groundSlamCooldown<=0;
 
-        const hv=h.trackLast.subtract(trackPos).scale(1/Math.max(dt,.008));
+      if(actualHandSlam){
+        const t=BABYLON.Scalar.Clamp(
+          (slamSpeed-GROUND_SLAM_MIN_SPEED)/4.5,
+          0,1
+        );
+        const upBoost=BABYLON.Scalar.Lerp(1.20,GROUND_SLAM_MAX_BOOST,t);
+
+        const relDelta=h.relLast.subtract(relTrack);
+        const hv=relDelta.scale(1/Math.max(dt,.008));
         hv.y=0;
-        if(hv.length()>4.8)hv.normalize().scaleInPlace(4.8);
+        if(hv.length()>4.2)hv.normalize().scaleInPlace(4.2);
 
-        bodyVelocity.x+=hv.x*.46;
-        bodyVelocity.z+=hv.z*.46;
+        bodyVelocity.x+=hv.x*.40;
+        bodyVelocity.z+=hv.z*.40;
         bodyVelocity.y=Math.max(bodyVelocity.y,upBoost);
-        didGroundSlam=true;
 
-        groundSlamCooldown=.28;
-        pulse(h,.85,75);
+        didGroundSlam=true;
+        groundSlamCooldown=.32;
+        pulse(h,.85,70);
       }else{
-        pulse(h,.35,30);
+        // A hand touching the floor during a landing gets a brief settling
+        // phase. It can grip/drag sideways, but cannot spring the body upward.
+        if(isFloorLike)h.landingSuppress=.16;
+        pulse(h,.30,28);
       }
     }
 
-    if (h.contact && h.normal && h.plantTrack && h.trackLast && !didGroundSlam) {
+    if(h.contact && h.normal && h.plantRel && h.relLast && !didGroundSlam){
       const n=h.normal;
-      const fromPlant=trackPos.subtract(h.plantTrack);
+      const fromPlant=relTrack.subtract(h.plantRel);
       const outward=BABYLON.Vector3.Dot(fromPlant,n);
 
-      // Fast reliable release: lift only ~2 cm away from the surface.
-      if (outward>.030 || BABYLON.Vector3.Distance(worldPos,h.anchor)>.34) {
+      if(outward>.035 || BABYLON.Vector3.Distance(worldPos,h.anchor)>.36){
         h.contact=false;
         h.waitClear=!!c;
         h.normal=null;
         h.anchor=null;
         h.plantTrack=null;
-      } else {
-        const delta=trackPos.subtract(h.trackLast);
+        h.plantRel=null;
+      }else{
+        // Use controller motion relative to the head. This removes the
+        // positive-feedback bounce loop caused by body/gravity motion.
+        const delta=relTrack.subtract(h.relLast);
         const normalDelta=BABYLON.Vector3.Dot(delta,n);
         const tangent=delta.subtract(n.scale(normalDelta));
-        const into=n.scale(Math.min(normalDelta,0));
 
-        let effective=tangent.add(into.scale(1.18));
+        let effective=tangent;
 
-        // Stronger arms: pushing DOWN into the floor gives a stronger lift.
-        if(n.y>.60 && normalDelta<0){
-          const liftInto=n.scale(normalDelta*FLOOR_LIFT_BOOST);
-          effective=tangent.add(liftInto);
+        // Deliberately pushing a planted hand INTO a surface still moves the rig.
+        if(normalDelta<0){
+          const pushInto=n.scale(normalDelta);
+          const gain=(n.y>.60 && h.landingSuppress<=0)
+            ? Math.min(FLOOR_LIFT_BOOST,1.45)
+            : 1.0;
+          effective=tangent.add(pushInto.scale(gain));
         }
 
         let rigDelta=effective.scale(-PUSH_GAIN);
 
-        // Floor pushes get a forward-biased assist.
-        // Pulling your planted hand backward now moves you forward more easily.
+        // During landing settle, floor contact may move you sideways but never up.
+        if(n.y>.60 && h.landingSuppress>0 && rigDelta.y>0){
+          rigDelta.y=0;
+        }
+
         if(n.y>.60 && xrCamera){
           let forward=xrCamera.getForwardRay(1).direction.clone();
           forward.y=0;
           if(forward.lengthSquared()>.001){
             forward.normalize();
-
             const forwardAmount=BABYLON.Vector3.Dot(rigDelta,forward);
             const forwardPart=forward.scale(forwardAmount);
             const sidePart=rigDelta.subtract(forwardPart);
-
-            if(forwardAmount>0){
-              rigDelta=forwardPart.scale(FLOOR_FORWARD_BOOST)
-                .add(sidePart.scale(FLOOR_SIDE_BOOST));
-            }else{
-              rigDelta=forwardPart.add(sidePart.scale(FLOOR_SIDE_BOOST));
-            }
+            rigDelta=forwardAmount>0
+              ? forwardPart.scale(Math.min(FLOOR_FORWARD_BOOST,1.25))
+                  .add(sidePart.scale(Math.min(FLOOR_SIDE_BOOST,1.15)))
+              : forwardPart.add(sidePart.scale(Math.min(FLOOR_SIDE_BOOST,1.15)));
           }
         }
 
-        const max=.155;
-        if (rigDelta.length()>max) rigDelta=rigDelta.normalize().scale(max);
+        // Smaller per-frame correction removes hand jitter on Quest.
+        const max=.085;
+        if(rigDelta.length()>max)rigDelta=rigDelta.normalize().scale(max);
 
-        if (rigDelta.length()>.0010) {
+        if(rigDelta.length()>.0010){
           xrCamera.position.addInPlace(rigDelta);
           keepRigAboveFloor();
 
           const impulse=rigDelta.scale(1/Math.max(dt,.008));
-          bodyVelocity=BABYLON.Vector3.Lerp(bodyVelocity,impulse,.18);
-          // Normal hand contact must not act like a spring.
-          if(n.y>.60 && bodyVelocity.y>0 && bodyVelocity.y<2.35)bodyVelocity.y=0;
-          if (bodyVelocity.length()>MAX_PLAYER_SPEED) {
-            bodyVelocity=bodyVelocity.normalize().scale(MAX_PLAYER_SPEED);
+
+          // Only horizontal momentum comes from normal planted movement.
+          bodyVelocity.x=BABYLON.Scalar.Lerp(bodyVelocity.x,impulse.x,.10);
+          bodyVelocity.z=BABYLON.Scalar.Lerp(bodyVelocity.z,impulse.z,.10);
+
+          // Vertical momentum is allowed only from a deliberate pushing motion
+          // after the landing settle window, and is kept modest.
+          if(n.y>.60 && h.landingSuppress<=0 && rigDelta.y>0){
+            bodyVelocity.y=Math.max(
+              bodyVelocity.y,
+              Math.min(1.15,impulse.y*.10)
+            );
           }
-          bodyVelocity.x=BABYLON.Scalar.Clamp(bodyVelocity.x,-7.2,7.2);
-          bodyVelocity.y=BABYLON.Scalar.Clamp(bodyVelocity.y,-6.8,7.0);
-          bodyVelocity.z=BABYLON.Scalar.Clamp(bodyVelocity.z,-7.2,7.2);
+
+          bodyVelocity.x=BABYLON.Scalar.Clamp(bodyVelocity.x,-6.2,6.2);
+          bodyVelocity.y=BABYLON.Scalar.Clamp(bodyVelocity.y,-6.8,4.2);
+          bodyVelocity.z=BABYLON.Scalar.Clamp(bodyVelocity.z,-6.2,6.2);
         }
       }
     }
 
-    if (h.contact && h.anchor) {
+    if(h.contact && h.anchor){
       h.mesh.position.copyFrom(safeVisibleHandPosition(h.anchor));
-    } else {
+    }else{
       const vc=surfaceContact(worldPos);
-      if (vc) h.mesh.position.copyFrom(safeVisibleHandPosition(vc.point.add(vc.normal.scale(HAND_RADIUS+.012))));
+      if(vc)h.mesh.position.copyFrom(
+        safeVisibleHandPosition(vc.point.add(vc.normal.scale(HAND_RADIUS+.012)))
+      );
       else h.mesh.position.copyFrom(safeVisibleHandPosition(worldPos));
     }
 
     h.trackLast=trackPos.clone();
+    h.relLast=relTrack.clone();
   }
 
   // ------------------------------------------------------------
@@ -9476,7 +9564,7 @@ function attachBatToRightHand(){return attachBatToSelectedHand();}
         const side=c.inputSource.handedness;
         if (!hands[side]) return;
         const h=hands[side];
-        h.controller=null;h.node=null;h.trackLast=null;
+        h.controller=null;h.node=null;h.trackLast=null;h.relLast=null;h.plantRel=null;h.landingSuppress=0;
         h.contact=false;h.anchor=null;h.normal=null;h.plantTrack=null;h.waitClear=false;
         h.mesh.setEnabled(false);
         if(side===batHandSide()) batRoot.setEnabled(false);
@@ -9491,6 +9579,7 @@ function attachBatToRightHand(){return attachBatToSelectedHand();}
           chestRoot.setEnabled(true);
           if(mirror)mirror.setEnabled(false);
           if(mirrorTex)mirrorTex.refreshRate=0;
+          captureTrackedHeadHeight();
           startBackgroundMusic();
           goLobby(true);
           bodyVelocity.set(0,0,0);
@@ -9498,6 +9587,9 @@ function attachBatToRightHand(){return attachBatToSelectedHand();}
           batBaseLast=null;
           for(const side of ["left","right"]) {
             hands[side].trackLast=null;
+            hands[side].relLast=null;
+            hands[side].plantRel=null;
+            hands[side].landingSuppress=0;
             hands[side].contact=false;
             hands[side].waitClear=false;
           }
@@ -9533,9 +9625,17 @@ function attachBatToRightHand(){return attachBatToSelectedHand();}
       }catch(e){console.error("NPC RECOVERY ERROR",e);}
       return;
     }
-    if(!npc.dead&&!npc.root.isEnabled()){
-      npc.root.setEnabled(true);
-      npc.root.position.copyFrom(getNpcSpawnPosition());
+    if(!npc.dead){
+      if(!npc.root.isEnabled()){
+        npc.root.setEnabled(true);
+        npc.root.position.copyFrom(getNpcSpawnPosition());
+      }
+      if(npc.visual&&!npc.visual.isEnabled())npc.visual.setEnabled(true);
+      if(Array.isArray(npc.parts)){
+        for(const part of npc.parts){
+          if(part && !part.isDisposed?.() && !part.isEnabled?.())part.setEnabled?.(true);
+        }
+      }
     }
   }
 
@@ -10083,10 +10183,10 @@ function attachBatToRightHand(){return attachBatToSelectedHand();}
         const planted=hands.left.contact||hands.right.contact;
 
         // Normal gravity with retained air momentum.
-        if (!planted) bodyVelocity.y+=PLAYER_GRAVITY*dt;
-        else {
-          if(bodyVelocity.y<0)bodyVelocity.y=0;
-          if(groundSlamCooldown<=0 && bodyVelocity.y>0 && bodyVelocity.y<2.35)bodyVelocity.y=0;
+        if (!planted) {
+          bodyVelocity.y+=PLAYER_GRAVITY*dt;
+        } else if(bodyVelocity.y<0) {
+          bodyVelocity.y=0;
         }
 
         // Knockback/momentum always applies, including while hands are raised.
