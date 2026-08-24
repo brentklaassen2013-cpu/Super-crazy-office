@@ -1,7 +1,7 @@
 (()=>{
 "use strict";
 
-const BUILD="MOVEMENT ALPHA 0.3";
+const BUILD="MOVEMENT ALPHA 0.4";
 const canvas=document.getElementById("renderCanvas");
 const statusEl=document.getElementById("status");
 const startBtn=document.getElementById("startBtn");
@@ -57,10 +57,10 @@ let xr=null, cam=null, inXR=false;
 // Easier Gorilla-style tuning:
 const HAND_RADIUS=.09;
 const ARM_LENGTH=.92;          // generous reach
-const PUSH_MULT=1.35;          // easier horizontal movement
-const UP_MULT=1.42;            // easier vertical movement
-const RELEASE_BOOST=.32;       // extra momentum on release
-const MAX_RELEASE_SPEED=5.2;
+const PUSH_MULT=1.62;          // easier horizontal movement
+const UP_MULT=1.34;            // easier vertical movement
+const RELEASE_BOOST=.40;       // extra momentum on release
+const MAX_RELEASE_SPEED=5.8;
 const GRAVITY=-9.81;
 const MAX_FALL=-7.0;
 const BODY_FLOOR=.30;
@@ -69,13 +69,13 @@ const TORSO_Y_FROM_HEAD=-.415; // 7.5 cm lower
 
 let velocity=new BABYLON.Vector3(0,0,0);
 let grounded=false;
-let landingFrames=0;
+let landingFrames=0; // retained only for compatibility; no bounce logic
 const velocityHistory=[];
 const HISTORY=6;
 
 const hands={
-  left:{controller:null,node:null,mesh:null,contact:null,lastController:null,wasTouching:false},
-  right:{controller:null,node:null,mesh:null,contact:null,lastController:null,wasTouching:false}
+  left:{controller:null,node:null,mesh:null,contact:null,lastController:null,lastRaw:null,wasTouching:false,grip:false,gripAnchor:null},
+  right:{controller:null,node:null,mesh:null,contact:null,lastController:null,lastRaw:null,wasTouching:false,grip:false,gripAnchor:null}
 };
 
 function makeHand(side){
@@ -90,6 +90,31 @@ function worldPos(h){
   if(!h?.node)return null;
   const p=h.node.getAbsolutePosition?.()||h.node.position;
   return p?.clone?.()||null;
+}
+
+function readGripPressed(h){
+  const mc=h?.controller?.motionController;
+  if(!mc)return false;
+
+  // Standard WebXR squeeze/grip component on Quest controllers.
+  const ids=[
+    "xr-standard-squeeze",
+    "squeeze",
+    "grasp",
+    "grip"
+  ];
+  for(const id of ids){
+    const c=mc.getComponent?.(id);
+    if(c && (c.pressed || (c.value??0)>.55))return true;
+  }
+
+  // Fallback: inspect components and prefer squeeze/grip-like ids.
+  const comps=mc.components||{};
+  for(const [id,c] of Object.entries(comps)){
+    const n=id.toLowerCase();
+    if((n.includes("squeeze")||n.includes("grip")) && (c.pressed || (c.value??0)>.55))return true;
+  }
+  return false;
 }
 
 function headPos(){
@@ -156,56 +181,89 @@ function updateHand(h,dt){
   if(!raw)return BABYLON.Vector3.Zero();
 
   const desired=clampArm(raw);
+  const gripNow=readGripPressed(h);
+  h.grip=gripNow;
+
+  if(!h.lastRaw)h.lastRaw=desired.clone();
+  const controllerDelta=desired.subtract(h.lastRaw);
+  h.lastRaw.copyFrom(desired);
+
   const hit=contactAt(desired);
-
-  if(!h.lastController)h.lastController=desired.clone();
-
   let correction=BABYLON.Vector3.Zero();
 
-  if(hit){
-    if(!h.contact){
-      // New touch: store only the surface point.
-      h.contact=hit.point.clone();
+  // GRIP MODE:
+  // Touch a surface while squeezing grip -> lock that exact point until grip release.
+  if(gripNow){
+    if(!h.gripAnchor && hit){
+      h.gripAnchor=hit.point.clone();
     }
 
-    // Gorilla-style constraint:
-    // controller wants to move through surface, hand stays at contact,
-    // so body gets pushed by the difference.
-    const handTarget=h.contact;
-    correction=handTarget.subtract(desired);
+    if(h.gripAnchor){
+      correction=h.gripAnchor.subtract(desired);
 
-    // Easier movement: amplify correction a little.
-    correction.x*=PUSH_MULT;
-    correction.z*=PUSH_MULT;
-    if(correction.y>0)correction.y*=UP_MULT;
-    else correction.y*=PUSH_MULT;
+      // Grip/climbing is intentionally strong and direct.
+      correction.x*=1.18;
+      correction.z*=1.18;
+      correction.y*=1.18;
 
-    // tiny landing suppression only on first couple frames after body lands
-    if(landingFrames>0 && correction.y>0)correction.y=0;
+      h.mesh.position.copyFrom(h.gripAnchor);
+      h.wasTouching=true;
 
-    // constrained visual hand = contact point
-    h.mesh.position.copyFrom(handTarget);
+      const maxGripStep=.14;
+      if(correction.length()>maxGripStep){
+        correction.normalize().scaleInPlace(maxGripStep);
+      }
+      return correction;
+    }
+  }else{
+    h.gripAnchor=null;
+  }
+
+  // NORMAL PUSH MODE:
+  // No persistent contact anchor. This prevents the hand/body feedback loop
+  // that caused repeated bouncing after landing.
+  if(hit){
+    correction=controllerDelta.scale(-1);
+
+    const floorLike=hit.normal.y>.65;
+    if(floorLike){
+      correction.x*=PUSH_MULT;
+      correction.z*=PUSH_MULT;
+
+      // Upward movement only happens when the REAL controller is moving down.
+      if(controllerDelta.y<-.0015){
+        correction.y=(-controllerDelta.y)*UP_MULT;
+      }else{
+        correction.y=0;
+      }
+    }else{
+      correction.scaleInPlace(1.62);
+    }
+
+    h.mesh.position.copyFrom(hit.point);
     h.wasTouching=true;
   }else{
+    // On release, keep only horizontal momentum.
+    // Never add vertical release boost -> no automatic bounce.
     if(h.wasTouching){
-      // Release momentum from recent body motion.
       const avg=averageRecentVelocity();
-      const sp=Math.min(MAX_RELEASE_SPEED,avg.length());
+      const horizontal=new BABYLON.Vector3(avg.x,0,avg.z);
+      const sp=Math.min(MAX_RELEASE_SPEED,horizontal.length());
       if(sp>.05){
-        velocity.addInPlace(avg.normalize().scale(sp*RELEASE_BOOST));
+        velocity.addInPlace(horizontal.normalize().scale(sp*RELEASE_BOOST));
       }
     }
 
-    h.contact=null;
     h.wasTouching=false;
     h.mesh.position.copyFrom(desired);
   }
 
   h.mesh.setEnabled(true);
-  h.lastController.copyFrom(desired);
 
   const maxStep=.13;
-  if(correction.length()>maxStep)correction.normalize().scaleInPlace(maxStep);
+  if(correction.length()>maxStep){
+    correction.normalize().scaleInPlace(maxStep);
+  }
   return correction;
 }
 
@@ -232,7 +290,6 @@ function resolveBody(){
 function updateMovement(dt){
   if(!inXR||!cam)return;
 
-  if(landingFrames>0)landingFrames--;
 
   const before=cam.position.clone();
 
@@ -263,19 +320,25 @@ function updateMovement(dt){
   velocity.y+=GRAVITY*dt;
   velocity.y=Math.max(MAX_FALL,velocity.y);
 
-  velocity.x*=Math.pow(.97,dt*60);
-  velocity.z*=Math.pow(.97,dt*60);
+  velocity.x*=Math.pow(.982,dt*60);
+  velocity.z*=Math.pow(.982,dt*60);
 
   cam.position.addInPlace(velocity.scale(dt));
 
   const wasGrounded=grounded;
   grounded=cam.position.y<=BODY_FLOOR+.02;
-  if(grounded&&!wasGrounded){
-    landingFrames=2;
-    if(velocity.y<0)velocity.y=0;
+
+  // Hard landing absorber: downward speed is killed once, never reflected upward.
+  if(grounded && velocity.y<0){
+    velocity.y=0;
   }
 
   resolveBody();
+
+  // After body resolution, make absolutely sure floor contact cannot create bounce.
+  if(cam.position.y<=BODY_FLOOR+.001 && velocity.y<0){
+    velocity.y=0;
+  }
 
   const moved=cam.position.subtract(before).scale(1/Math.max(dt,.008));
   velocityHistory.push(moved);
@@ -288,7 +351,12 @@ function reset(){
   grounded=false;
   landingFrames=0;
   for(const h of Object.values(hands)){
-    h.contact=null; h.lastController=null; h.wasTouching=false;
+    h.contact=null;
+    h.lastController=null;
+    h.lastRaw=null;
+    h.wasTouching=false;
+    h.grip=false;
+    h.gripAnchor=null;
   }
 }
 
@@ -315,6 +383,9 @@ async function setupXR(){
         h.node=c.grip||c.pointer;
         h.contact=null;
         h.lastController=null;
+        h.lastRaw=null;
+        h.grip=false;
+        h.gripAnchor=null;
         h.mesh.setEnabled(!!h.node);
       };
       c.onMotionControllerInitObservable.add(bind);
@@ -325,7 +396,8 @@ async function setupXR(){
       const side=c.inputSource.handedness;
       if(!hands[side])return;
       const h=hands[side];
-      h.controller=null; h.node=null; h.contact=null; h.lastController=null; h.wasTouching=false;
+      h.controller=null; h.node=null; h.contact=null; h.lastController=null; h.lastRaw=null;
+      h.wasTouching=false; h.grip=false; h.gripAnchor=null;
       h.mesh.setEnabled(false);
     });
 
