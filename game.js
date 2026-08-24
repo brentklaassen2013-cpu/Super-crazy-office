@@ -1,5 +1,5 @@
 (() => {
-  const BUILD_VERSION="0.37.2";
+  const BUILD_VERSION="0.37.1";
   const canvas = document.getElementById("renderCanvas");
   const engine = new BABYLON.Engine(canvas, true, { stencil:true });
   const scene = new BABYLON.Scene(engine);
@@ -1853,7 +1853,6 @@
   lobbyRing.material=lobbyAccent;
   lobbyMeshes.push(lobbyRing);
 
-  const lobbyStations=[];
   const stationDefs=[
     ["PLAY",24.0,-11.6,lobbyAccent],
     ["CRATES",36.0,-11.6,lobbyGold],
@@ -1861,11 +1860,8 @@
     ["TEST LAB",36.0,-2.0,lobbyAccent]
   ];
   for(const [label,x,z,mat] of stationDefs){
-    const base=lobbyBox("station_"+label,new BABYLON.Vector3(x,.62,z),
+    lobbyBox("station_"+label,new BABYLON.Vector3(x,.62,z),
       new BABYLON.Vector3(3.0,1.25,1.10),mat,true);
-    base.metadata={...(base.metadata||{}),lobbyStation:label};
-    lobbyStations.push({label,mesh:base,pos:new BABYLON.Vector3(x,0,z)});
-
     const sign=BABYLON.MeshBuilder.CreatePlane("stationSign_"+label,{width:2.5,height:.55},scene);
     sign.position.set(x,1.48,z-.57);
     const adt=BABYLON.GUI.AdvancedDynamicTexture.CreateForMesh(sign,512,128);
@@ -4169,23 +4165,7 @@ Grip = back`;
 
     return new BABYLON.Vector3(arenaCenter.x,0,arenaCenter.z-2.8);
   }
-
-  function resetHandLocomotionState(){
-    for(const side of ["left","right"]){
-      const h=hands[side];
-      h.contact=false;
-      h.anchor=null;
-      h.normal=null;
-      h.plantRel=null;
-      h.waitClear=false;
-      h.landingSuppress=0;
-      h.trackLast=null;
-      h.relLast=null;
-    }
-  }
-
   function goLobby(fromNetwork=false){
-    resetHandLocomotionState();
     clearRuntimeMap();
     for(const m of lobbyMeshes){ if(m && !m.isDisposed?.())m.setEnabled(true); }
     lobbyLogo?.setEnabled?.(true);
@@ -4213,7 +4193,6 @@ for(const [,p] of net.players){p.inMatch=false;p.reportedInMatch=false;}const wa
     net.matchMembers.clear();
     if(npc)npc.netTargetId=null;quickMenuDebounce=0;groundSlamCooldown=0;combatInputPrev.trigger=false;combatInputPrev.grip=false;chargeTime=0;batTipLast=null;batBaseLast=null;playerDowned=false;downedTimer=0;if(batThrown&&!attachBatToRightHand()){batRoot.parent=null;batRoot.setEnabled(false);}closeQuickMenu();gameMode="lobby";setMusicMode("normal");clearRuntimeMap();lobbySub="main";lobbyIndex=0;lastLobbyMessage="";mirror.setEnabled(true);mirrorFrame.setEnabled(true);lobbyScreen.setEnabled(true);if(xrCamera){teleportPlayerXZ(30,-6);keepRigAboveFloor();}if(npc?.root)npc.root.setEnabled(false);extraNpcs.forEach(e=>e.root.setEnabled(false));if(!cameraHeld)placeCameraOnPedestal();syncOwnerGiftVisual();refreshLobby();ensurePublicLobby();}
   function startMap(forcedModifier=null){
-    resetHandLocomotionState();
     for(const m of lobbyMeshes){ if(m && !m.isDisposed?.())m.setEnabled(false); }
     lobbyLogo?.setEnabled?.(false);
     cameraPedestal?.setEnabled?.(false);
@@ -5042,11 +5021,6 @@ hidePack2();const wasHolstered=batHolstered;batHolstered=false;if(wasHolstered&&
     return head.add(raw.subtract(head).scale(scale));
   }
   function handTrack(h){return calibratedHandWorld(h);}
-  function rawHandTrack(h){
-    if(!h?.node)return null;
-    const p=h.node.getAbsolutePosition?.()||h.node.position;
-    return p?.clone?.()||null;
-  }
 
   function safeVisibleHandPosition(pos){
     const p=pos.clone();
@@ -5082,7 +5056,7 @@ hidePack2();const wasHolstered=batHolstered;batHolstered=false;if(wasHolstered&&
       h.landingSuppress=0;
       h.trackLast=trackPos.clone();
       h.relLast=rel.clone();
-      h.mesh.position.copyFrom(trackPos);
+      h.mesh.position.copyFrom(safeVisibleHandPosition(worldPos));
       return;
     }
 
@@ -5167,9 +5141,8 @@ hidePack2();const wasHolstered=batHolstered;batHolstered=false;if(wasHolstered&&
       h.waitClear=false;
     }
 
-    // IMPORTANT: the visible hand never snaps to a collision anchor.
-    // Collision/contact is internal only; visuals follow the real controller 1:1.
-    h.mesh.position.copyFrom(trackPos);
+    if(h.contact && h.anchor)h.mesh.position.copyFrom(safeVisibleHandPosition(h.anchor));
+    else h.mesh.position.copyFrom(safeVisibleHandPosition(worldPos));
 
     h.trackLast=trackPos.clone();
     h.relLast=rel.clone();
@@ -9089,92 +9062,12 @@ FREE HAND + TRIGGER`;
       chestRoot.setEnabled(false);
     }
   }
-
-  function syncVisibleHandsToControllers(){
-    for(const side of ["left","right"]){
-      const h=hands[side];
-      if(!h?.node||!h?.mesh)continue;
-      const p=rawHandTrack(h);
-      if(!p)continue;
-      h.mesh.position.copyFrom(p);
-      h.mesh.setEnabled(true);
-    }
-  }
-
   function pingWorld(pos){lastPing={pos:pos.clone(),time:performance.now()};}
   function playEmote(name){lastEmote={name,time:performance.now()};}
 
   // ------------------------------------------------------------
   // XR
   // ------------------------------------------------------------
-
-  let lobbyStationHover=null;
-  let lobbyStationTriggerLatch=false;
-
-  function nearestLobbyStation(){
-    if(gameMode!=="lobby"||!xrCamera)return null;
-    const p=playerWorldPos();
-    let best=null,bestD=2.15;
-    for(const s of lobbyStations){
-      const d=BABYLON.Vector3.Distance(
-        new BABYLON.Vector3(p.x,0,p.z),
-        s.pos
-      );
-      if(d<bestD){best=s;bestD=d;}
-    }
-    return best;
-  }
-
-  function activateLobbyStation(label){
-    if(label==="PLAY"){
-      lastLobbyMessage="Starting "+(gameState.selectedMap||"office")+"...";
-      startMap();
-      return;
-    }
-    if(label==="CRATES"){
-      lobbySub="bats";
-      lobbyIndex=0;
-      lastLobbyMessage="CRATES / BATS TEST";
-      refreshLobby();
-      return;
-    }
-    if(label==="LOADOUT"){
-      lobbySub="bats";
-      lobbyIndex=0;
-      lastLobbyMessage="LOADOUT";
-      refreshLobby();
-      return;
-    }
-    if(label==="TEST LAB"){
-      toggleTestMode();
-      lobbySub="testmode";
-      lobbyIndex=0;
-      refreshLobby();
-      return;
-    }
-  }
-
-  function updatePhysicalLobbyStations(){
-    if(gameMode!=="lobby"||!isInXR()){
-      lobbyStationHover=null;
-      lobbyStationTriggerLatch=false;
-      return;
-    }
-
-    const s=nearestLobbyStation();
-    lobbyStationHover=s?.label||null;
-
-    // Either trigger can activate a station when standing beside it.
-    const pressed=btn(hands.left,0)||btn(hands.right,0);
-    if(pressed&&!lobbyStationTriggerLatch&&s){
-      lobbyStationTriggerLatch=true;
-      activateLobbyStation(s.label);
-      if(hands.left?.node)pulse(hands.left,.22,28);
-      if(hands.right?.node)pulse(hands.right,.22,28);
-    }
-    if(!pressed)lobbyStationTriggerLatch=false;
-  }
-
   const lobbyPrev={trigger:false,grip:false,menu:false,camera:false,stick:false};
   const btn=(h,i)=>!!h?.controller?.inputSource?.gamepad?.buttons?.[i]?.pressed;
   function updateLobbyControls(){
@@ -9216,7 +9109,7 @@ FREE HAND + TRIGGER`;
     if(quickMenuOpen){
       if(trigger&&!lobbyPrev.trigger)activateQuickMenu();
     }else if(gameMode==="lobby"){
-      if(trigger&&!lobbyPrev.trigger&&!lobbyStationHover)activateLobby();
+      if(trigger&&!lobbyPrev.trigger)activateLobby();
       if(grip&&!lobbyPrev.grip)backLobby();
     }
 
@@ -9904,7 +9797,7 @@ FREE HAND + TRIGGER`;
 
     if(npc && net.connected && !net.isHost)updateNpcFace(dt);
     updateNpcSlap(dt);
-    updatePack2(dt);quickMenuDebounce=Math.max(0,quickMenuDebounce-dt);updateRemoteAvatars(dt);updateNetworking();updateQuickMenuBatPointer();updatePhysicalLobbyStations();updateLobbyControls();updateVrCamera(dt);updateContentCamera(dt);syncVisibleHandsToControllers();updateAdvancedCombatInput(dt);updateThrownBat(dt);updateMapSystems(dt);updateDownedCrawling(dt);updateAdaptiveNpc();if(quickMenuOpen)placeQuickMenu();
+    updatePack2(dt);quickMenuDebounce=Math.max(0,quickMenuDebounce-dt);updateRemoteAvatars(dt);updateNetworking();updateQuickMenuBatPointer();updateLobbyControls();updateVrCamera(dt);updateContentCamera(dt);updateAdvancedCombatInput(dt);updateThrownBat(dt);updateMapSystems(dt);updateDownedCrawling(dt);updateAdaptiveNpc();if(quickMenuOpen)placeQuickMenu();
     updateExtraNpcs(dt);
     updateOfficePhysics(dt);
 
