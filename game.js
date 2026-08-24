@@ -1,8 +1,9 @@
 (() => {
-  const BUILD_VERSION="0.36.3";
+  const BUILD_VERSION="0.36.4";
   const canvas = document.getElementById("renderCanvas");
   const engine = new BABYLON.Engine(canvas, true, { stencil:true });
   const scene = new BABYLON.Scene(engine);
+  scene.skipPointerMovePicking=true;
   scene.clearColor = new BABYLON.Color4(.025,.055,.095,1);
   scene.collisionsEnabled = true;
   scene.imageProcessingConfiguration.contrast=1.12;
@@ -17,9 +18,9 @@
   sun.intensity = .70;
 
   // Soft low-cost shadows: mainly the NPC and movable props cast them.
-  const shadowGen=new BABYLON.ShadowGenerator(512,sun);
+  const shadowGen=new BABYLON.ShadowGenerator(256,sun);
   shadowGen.useBlurExponentialShadowMap=true;
-  shadowGen.blurKernel=8;
+  shadowGen.blurKernel=4;
   shadowGen.bias=.0025;
 
   function mkMat(name, hex) {
@@ -70,7 +71,7 @@
   let sprinklerTimer=0;
 
   const PERF={
-    maxFx:220,
+    maxFx:90,
     maxBloodSplats:0,
     maxDeathParts:0,
     propSleepSpeed:.16,
@@ -1903,7 +1904,14 @@
     if(p.screen) p.screen.setEnabled(true);
   }
 
+  let officePhysicsPerfAccum=0;
   function updateOfficePhysics(dt){
+    if(gameState.settings.performanceMode==="PERFORMANCE"){
+      officePhysicsPerfAccum+=dt;
+      if(officePhysicsPerfAccum<1/36)return;
+      dt=Math.min(.05,officePhysicsPerfAccum);
+      officePhysicsPerfAccum=0;
+    }
     for(const p of officeProps){
       p.cooldown=Math.max(0,p.cooldown-dt);
       if(p.broken){
@@ -1961,10 +1969,10 @@
       sprinklerTimer-=dt;
 
       if(sprinklerTimer<=0){
-        sprinklerTimer=.055;
+        sprinklerTimer=.11;
 
         // Small bounded water effect for Quest performance.
-        for(let n=0;n<2;n++){
+        for(let n=0;n<1;n++){
           const h=sprinklerHeads[Math.floor(Math.random()*sprinklerHeads.length)];
           const drop=BABYLON.MeshBuilder.CreateSphere("waterDrop",{
             diameter:.022,segments:5
@@ -2185,8 +2193,8 @@
   function applyPerformanceMode(){
     if(gameState.settings.performanceMode==="PERFORMANCE"){
       // Quest 2: render slightly lower resolution and update lobby mirror less often.
-      engine.setHardwareScalingLevel(1.38);
-      if(mirrorTex)mirrorTex.refreshRate=4;
+      engine.setHardwareScalingLevel(1.48);
+      if(mirrorTex)mirrorTex.refreshRate=6;
     }else{
       engine.setHardwareScalingLevel(1.08);
       if(mirrorTex)mirrorTex.refreshRate=2;
@@ -4561,7 +4569,7 @@ Grip = back`;
         net.lastLobbySync=now;
         broadcast(currentLobbyState());
       }
-      if(now-net.lastSend<50)return;
+      if(now-net.lastSend<66)return;
       net.lastSend=now;
 
       const pose=netPosePacket();
@@ -4579,7 +4587,7 @@ Grip = back`;
       }
     }else{
       if(!net.connected||!net.hostConn?.open)return;
-      if(now-net.lastSend<50)return;
+      if(now-net.lastSend<66)return;
       net.lastSend=now;
 
       const pose=netPosePacket();
@@ -6825,8 +6833,10 @@ Grip = back`;
       }
     }
 
-    // Stable Quest setting: enough constraints without over-solving/jitter.
-    for(let iteration=0;iteration<8;iteration++){
+    const solverIterations=gameState.settings.performanceMode==="PERFORMANCE"
+      ? (npc.recovering||npc.dead?6:5)
+      : 8;
+    for(let iteration=0;iteration<solverIterations;iteration++){
       for(const c of rd.constraints) solveRagConstraint(c);
       for(const p of rd.list) collideNpcRagdollPoint(p,dt);
     }
@@ -6835,9 +6845,16 @@ Grip = back`;
 
   }
 
+  let npcFacePerfAccum=0;
   function updateNpcFace(dt){
     if(!npc) return;
     if(npc.dead && npc.deathPhase!=="stagger" && npc.deathPhase!=="collapse")return;
+    if(gameState.settings.performanceMode==="PERFORMANCE"){
+      npcFacePerfAccum+=dt;
+      if(npcFacePerfAccum<1/30)return;
+      dt=Math.min(.05,npcFacePerfAccum);
+      npcFacePerfAccum=0;
+    }
 
     npc.emotionBurst=Math.max(0,(npc.emotionBurst||0)-dt);
     npc.faceVoicePulse=Math.max(0,(npc.faceVoicePulse||0)-dt*1.8);
@@ -8790,7 +8807,11 @@ function attachBatToRightHand(){return attachBatToSelectedHand();}
     }[gameState.selectedMap]||"NPC";
   }
 
+  let adaptiveNpcPerfTimer=0;
   function updateAdaptiveNpc(){
+    adaptiveNpcPerfTimer-=Math.min(.05,engine.getDeltaTime()/1000);
+    if(adaptiveNpcPerfTimer>0)return;
+    adaptiveNpcPerfTimer=.35;
     if(!npc||npc.dead||npc.typeName==="BOSS")return;
     if(npc.variant==="NORMAL")npc.typeName=mapEnemyRole();
     // Simple combat memory: if the player destroys lots of props, NPC throws more.
@@ -9398,6 +9419,8 @@ function attachBatToRightHand(){return attachBatToSelectedHand();}
           attachHud();
           updatePlayerHud();
           chestRoot.setEnabled(true);
+          if(mirror)mirror.setEnabled(false);
+          if(mirrorTex)mirrorTex.refreshRate=0;
           startBackgroundMusic();
           goLobby(true);
           bodyVelocity.set(0,0,0);
@@ -9411,6 +9434,8 @@ function attachBatToRightHand(){return attachBatToSelectedHand();}
         }else if(state===BABYLON.WebXRState.NOT_IN_XR){
           const tp=document.getElementById("testPanel");if(tp) tp.style.display="flex";
           const gs=document.getElementById("gameStats");if(gs) gs.style.display="block";
+          if(mirror)mirror.setEnabled(gameMode==="lobby");
+          if(mirrorTex)mirrorTex.refreshRate=gameState.settings.performanceMode==="PERFORMANCE"?6:2;
         }
       });
     } catch(e) {
@@ -10249,8 +10274,15 @@ function attachBatToRightHand(){return attachBatToSelectedHand();}
     updateExtraNpcLabel(e);
   }
 
+  let extraNpcPerfAccum=0;
   function updateExtraNpcs(dt){
     if(gameMode!=="map"||(net.connected&&!net.isHost))return;
+    if(gameState.settings.performanceMode==="PERFORMANCE"){
+      extraNpcPerfAccum+=dt;
+      if(extraNpcPerfAccum<1/30)return;
+      dt=Math.min(.055,extraNpcPerfAccum);
+      extraNpcPerfAccum=0;
+    }
     const activeAI=isInXR() && !playerDead && gameMode==="map";
     const pp=playerWorldPos();
 
