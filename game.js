@@ -1,5 +1,5 @@
 (() => {
-  const BUILD_VERSION="0.36.2";
+  const BUILD_VERSION="0.36.3";
   const canvas = document.getElementById("renderCanvas");
   const engine = new BABYLON.Engine(canvas, true, { stencil:true });
   const scene = new BABYLON.Scene(engine);
@@ -375,6 +375,9 @@
   box("frontWallR",new BABYLON.Vector3(5.0,1.95,-5.2),new BABYLON.Vector3(5.95,4.0,.20));
   box("frontWallTop",new BABYLON.Vector3(0,3.45,-5.2),new BABYLON.Vector3(3.9,1.08,.20));
 
+  // Close the office shell fully so the player cannot leave the arena through the doorway.
+  const officeDoor=box("officeFrontDoor",new BABYLON.Vector3(0,1.55,-5.2),new BABYLON.Vector3(3.9,3.0,.20),darkTrimMat,true);
+
   // New rear exterior wall: the old wall at z=-4 is now an interior divider.
   box("rearOuterWall",new BABYLON.Vector3(0,2.35,-19.5),new BABYLON.Vector3(22.5,4.8,.20));
 
@@ -404,6 +407,18 @@
   makeWindow("officeWindowB",-1.89);
   makeWindow("officeWindowC",1.89);
   makeWindow("officeWindowD",5.66);
+
+  // Invisible safety collision plane behind the breakable windows:
+  // glass can still break visually, but players cannot fall out of the map.
+  const windowSafety=box(
+    "windowSafetyCollider",
+    new BABYLON.Vector3(0,2.05,4.10),
+    new BABYLON.Vector3(15.8,4.1,.10),
+    MAT.wall,
+    true
+  );
+  windowSafety.visibility=0;
+  windowSafety.isPickable=false;
 
   // Ceiling lights.
   const lightPanelMat=mkMat("lightPanel","#eaf6ff");
@@ -439,7 +454,7 @@
   mirrorMat.specularColor=new BABYLON.Color3(.55,.60,.66);
   mirrorMat.specularPower=96;
 
-  const mirrorTex=new BABYLON.MirrorTexture("playerMirrorTexture",256,scene,true);
+  const mirrorTex=new BABYLON.MirrorTexture("playerMirrorTexture",128,scene,true);
   // Plane x = -11.0, normal pointing into the room.
   mirrorTex.mirrorPlane=new BABYLON.Plane(1,0,0,11.0);
   mirrorTex.level=.82;
@@ -2169,11 +2184,12 @@
 
   function applyPerformanceMode(){
     if(gameState.settings.performanceMode==="PERFORMANCE"){
-      engine.setHardwareScalingLevel(1.20);
-      if(mirrorTex)mirrorTex.refreshRate=2;
+      // Quest 2: render slightly lower resolution and update lobby mirror less often.
+      engine.setHardwareScalingLevel(1.38);
+      if(mirrorTex)mirrorTex.refreshRate=4;
     }else{
-      engine.setHardwareScalingLevel(1.0);
-      if(mirrorTex)mirrorTex.refreshRate=1;
+      engine.setHardwareScalingLevel(1.08);
+      if(mirrorTex)mirrorTex.refreshRate=2;
     }
   }
   function updateStatsUI(){const e=document.getElementById("gameStats");if(!e)return;const b=selectedBatData(),s=selectedBatState(),p=gameState.mapProgress[gameState.selectedMap]||{level:1};e.innerHTML=`<b>${b.name} Lv.${s.level}</b><br>🪙 ${gameState.coins} &nbsp; 💎 ${gameState.gems}<br>${gameState.selectedMap.toUpperCase()} • LV ${p.level}/10 • ${gameState.mode}<br>KOs ${gameState.kills} &nbsp; Broken ${gameState.destroyed}`;}
@@ -4628,7 +4644,7 @@ Grip = back`;
   function refreshLobby(){if(lobbySub!=="main")lobbyText.fontSize=28;if(lobbySub!=="avatar")showAvatarPreview(false);if(lobbySub!=="inspect")showBatPreview(false);if(lobbySub!=="practice")showPracticeDummy(false);if(gameState.pendingDuplicate)lobbyText.text=lobbyDup();else if(lobbySub==="maps")lobbyText.text=lobbyMaps();else if(lobbySub==="bats")lobbyText.text=lobbyBats();else if(lobbySub==="skins")lobbyText.text=lobbySkins();else if(lobbySub==="cosmetics")lobbyText.text=lobbyCosmetics();else if(lobbySub==="colors")lobbyText.text=lobbyPotatoColors();else if(lobbySub==="bundles")lobbyText.text=lobbyBundles();else if(lobbySub==="gemshop")lobbyText.text=lobbyGemShop();else if(lobbySub==="settings")lobbyText.text=lobbySettings();else if(lobbySub==="controls")lobbyText.text=lobbyControls();else if(lobbySub==="prematch")lobbyText.text=lobbyPrematch();else if(lobbySub==="avatar")lobbyText.text=lobbyAvatarPreview();else if(lobbySub==="inspect")lobbyText.text=lobbyBatInspect();else if(lobbySub==="practice")lobbyText.text=lobbyPractice();else if(lobbySub==="difficulty")lobbyText.text=lobbyDifficulty();else if(lobbySub==="calibration")lobbyText.text=lobbyHandCalibration();else if(lobbySub==="holster")lobbyText.text=lobbyHolster();else if(lobbySub==="testmode")lobbyText.text=lobbyTestMode();else if(lobbySub==="owner")lobbyText.text=lobbyOwnerVault();else if(lobbySub==="trading")lobbyText.text=lobbyOnline("TRADING");else if(lobbySub==="multi")lobbyText.text=lobbyMultiplayer();else lobbyText.text=lobbyMain();}
   function clearRuntimeMap(){runtimeColliders.forEach(removeCollision);runtimeColliders=[];if(runtimeMapRoot){runtimeMapRoot.dispose(false,true);runtimeMapRoot=null;}}
   function mapTheme(id){return {school:["#9aa5b1","#e6dfc7","#4d6985"],house:["#8d7761","#e9dfd0","#6b8a63"],supermarket:["#7a8794","#e6e8eb","#dc4d41"],gym:["#343c48","#c9ced5","#e87235"],hotel:["#7a695d","#e5ded6","#a77a48"],bank:["#5a6773","#dde2e6","#92773f"],metro:["#39434f","#9ba4ad","#d6a627"],factory:["#333b43","#727b82","#d56d28"],cinema:["#231f2e","#5f596c","#b83a4c"],arcade:["#242038","#493d67","#ff4fb7"],city:["#414b55","#8f9ba5","#3d8dc4"],forest:["#53664b","#31452e","#77945d"],beach:["#d2b87c","#8ed0dd","#f4d35e"],construction:["#655c50","#8f8a82","#f0a52b"],mall:["#89949f","#e4e7e9","#6fa7c7"],police:["#3d4d63","#d9dde3","#315fa8"],hospital:["#a9b8bd","#e9eeee","#49a6a6"],lab:["#7f8992","#d9e1e6","#67c6d5"],stadium:["#4f6751","#9aa0a6","#5d9f61"],castle:["#66635c","#8b877e","#8b2635"],farm:["#7a684d","#71845a","#d4aa58"],pirate:["#5d4936","#7a6b5b","#a73c2e"],amusement:["#6c76a2","#d4d6e1","#e85d75"],volcano:["#352a2a","#5b3c36","#e65325"],space:["#242c38","#586477","#62a5d8"],alien:["#2d2940","#4b3c66","#7ad36f"]}[id]||["#555f68","#c8cdd2","#4c91c4"];}
-  function buildRuntimeMap(id){clearRuntimeMap();if(id==="office")return;runtimeMapRoot=new BABYLON.TransformNode("runtime_"+id,scene);runtimeMapRoot.position.copyFrom(RUNTIME_CENTER);const [fh,wh,ah]=mapTheme(id),fm=mkMat("floor_"+id,fh),wm=mkMat("wall_"+id,wh),am=mkMat("accent_"+id,ah);const add=(n,world,s,mat,c=true)=>{const m=BABYLON.MeshBuilder.CreateBox(n,{width:s.x,height:s.y,depth:s.z},scene);m.parent=runtimeMapRoot;m.position.copyFrom(world.subtract(RUNTIME_CENTER));m.material=mat;if(c){addCollision(m);runtimeColliders.push(m);}return m;};add("arenaFloor",new BABYLON.Vector3(66,-.12,-6),new BABYLON.Vector3(18,.24,18),fm);add("arenaBack",new BABYLON.Vector3(66,2.5,-15),new BABYLON.Vector3(18,5,.2),wm);add("arenaLeft",new BABYLON.Vector3(57,2.5,-6),new BABYLON.Vector3(.2,5,18),wm);add("arenaRight",new BABYLON.Vector3(75,2.5,-6),new BABYLON.Vector3(.2,5,18),wm);add("arenaFrontL",new BABYLON.Vector3(60,2.5,3),new BABYLON.Vector3(6,5,.2),wm);add("arenaFrontR",new BABYLON.Vector3(72,2.5,3),new BABYLON.Vector3(6,5,.2),wm);for(let i=0;i<10;i++){const a=i/10*Math.PI*2,r=3.8+(i%3)*.9;add("mapProp"+i,new BABYLON.Vector3(66+Math.cos(a)*r,.55,-6+Math.sin(a)*r),new BABYLON.Vector3(.7+(i%2)*.35,1.1,.7),i%2?am:wm);}add("bossPlatform",new BABYLON.Vector3(66,.08,-12.5),new BABYLON.Vector3(4.5,.16,2.5),am);}
+  function buildRuntimeMap(id){clearRuntimeMap();if(id==="office")return;runtimeMapRoot=new BABYLON.TransformNode("runtime_"+id,scene);runtimeMapRoot.position.copyFrom(RUNTIME_CENTER);const [fh,wh,ah]=mapTheme(id),fm=mkMat("floor_"+id,fh),wm=mkMat("wall_"+id,wh),am=mkMat("accent_"+id,ah);const add=(n,world,s,mat,c=true)=>{const m=BABYLON.MeshBuilder.CreateBox(n,{width:s.x,height:s.y,depth:s.z},scene);m.parent=runtimeMapRoot;m.position.copyFrom(world.subtract(RUNTIME_CENTER));m.material=mat;if(c){addCollision(m);runtimeColliders.push(m);}return m;};add("arenaFloor",new BABYLON.Vector3(66,-.12,-6),new BABYLON.Vector3(18,.24,18),fm);add("arenaBack",new BABYLON.Vector3(66,2.5,-15),new BABYLON.Vector3(18,5,.2),wm);add("arenaLeft",new BABYLON.Vector3(57,2.5,-6),new BABYLON.Vector3(.2,5,18),wm);add("arenaRight",new BABYLON.Vector3(75,2.5,-6),new BABYLON.Vector3(.2,5,18),wm);add("arenaFront",new BABYLON.Vector3(66,2.5,3),new BABYLON.Vector3(18,5,.2),wm);add("arenaCeiling",new BABYLON.Vector3(66,5.0,-6),new BABYLON.Vector3(18,.2,18),wm);for(let i=0;i<10;i++){const a=i/10*Math.PI*2,r=3.8+(i%3)*.9;add("mapProp"+i,new BABYLON.Vector3(66+Math.cos(a)*r,.55,-6+Math.sin(a)*r),new BABYLON.Vector3(.7+(i%2)*.35,1.1,.7),i%2?am:wm);}add("bossPlatform",new BABYLON.Vector3(66,.08,-12.5),new BABYLON.Vector3(4.5,.16,2.5),am);}
   const getMapSpawn=()=>gameState.selectedMap==="office"?new BABYLON.Vector3(0,0,-1.5):new BABYLON.Vector3(66,0,-3);
   function getNpcSpawnPosition(){const c=gameState.selectedMap==="office"?new BABYLON.Vector3(0,0,-6):RUNTIME_CENTER;return new BABYLON.Vector3(c.x+(Math.random()-.5)*3.2,0,c.z-3.7+Math.random()*1.2);}
   function goLobby(fromNetwork=false){for(const [,p] of net.players){p.inMatch=false;p.reportedInMatch=false;}const wasHolstered=batHolstered;batHolstered=false;if(wasHolstered&&!attachBatToSelectedHand()){batRoot.parent=null;batRoot.setEnabled(false);}
@@ -4815,7 +4831,7 @@ Grip = back`;
   let bodyVelocity=new BABYLON.Vector3(0,0,0);
 
   // Much lighter than previous versions.
-  const PLAYER_GRAVITY = -5.15;
+  const PLAYER_GRAVITY = -9.81;
   const PUSH_GAIN = 1.78;
   const MAX_PLAYER_SPEED = 8.8;
   const FLOOR_FORWARD_BOOST = 1.52;
@@ -5891,6 +5907,17 @@ Grip = back`;
 
   let npcVoiceAudio=null;
   let npcVoiceLastId=null;
+  const npcVoiceAudioCache=new Map();
+
+  function getNpcVoiceAudio(clipId){
+    if(npcVoiceAudioCache.has(clipId))return npcVoiceAudioCache.get(clipId);
+    const src=NPC_VOICE_DATA[clipId];
+    if(!src)return null;
+    const a=new Audio(src);
+    a.preload="auto";
+    npcVoiceAudioCache.set(clipId,a);
+    return a;
+  }
 
   function pickNpcVoiceClip(gender,category){
     const g=gender==="female"?"female":"male";
@@ -5911,10 +5938,11 @@ Grip = back`;
         if(!force)return false;
         try{npcVoiceAudio.pause();npcVoiceAudio.currentTime=0;}catch(_){}
       }
-      const a=new Audio(src);
+      const a=getNpcVoiceAudio(clipId);
+      if(!a)return false;
+      try{a.pause();a.currentTime=0;}catch(_){}
       const sfx=Math.max(0,Math.min(1,Number(gameState?.settings?.sfxVolume) || .75));
       a.volume=Math.min(.92,.45+sfx*.47);
-      a.preload="auto";
       a.play().catch(()=>{});
       npcVoiceAudio=a;
       npcVoiceLastId=clipId;
@@ -8884,6 +8912,12 @@ function attachBatToRightHand(){return attachBatToSelectedHand();}
   quickText.paddingTop="40px";
   quickText.textWrapping=true;
   quickBg.addControl(quickText);
+
+  function volumePct(v){
+    const n=Number(v);
+    const safe=Number.isFinite(n)?BABYLON.Scalar.Clamp(n,0,1):0;
+    return Math.round(safe*100)+"%";
+  }
 
   function quickMenuText(){
     const boss=currentMapProgress().level>=10&&gameMode==="map";
