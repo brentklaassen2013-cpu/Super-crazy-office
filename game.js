@@ -1,7 +1,7 @@
 (()=>{
   "use strict";
 
-  const BUILD="MOVEMENT ALPHA 0.1";
+  const BUILD="MOVEMENT ALPHA 0.2";
   const canvas=document.getElementById("renderCanvas");
   const engine=new BABYLON.Engine(canvas,true,{preserveDrawingBuffer:false,stencil:true});
   engine.setHardwareScalingLevel(1.35);
@@ -53,8 +53,8 @@
   let xr=null, xrCamera=null, inXR=false;
 
   const hands={
-    left:{controller:null,node:null,mesh:null,lastLocal:null,touching:false},
-    right:{controller:null,node:null,mesh:null,lastLocal:null,touching:false}
+    left:{controller:null,node:null,mesh:null,lastLocal:null},
+    right:{controller:null,node:null,mesh:null,lastLocal:null}
   };
 
   function makeHand(side){
@@ -65,6 +65,9 @@
   hands.right.mesh=makeHand("right");
 
   const HAND_R=.085;
+  const TORSO_RADIUS=.20;
+  const TORSO_Y_FROM_HEAD=-.415; // 7.5 cm lower than old -0.34 chest center
+
   const GRAVITY=-9.81;
   const MAX_FALL=-7.5;
   const MAX_UP=4.8;
@@ -106,6 +109,32 @@
     return null;
   }
 
+  function torsoCenter(){
+    if(!xrCamera)return null;
+    const h=xrCamera.globalPosition||xrCamera.position;
+    return new BABYLON.Vector3(h.x,h.y+TORSO_Y_FROM_HEAD,h.z);
+  }
+
+  function resolveTorsoRoomCollision(){
+    if(!xrCamera)return;
+    const c=torsoCenter();
+    if(!c)return;
+
+    const inner=ROOM_HALF-WALL_T*.5-TORSO_RADIUS;
+
+    if(c.x<-inner)xrCamera.position.x+=(-inner-c.x);
+    else if(c.x>inner)xrCamera.position.x-=(c.x-inner);
+
+    if(c.z<-inner)xrCamera.position.z+=(-inner-c.z);
+    else if(c.z>inner)xrCamera.position.z-=(c.z-inner);
+
+    const torsoMin=TORSO_RADIUS+.02;
+    if(c.y<torsoMin){
+      xrCamera.position.y+=(torsoMin-c.y);
+      if(velocity.y<0)velocity.y=0;
+    }
+  }
+
   function clampRigInsideRoom(){
     if(!xrCamera)return;
     const margin=.24;
@@ -120,7 +149,6 @@
   function resetHandState(){
     for(const side of ["left","right"]){
       hands[side].lastLocal=null;
-      hands[side].touching=false;
     }
   }
 
@@ -142,22 +170,17 @@
     const world=nodeWorldPos(h);
     if(!local||!world)return BABYLON.Vector3.Zero();
 
-    const contact=handContact(world);
-
     if(!h.lastLocal){
       h.lastLocal=local.clone();
-      h.touching=!!contact;
       return BABYLON.Vector3.Zero();
     }
 
     const delta=local.subtract(h.lastLocal);
     h.lastLocal.copyFrom(local);
 
-    if(!contact){
-      h.touching=false;
-      return BABYLON.Vector3.Zero();
-    }
-    h.touching=true;
+    // No stored hand contact state. We only use contact for this exact frame.
+    const contact=handContact(world);
+    if(!contact)return BABYLON.Vector3.Zero();
 
     let rigDelta=delta.scale(-1);
 
@@ -218,6 +241,7 @@
       if(velocity.y<0)velocity.y=0;
     }
 
+    resolveTorsoRoomCollision();
     clampRigInsideRoom();
   }
 
@@ -249,7 +273,7 @@
         const side=c.inputSource.handedness;
         if(!hands[side])return;
         const h=hands[side];
-        h.controller=null; h.node=null; h.lastLocal=null; h.touching=false; h.mesh.setEnabled(false);
+        h.controller=null; h.node=null; h.lastLocal=null; h.mesh.setEnabled(false);
       });
 
       xr.baseExperience.onStateChangedObservable.add(state=>{
