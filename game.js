@@ -1,5 +1,5 @@
 (() => {
-  const BUILD_VERSION="0.24.7";
+  const BUILD_VERSION="0.35.6";
   const canvas = document.getElementById("renderCanvas");
   const engine = new BABYLON.Engine(canvas, true, { stencil:true });
   const scene = new BABYLON.Scene(engine);
@@ -417,6 +417,36 @@
     }
   }
 
+  // Performance-friendly VR mirror.
+  // It reflects the actual scene, including the potato body and hands.
+  const mirrorFrame=box(
+    "playerMirrorFrame",
+    new BABYLON.Vector3(-11.08,1.78,-8.4),
+    new BABYLON.Vector3(.10,2.55,2.30),
+    darkTrimMat,
+    false
+  );
+
+  const mirror=BABYLON.MeshBuilder.CreatePlane("playerMirror",{
+    width:2.05,height:2.28
+  },scene);
+  mirror.position.set(-11.015,1.78,-8.4);
+  mirror.rotation.y=Math.PI/2;
+  mirror.isPickable=false;
+
+  const mirrorMat=new BABYLON.StandardMaterial("playerMirrorMat",scene);
+  mirrorMat.diffuseColor=new BABYLON.Color3(.03,.04,.05);
+  mirrorMat.specularColor=new BABYLON.Color3(.55,.60,.66);
+  mirrorMat.specularPower=96;
+
+  const mirrorTex=new BABYLON.MirrorTexture("playerMirrorTexture",256,scene,true);
+  // Plane x = -11.0, normal pointing into the room.
+  mirrorTex.mirrorPlane=new BABYLON.Plane(1,0,0,11.0);
+  mirrorTex.level=.82;
+  mirrorTex.adaptiveBlurKernel=0;
+  mirrorMat.reflectionTexture=mirrorTex;
+  mirror.material=mirrorMat;
+
   // A few distant buildings outside so the room visibly feels high up.
   const distantMat=mkMat("distant","#273241");
   for(let i=0;i<8;i++){
@@ -464,7 +494,11 @@
         opts.type==="phone" ? 9 : 12
       ),
       sleepTimer:0,
-      destructionRewarded:false
+      destructionRewarded:false,
+      respawnTimer:0,
+      initialPosition:root.position.clone(),
+      initialRotation:root.rotation.clone(),
+      initialCollisions:hitMeshes.map(m=>collisionSurfaces.includes(m))
     };
     officeProps.push(p);
     return p;
@@ -1497,53 +1531,8 @@
   }
 
   function spawnBloodExplosion(origin,hitDir,strength=1){
-    // v0.24.3: blood removed
+    // Crazy Office has no blood.
     return;
-    const dir=hitDir.clone();
-    if(dir.lengthSquared()<.001) dir.set(0,1,0);
-    dir.normalize();
-
-    const bloodCount=Math.round(70+strength*46);
-    for(let i=0;i<bloodCount;i++){
-      const drop=BABYLON.MeshBuilder.CreateSphere("bloodDrop",{
-        diameter:.018+Math.random()*.045,
-        segments:5
-      },scene);
-      drop.position=origin.add(new BABYLON.Vector3(
-        (Math.random()-.5)*.22,
-        (Math.random()-.5)*.28,
-        (Math.random()-.5)*.22
-      ));
-      drop.material=Math.random()<.35?bloodBrightMat:bloodMat;
-
-      const radial=new BABYLON.Vector3(
-        (Math.random()-.5)*5.2,
-        Math.random()*4.6,
-        (Math.random()-.5)*5.2
-      );
-
-      fxBodies.push({
-        mesh:drop,
-        kind:"blood",
-        radius:.018,
-        vel:dir.scale((2.0+Math.random()*4.0)*strength).add(radial),
-        spin:new BABYLON.Vector3(),
-        life:2.1+Math.random()*1.2
-      });
-    }
-
-    trimFxBodies();
-
-    // Immediate nearby floor splats make the finishing hit feel heavier.
-    for(let i=0;i<22;i++){
-      const p=origin.add(new BABYLON.Vector3(
-        (Math.random()-.5)*1.25,
-        -origin.y+.01,
-        (Math.random()-.5)*1.25
-      ));
-      const hit=surfaceSphereHit(ground,p,.06);
-      if(hit) createBloodSplat(hit,.8+Math.random()*.7);
-    }
   }
 
   function spawnGlassBurst(pos,velocity,count=18){
@@ -1588,6 +1577,7 @@
     if(!mesh?.metadata?.breakableWindow || mesh.metadata.broken) return false;
 
     mesh.metadata.broken=true;
+    mesh.metadata.respawnTimer=30;
     removeCollision(mesh);
     mesh.setEnabled(false);
 
@@ -1728,7 +1718,7 @@
     if(d.lengthSquared()<.001) d.set(0,1,0);
     d.normalize();
 
-    prop.broken=true;prop.loose=false;
+    prop.broken=true;prop.loose=false;prop.respawnTimer=30;
     prop.hitMeshes.forEach(m=>{
       if(m){
         removeCollision(m);
@@ -1882,10 +1872,31 @@
     }
   }
 
+  function respawnOfficeProp(p){
+    if(!p || !p.broken) return;
+    p.broken=false;p.loose=false;p.respawnTimer=0;p.cooldown=.25;
+    p.destructionRewarded=false;
+    p.hp=p.maxHp;p.vel.set(0,0,0);p.ang.set(0,0,0);p.sleepTimer=0;
+    p.root.position.copyFrom(p.initialPosition);
+    p.root.rotation.copyFrom(p.initialRotation);
+    p.root.setEnabled(true);
+    p.hitMeshes.forEach((m,i)=>{
+      if(!m || m.isDisposed?.()) return;
+      m.setEnabled(true);
+      if(p.initialCollisions[i]) addCollision(m);
+    });
+    if(p.screen) p.screen.setEnabled(true);
+  }
+
   function updateOfficePhysics(dt){
     for(const p of officeProps){
       p.cooldown=Math.max(0,p.cooldown-dt);
-      if(!p.loose || p.broken) continue;
+      if(p.broken){
+        p.respawnTimer=(p.respawnTimer||30)-dt;
+        if(p.respawnTimer<=0) respawnOfficeProp(p);
+        continue;
+      }
+      if(!p.loose) continue;
 
       p.vel.y-=8.8*dt;
 
@@ -1921,6 +1932,14 @@
           p.loose=false;p.vel.set(0,0,0);p.ang.set(0,0,0);
         }
       }else p.sleepTimer=0;
+    }
+
+    for(const w of breakableWindows){
+      if(!w.metadata?.broken) continue;
+      w.metadata.respawnTimer=(w.metadata.respawnTimer??30)-dt;
+      if(w.metadata.respawnTimer<=0){
+        w.metadata.broken=false;w.metadata.respawnTimer=0;w.setEnabled(true);addCollision(w);
+      }
     }
 
     if(sprinklersActive && sprinklerHeads.length){
@@ -2007,122 +2026,2702 @@
   }
 
   // ------------------------------------------------------------
-  // Coins, XP, levels, KOs + 3 daily missions
+  // Economy / collection / map progression. NO PLAYER LEVEL.
   // ------------------------------------------------------------
-  const SAVE_KEY="vrBatBrawl_v018";
+  const SAVE_KEY="vrBatBrawl_v025";
   const todayKey=()=>new Date().toISOString().slice(0,10);
+  const weekKey=()=>{const d=new Date(),x=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate()));const day=x.getUTCDay()||7;x.setUTCDate(x.getUTCDate()+4-day);const y=new Date(Date.UTC(x.getUTCFullYear(),0,1));return `${x.getUTCFullYear()}-W${String(Math.ceil((((x-y)/86400000)+1)/7)).padStart(2,"0")}`;};
+  const RARITIES=["Common","Uncommon","Rare","Epic","Legendary","Mythic"];
+  const FIXED_ODDS=[["Common",.55],["Uncommon",.25],["Rare",.12],["Epic",.05],["Legendary",.025],["Mythic",.005]]; // no pity
+  const REFUND={Common:[60,1],Uncommon:[120,2],Rare:[260,5],Epic:[600,12],Legendary:[1500,28],Mythic:[4200,70]};
 
-  let gameState={
-    coins:0,xp:0,level:1,kills:0,destroyed:0,blocks:0,
-    dailyDate:todayKey(),
-    daily:{
-      kill:{goal:2,progress:0,reward:30,claimed:false},
-      destroy:{goal:5,progress:0,reward:25,claimed:false},
-      block:{goal:3,progress:0,reward:25,claimed:false}
-    }
-  };
+  const BAT_CATALOG=[
+    {id:"office",name:"Office Basher",rarity:"Common",ability:"Impact",color:"#9b6136"},
+    {id:"heavy",name:"Heavy Bat",rarity:"Uncommon",ability:"Heavy Stun",color:"#515963"},
+    {id:"wind",name:"Wind Bat",rarity:"Rare",ability:"Wind Knockback",color:"#69d2cf"},
+    {id:"ice",name:"Ice Bat",rarity:"Rare",ability:"Freeze Slow",color:"#7fd8ff"},
+    {id:"poison",name:"Poison Bat",rarity:"Epic",ability:"Poison Damage",color:"#65b64e"},
+    {id:"magnet",name:"Magnet Bat",rarity:"Epic",ability:"Magnetic Pull",color:"#b267ce"},
+    {id:"ceo",name:"CEO Crusher",rarity:"Epic",ability:"Power Slam",color:"#202936",boss:"office"},
+    {id:"ruler",name:"Principal's Ruler",rarity:"Epic",ability:"Discipline Shock",color:"#d59c54",boss:"school"},
+    {id:"shock",name:"Shock Baton",rarity:"Legendary",ability:"Chain Shock",color:"#f0cc3c",boss:"hospital"},
+    {id:"industrial",name:"Industrial Hammer",rarity:"Legendary",ability:"Ground Impact",color:"#d6772a",boss:"factory"},
+    {id:"captain",name:"Captain's Bat",rarity:"Legendary",ability:"Tidal Launch",color:"#75462c",boss:"pirate"},
+    {id:"lava",name:"Lava Mythic Bat",rarity:"Mythic",ability:"Lava Burn",color:"#e55224",boss:"volcano"},
+    {id:"ghost",name:"Ghost Bat",rarity:"Mythic",ability:"Phase Hit",color:"#d9e7ff"},
+    {id:"gravity",name:"Gravity Bat",rarity:"Mythic",ability:"Gravity Lift",color:"#7154e4",boss:"space"},
+    {id:"alien",name:"Alien Bat",rarity:"Mythic",ability:"Alien Pulse",color:"#71df73",boss:"alien"}
+  ];
+  const SKIN_CATALOG=[
+    {id:"classic",name:"Classic Potato",rarity:"Common",color:"#a97848"},
+    {id:"russet",name:"Russet Potato",rarity:"Common",color:"#895a35"},
+    {id:"sweet",name:"Sweet Potato",rarity:"Uncommon",color:"#c56d43"},
+    {id:"officeSkin",name:"Office Potato",rarity:"Uncommon",color:"#b28a55"},
+    {id:"frost",name:"Frost Potato",rarity:"Rare",color:"#8bbdcc"},
+    {id:"pirateSkin",name:"Pirate Potato",rarity:"Rare",color:"#8a664e"},
+    {id:"toxic",name:"Toxic Potato",rarity:"Epic",color:"#73a84e"},
+    {id:"neon",name:"Neon Potato",rarity:"Epic",color:"#b85bd6"},
+    {id:"lavaSkin",name:"Lava Potato",rarity:"Legendary",color:"#c94e2e"},
+    {id:"gold",name:"Golden Potato",rarity:"Legendary",color:"#d5ad3f"},
+    {id:"spaceSkin",name:"Space Potato",rarity:"Legendary",color:"#66758e"},
+    {id:"void",name:"Void Potato",rarity:"Mythic",color:"#514077"},
+    {id:"alienSkin",name:"Alien Potato",rarity:"Mythic",color:"#59b965"}
+  ];
+  const MAP_CATALOG=[
+    {id:"office",name:"Office",rarity:"Common"},{id:"school",name:"School",rarity:"Common"},{id:"house",name:"House",rarity:"Common"},
+    {id:"supermarket",name:"Supermarket",rarity:"Uncommon"},{id:"gym",name:"Gym",rarity:"Uncommon"},{id:"hotel",name:"Hotel",rarity:"Uncommon"},{id:"bank",name:"Bank",rarity:"Uncommon"},
+    {id:"metro",name:"Metro",rarity:"Rare"},{id:"factory",name:"Factory",rarity:"Rare"},{id:"cinema",name:"Cinema",rarity:"Rare"},{id:"arcade",name:"Arcade",rarity:"Rare"},{id:"city",name:"City",rarity:"Rare"},
+    {id:"forest",name:"Forest",rarity:"Epic"},{id:"beach",name:"Beach",rarity:"Epic"},{id:"construction",name:"Construction",rarity:"Epic"},{id:"mall",name:"Mall",rarity:"Epic"},{id:"police",name:"Police Station",rarity:"Epic"},{id:"hospital",name:"Hospital",rarity:"Epic"},
+    {id:"lab",name:"Laboratory",rarity:"Legendary"},{id:"stadium",name:"Stadium",rarity:"Legendary"},{id:"castle",name:"Castle",rarity:"Legendary"},{id:"farm",name:"Farm",rarity:"Legendary"},{id:"pirate",name:"Pirate Ship",rarity:"Legendary"},{id:"amusement",name:"Amusement Park",rarity:"Legendary"},
+    {id:"volcano",name:"Volcano",rarity:"Mythic"},{id:"space",name:"Space Station",rarity:"Mythic"},{id:"alien",name:"Alien Planet",rarity:"Mythic"}
+  ];
 
-  function xpNeeded(level){ return 80+(level-1)*45; }
-
-  function updateStatsUI(){
-    const el=document.getElementById("gameStats");
-    if(!el) return;
-    const d=gameState.daily;
-    el.innerHTML=
-      `<b>LEVEL ${gameState.level}</b><br>`+
-      `🪙 ${gameState.coins} &nbsp; XP ${gameState.xp}/${xpNeeded(gameState.level)}<br>`+
-      `KOs ${gameState.kills} &nbsp; Broken ${gameState.destroyed}<br>`+
-      `KO ${d.kill.progress}/${d.kill.goal} • BREAK ${d.destroy.progress}/${d.destroy.goal} • BLOCK ${d.block.progress}/${d.block.goal}`;
+  // Gorilla Tag-style potato color mixer:
+  // three channels (R/G/B), each from 0–9.
+  function rgbDigitTo255(v){
+    return Math.round(BABYLON.Scalar.Clamp(Number(v)||0,0,9)/9*255);
+  }
+  function potatoRgbHex(rgb){
+    const r=rgbDigitTo255(rgb?.r),g=rgbDigitTo255(rgb?.g),b=rgbDigitTo255(rgb?.b);
+    return "#"+[r,g,b].map(v=>v.toString(16).padStart(2,"0")).join("");
   }
 
-  function saveGame(){
-    try{localStorage.setItem(SAVE_KEY,JSON.stringify(gameState));}catch(_){}
-    updateStatsUI();
-  }
+  const COSMETIC_CATALOG=[
+    {id:"capRed",name:"Red Cap",slot:"head",type:"gem",price:35,rarity:"Common"},
+    {id:"capBlue",name:"Blue Cap",slot:"head",type:"gem",price:35,rarity:"Common"},
+    {id:"sunglasses",name:"Cool Shades",slot:"face",type:"gem",price:55,rarity:"Rare"},
+    {id:"headphones",name:"DJ Headphones",slot:"head",type:"gem",price:80,rarity:"Epic"},
+    {id:"crown",name:"Golden Crown",slot:"head",type:"gem",price:120,rarity:"Legendary"},
+    {id:"backpack",name:"Mini Backpack",slot:"back",type:"gem",price:65,rarity:"Rare"},
+    {id:"angelHalo",name:"Angel Halo",slot:"head",type:"premium",price:"€1.99",rarity:"Legendary"},
+    {id:"voidCrown",name:"Void Crown",slot:"head",type:"premium",price:"€2.99",rarity:"Mythic"},
+    {id:"pixelShades",name:"Pixel Shades",slot:"face",type:"premium",price:"€1.49",rarity:"Epic"},
+    {id:"goldChain",name:"Gold Chain",slot:"chest",type:"premium",price:"€1.99",rarity:"Legendary"},
+    {id:"ownerCrown",name:"Founder Reactor Crown",slot:"head",type:"owner",price:"OWNER GIFT",rarity:"OWNER"},
+    {id:"ownerVisor",name:"Glitchwave Visor",slot:"face",type:"owner",price:"OWNER GIFT",rarity:"OWNER"},
+    {id:"ownerCore",name:"Neon Owner Core",slot:"chest",type:"owner",price:"OWNER GIFT",rarity:"OWNER"},
+    {id:"ownerCape",name:"Zero-G Founder Cape",slot:"back",type:"owner",price:"OWNER GIFT",rarity:"OWNER"}
+  ];
+  const OWNER_COSMETIC_IDS=["ownerCrown","ownerVisor","ownerCore","ownerCape"];
 
-  function loadGame(){
+  const BUNDLES=[
+    {id:"lava_bundle",name:"Lava Bundle",price:"€4.99",sku:"crazyoffice.bundle.lava",bat:"lava",skin:"lavaSkin",coins:3000,gems:120},
+    {id:"storm_bundle",name:"Storm Bundle",price:"€4.99",sku:"crazyoffice.bundle.storm",bat:"shock",skin:"frost",coins:3000,gems:120},
+    {id:"ghost_bundle",name:"Ghost Bundle",price:"€4.99",sku:"crazyoffice.bundle.ghost",bat:"ghost",skin:"void",coins:3000,gems:120},
+    {id:"space_bundle",name:"Space Bundle",price:"€4.99",sku:"crazyoffice.bundle.space",bat:"gravity",skin:"spaceSkin",coins:3000,gems:120},
+    {id:"halo_bundle",name:"Skybreaker Bundle",price:"€8.00",sku:"crazyoffice.bundle.skybreaker",bat:"wind",skin:"frost",cosmetic:"angelHalo",coins:5000,gems:250},
+    {id:"pixel_bundle",name:"Arcade King Bundle",price:"€8.00",sku:"crazyoffice.bundle.arcadeking",bat:"shock",skin:"gold",cosmetic:"pixelShades",coins:5000,gems:250},
+    {id:"chain_bundle",name:"Golden Boss Bundle",price:"€8.00",sku:"crazyoffice.bundle.goldenboss",bat:"heavy",skin:"gold",cosmetic:"goldChain",coins:6000,gems:300}
+  ];
+
+  const GEM_PACKS=[
+    {id:"gems100",name:"Pocket Gems",gems:100,price:"€0.99",sku:"crazyoffice.gems.100"},
+    {id:"gems550",name:"Gem Stack",gems:550,price:"€4.99",sku:"crazyoffice.gems.550"},
+    {id:"gems1200",name:"Gem Vault",gems:1200,price:"€9.99",sku:"crazyoffice.gems.1200"},
+    {id:"gems2600",name:"Mega Gem Vault",gems:2600,price:"€19.99",sku:"crazyoffice.gems.2600"}
+  ];
+  const freshMapProgress=()=>Object.fromEntries(MAP_CATALOG.map(m=>[m.id,{level:1,waveKills:0,bossWins:0}]));
+  const OWNER_STORAGE_KEY="crazyOffice_owner_access_v2";
+  const OWNER_KEY_HASH="ee79e173c3b1deb1e6c93fd485bd803e18ee5139c3fdaa1d829a6fd4846112f7";
+  let OWNER_ACCESS=(()=>{try{return localStorage.getItem(OWNER_STORAGE_KEY)==="1";}catch(_){return false;}})();
+
+  async function verifyOwnerKeyFromUrl(){
     try{
-      const raw=localStorage.getItem(SAVE_KEY);
-      if(raw){
-        const saved=JSON.parse(raw);
-        gameState={...gameState,...saved,daily:{...gameState.daily,...(saved.daily||{})}};
+      const params=new URLSearchParams(location.search);
+      const key=params.get("ownerKey");
+      if(!key||OWNER_ACCESS)return;
+      const data=new TextEncoder().encode(key);
+      const digest=await crypto.subtle.digest("SHA-256",data);
+      const hex=[...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,"0")).join("");
+      if(hex===OWNER_KEY_HASH){
+        localStorage.setItem(OWNER_STORAGE_KEY,"1");
+        params.delete("ownerKey");
+        const qs=params.toString();
+        history.replaceState(null,"",location.pathname+(qs?"?"+qs:"")+location.hash);
+        location.reload();
       }
     }catch(_){}
+  }
+  verifyOwnerKeyFromUrl();
 
-    if(gameState.dailyDate!==todayKey()){
-      gameState.dailyDate=todayKey();
-      gameState.daily={
-        kill:{goal:2,progress:0,reward:30,claimed:false},
-        destroy:{goal:5,progress:0,reward:25,claimed:false},
-        block:{goal:3,progress:0,reward:25,claimed:false}
-      };
-      saveGame();
+  let gameState={coins:500,gems:15,kills:0,destroyed:0,blocks:0,selectedBat:"office",selectedSkin:"classic",selectedMap:"office",mode:"NORMAL",bats:{office:{count:1,level:1,xp:0}},skins:{classic:1},maps:{office:1},mapProgress:freshMapProgress(),crateHistory:[],tradeHistory:[],pendingDuplicate:null,duplicateQueue:[],dailyDate:todayKey(),daily:{kill:{goal:3,progress:0,coins:80,gems:1,claimed:false},destroy:{goal:8,progress:0,coins:70,gems:1,claimed:false},block:{goal:4,progress:0,coins:70,gems:1,claimed:false}},weeklyDate:weekKey(),weekly:{boss:{goal:3,progress:0,gems:12,claimed:false}},settings:{
+      batHand:"right",dominantHand:"right",menuHand:"left",previewSpin:true,npcDifficulty:"NORMAL",handReach:1.00,holsterEnabled:true,testMode:false,
+      musicVolume:.50,chatVolume:.80,sfxVolume:.75,
+      cameraMode:"FOLLOW",cameraDistance:1.8,cameraHeight:.35,cameraSmooth:.18,
+      cameraFov:72,cameraHud:true,cameraShake:true,cameraAspect:"16:9",
+      hapticStrength:.85,leftHanded:false,performanceMode:"PERFORMANCE",
+      comfortVignette:false,smoothTurn:true
+    },
+    favorites:[],
+    loadouts:["office",null,null],
+    partySize:1,
+    privateMatch:{friendlyFire:false,enemyCount:1,difficulty:"NORMAL",endless:false},
+    tutorialSeen:false,
+    potatoRGB:{r:6,g:3,b:1},
+    cosmetics:{},
+    equippedCosmetics:{head:null,face:null,chest:null,back:null},
+    collectionStats:{rareEnemies:0,miniBosses:0,bosses:0}
+  };
+  const batXpNeeded=l=>45+l*22;
+  const selectedBatData=()=>BAT_CATALOG.find(b=>b.id===gameState.selectedBat)||BAT_CATALOG[0];
+  function selectedBatState(){return gameState.bats[gameState.selectedBat]||(gameState.bats[gameState.selectedBat]={count:1,level:1,xp:0});}
+  function addBatXP(n){const s=selectedBatState();if(s.level>=50)return;s.xp+=Math.max(0,Math.round(n));while(s.level<50&&s.xp>=batXpNeeded(s.level)){s.xp-=batXpNeeded(s.level);s.level++;}if(s.level>=50)s.xp=0;saveGame();}
+
+  function applyPerformanceMode(){
+    if(gameState.settings.performanceMode==="PERFORMANCE"){
+      engine.setHardwareScalingLevel(1.20);
+      if(mirrorTex)mirrorTex.refreshRate=2;
+    }else{
+      engine.setHardwareScalingLevel(1.0);
+      if(mirrorTex)mirrorTex.refreshRate=1;
     }
   }
+  function updateStatsUI(){const e=document.getElementById("gameStats");if(!e)return;const b=selectedBatData(),s=selectedBatState(),p=gameState.mapProgress[gameState.selectedMap]||{level:1};e.innerHTML=`<b>${b.name} Lv.${s.level}</b><br>🪙 ${gameState.coins} &nbsp; 💎 ${gameState.gems}<br>${gameState.selectedMap.toUpperCase()} • LV ${p.level}/10 • ${gameState.mode}<br>KOs ${gameState.kills} &nbsp; Broken ${gameState.destroyed}`;}
+  function saveGame(){try{localStorage.setItem(SAVE_KEY,JSON.stringify(gameState));}catch(_){}updateStatsUI();}
+  let legacyPotatoColorToMigrate=null;
+  function loadGame(){try{const o=JSON.parse(localStorage.getItem("vrBatBrawl_v018")||"null");if(o){gameState.coins=Math.max(gameState.coins,o.coins||0);gameState.kills=o.kills||0;gameState.destroyed=o.destroyed||0;gameState.blocks=o.blocks||0;}const r=JSON.parse(localStorage.getItem(SAVE_KEY)||"null");if(r){if(!r.potatoRGB&&r.potatoColor)legacyPotatoColorToMigrate=r.potatoColor;gameState={...gameState,...r,bats:{...gameState.bats,...(r.bats||{})},skins:{...gameState.skins,...(r.skins||{})},maps:{...gameState.maps,...(r.maps||{})},mapProgress:{...freshMapProgress(),...(r.mapProgress||{})},daily:{...gameState.daily,...(r.daily||{})},weekly:{...gameState.weekly,...(r.weekly||{})},duplicateQueue:Array.isArray(r.duplicateQueue)?r.duplicateQueue:[],settings:{...gameState.settings,...(r.settings||{})},
+      favorites:Array.isArray(r.favorites)?r.favorites:[],
+      loadouts:Array.isArray(r.loadouts)?r.loadouts:["office",null,null],
+      privateMatch:{...gameState.privateMatch,...(r.privateMatch||{})},
+      potatoRGB:{...gameState.potatoRGB,...(r.potatoRGB||{})},
+      cosmetics:{...gameState.cosmetics,...(r.cosmetics||{})},
+      equippedCosmetics:{...gameState.equippedCosmetics,...(r.equippedCosmetics||{})},
+      collectionStats:{...gameState.collectionStats,...(r.collectionStats||{})}
+    };}}catch(_){}if(gameState.dailyDate!==todayKey()){gameState.dailyDate=todayKey();gameState.daily={kill:{goal:3,progress:0,coins:80,gems:1,claimed:false},destroy:{goal:8,progress:0,coins:70,gems:1,claimed:false},block:{goal:4,progress:0,coins:70,gems:1,claimed:false}};}if(gameState.weeklyDate!==weekKey()){gameState.weeklyDate=weekKey();gameState.weekly={boss:{goal:3,progress:0,gems:12,claimed:false}};}saveGame();}
+  function progressDaily(k,n=1){const d=gameState.daily[k];if(!d)return;d.progress=Math.min(d.goal,d.progress+n);if(d.progress>=d.goal&&!d.claimed){d.claimed=true;gameState.coins+=d.coins;gameState.gems+=d.gems;}saveGame();}
+  const currentMapProgress=()=>gameState.mapProgress[gameState.selectedMap]||(gameState.mapProgress[gameState.selectedMap]={level:1,waveKills:0,bossWins:0});
+  function recordKill(){runStats.kills++;gameState.kills++;gameState.coins+=18;addBatXP(26);const p=currentMapProgress();p.waveKills++;if(p.level>=10){p.bossWins++;gameState.weekly.boss.progress=Math.min(3,gameState.weekly.boss.progress+1);gameState.coins+=gameState.mode==="HARDCORE"?330:gameState.mode==="ENDLESS"?290:220;gameState.gems+=gameState.mode==="HARDCORE"?7:gameState.mode==="ENDLESS"?6:4;const bossBat=BAT_CATALOG.find(b=>b.boss===gameState.selectedMap);if(bossBat&&Math.random()<.12)awardItem("bat",bossBat.id,false);lastLobbyMessage=endRunSummary(true);gameState.collectionStats.bosses++;
+      p.level=gameState.mode==="ENDLESS"?10:1;p.waveKills=0;setMusicMode("normal");}else if(p.waveKills>=3){p.waveKills=0;p.level=Math.min(10,p.level+1);gameState.coins+=gameState.mode==="HARDCORE"?70:gameState.mode==="SURVIVAL"?55:45;if(p.level===10)gameState.gems+=2;}if(gameState.weekly.boss.progress>=3&&!gameState.weekly.boss.claimed){gameState.weekly.boss.claimed=true;gameState.gems+=gameState.weekly.boss.gems;}progressDaily("kill");saveGame();}
+  function recordDestruction(){gameState.destroyed++;gameState.coins+=3;progressDaily("destroy");saveGame();}
+  function recordBlock(){runStats.blocks++;gameState.blocks++;gameState.coins++;addBatXP(2);progressDaily("block");saveGame();}
+  function missionShort(){const d=gameState.daily;return `KO ${d.kill.progress}/${d.kill.goal} • BREAK ${d.destroy.progress}/${d.destroy.goal} • BLOCK ${d.block.progress}/${d.block.goal}`;}
+  function rollRarity(odds=FIXED_ODDS){let r=Math.random(),a=0;for(const [rarity,chance] of odds){a+=chance;if(r<=a)return rarity;}return "Mythic";}
+  function randomByRarity(c,r){const a=c.filter(x=>x.rarity===r);return a[Math.floor(Math.random()*a.length)]||c[0];}
+  function awardItem(type,id,forceKeep=false){const cat=type==="bat"?BAT_CATALOG:type==="skin"?SKIN_CATALOG:MAP_CATALOG,item=cat.find(x=>x.id===id);if(!item)return null;const store=type==="bat"?gameState.bats:type==="skin"?gameState.skins:gameState.maps,owned=!!store[id];if(owned&&!forceKeep){const dup={type,id,name:item.name,rarity:item.rarity};if(gameState.pendingDuplicate)gameState.duplicateQueue.push(dup);else gameState.pendingDuplicate=dup;saveGame();return {item,duplicate:true};}if(type==="bat"){if(!store[id])store[id]={count:0,level:1,xp:0};store[id].count++;}else store[id]=(store[id]||0)+1;saveGame();return {item,duplicate:owned};}
+  function resolveDuplicate(mode){const d=gameState.pendingDuplicate;if(!d)return;if(mode==="keep")awardItem(d.type,d.id,true);else{const [c,g]=REFUND[d.rarity]||REFUND.Common;if(mode==="coins")gameState.coins+=c;if(mode==="gems")gameState.gems+=g;}gameState.pendingDuplicate=null;if(gameState.duplicateQueue?.length)gameState.pendingDuplicate=gameState.duplicateQueue.shift();saveGame();}
+  function openCrate(type){if(gameState.pendingDuplicate)return {error:"CHOOSE DUPLICATE FIRST"};const costs={bat:[750,0],skin:[650,0],map:[1200,0],gem:[0,80]},cost=costs[type];if(!cost||gameState.coins<cost[0]||gameState.gems<cost[1])return {error:"NOT ENOUGH CURRENCY"};gameState.coins-=cost[0];gameState.gems-=cost[1];const gemOdds=[["Common",.10],["Uncommon",.18],["Rare",.26],["Epic",.24],["Legendary",.17],["Mythic",.05]],rarity=rollRarity(type==="gem"?gemOdds:FIXED_ODDS);let t=type;if(type==="gem")t=["bat","skin","map"][Math.floor(Math.random()*3)];const cat=t==="bat"?BAT_CATALOG:t==="skin"?SKIN_CATALOG:MAP_CATALOG,item=randomByRarity(cat,rarity),res=awardItem(t,item.id,false);gameState.crateHistory.unshift({type:t,name:item.name,rarity:item.rarity,time:Date.now()});gameState.crateHistory=gameState.crateHistory.slice(0,20);saveGame();return res||{item};}
+  const ownedBatIds=()=>BAT_CATALOG.filter(b=>gameState.bats[b.id]?.count>0).map(b=>b.id);
+  const ownedSkinIds=()=>SKIN_CATALOG.filter(s=>gameState.skins[s.id]>0).map(s=>s.id);
+  const ownedMapIds=()=>MAP_CATALOG.filter(m=>gameState.maps[m.id]>0).map(m=>m.id);
 
-  function checkLevelUps(){
-    let needed=xpNeeded(gameState.level);
-    while(gameState.xp>=needed){
-      gameState.xp-=needed;
-      gameState.level++;
-      gameState.coins+=20;
-      needed=xpNeeded(gameState.level);
+  function applyOwnerAccess(){
+    if(!OWNER_ACCESS)return;
+    gameState.coins=Math.max(gameState.coins||0,999999);
+    gameState.gems=Math.max(gameState.gems||0,999999);
+
+    gameState.bats=gameState.bats||{};
+    for(const b of BAT_CATALOG){
+      const s=gameState.bats[b.id]||{};
+      s.count=Math.max(1,s.count||0);s.level=50;s.xp=0;s.locked=false;
+      gameState.bats[b.id]=s;
     }
-  }
 
-  function addXP(amount){
-    gameState.xp+=Math.max(0,Math.round(amount));
-    checkLevelUps();
-    saveGame();
-  }
+    gameState.skins=gameState.skins||{};
+    for(const s of SKIN_CATALOG)gameState.skins[s.id]=Math.max(1,gameState.skins[s.id]||0);
 
-  function progressDaily(kind,amount=1){
-    const d=gameState.daily[kind];
-    if(!d) return;
-    d.progress=Math.min(d.goal,d.progress+amount);
-    if(d.progress>=d.goal && !d.claimed){
-      d.claimed=true;
-      gameState.coins+=d.reward;
-      gameState.xp+=15;
-      checkLevelUps();
+    gameState.maps=gameState.maps||{};
+    gameState.mapProgress=gameState.mapProgress||{};
+    for(const m of MAP_CATALOG){
+      gameState.maps[m.id]=Math.max(1,gameState.maps[m.id]||0);
+      const p=gameState.mapProgress[m.id]||{level:1,waveKills:0,bossWins:0};
+      p.unlocked=true;
+      gameState.mapProgress[m.id]=p;
     }
-    saveGame();
-  }
 
-  function recordKill(){
-    gameState.kills++;
-    gameState.coins+=12;
-    gameState.xp+=36;
-    checkLevelUps();
-    progressDaily("kill",1);
-  }
+    gameState.cosmetics=gameState.cosmetics||{};
+    for(const c of COSMETIC_CATALOG)gameState.cosmetics[c.id]=true;
 
-  function recordDestruction(){
-    gameState.destroyed++;
-    gameState.coins+=2;
-    gameState.xp+=2;
-    checkLevelUps();
-    progressDaily("destroy",1);
-  }
-
-  function recordBlock(){
-    gameState.blocks++;
-    gameState.xp+=3;
-    checkLevelUps();
-    progressDaily("block",1);
-  }
-
-  function missionShort(){
-    const d=gameState.daily;
-    return `KO ${d.kill.progress}/${d.kill.goal} • BREAK ${d.destroy.progress}/${d.destroy.goal} • BLOCK ${d.block.progress}/${d.block.goal}`;
+    // Owner access is local only; this flag is never sent in pose/lobby packets.
+    gameState.settings.testMode=false;
   }
 
   loadGame();
-  updateStatsUI();
-  const bootStats=document.getElementById("gameStats");
-  if(bootStats && bootStats.textContent==="Loading..."){
-    bootStats.textContent="Game loaded";
+  applyOwnerAccess();
+  if(OWNER_ACCESS)saveGame();
+  if(!gameState.bats?.[gameState.selectedBat]) gameState.selectedBat="office";
+  if(!gameState.skins?.[gameState.selectedSkin]) gameState.selectedSkin="classic";
+  if(!gameState.maps?.[gameState.selectedMap]) gameState.selectedMap="office";
+  if(!Array.isArray(gameState.duplicateQueue)) gameState.duplicateQueue=[];
+  gameState.duplicateQueue=gameState.duplicateQueue.slice(0,50);
+  gameState.coins=Math.max(0,Number.isFinite(gameState.coins)?Math.floor(gameState.coins):500);
+  gameState.gems=Math.max(0,Number.isFinite(gameState.gems)?Math.floor(gameState.gems):15);
+  gameState.settings=gameState.settings||{musicVolume:.50,chatVolume:.80,sfxVolume:.75};
+  for(const k of ["musicVolume","chatVolume","sfxVolume"]){
+    const fallback=k==="musicVolume"?.50:k==="chatVolume"?.80:.75;
+    const v=Number(gameState.settings[k]);
+    gameState.settings[k]=Math.max(0,Math.min(1,Number.isFinite(v)?v:fallback));
   }
+  const camModes=["1ST","2ND","3RD","FOLLOW","SELFIE","BOSS","FREE"];
+  if(!camModes.includes(gameState.settings.cameraMode))gameState.settings.cameraMode="FOLLOW";
+  gameState.settings.cameraDistance=Math.max(.6,Math.min(5,Number(gameState.settings.cameraDistance)||1.8));
+  gameState.settings.cameraHeight=Math.max(-.5,Math.min(2,Number(gameState.settings.cameraHeight)||.35));
+  gameState.settings.cameraSmooth=Math.max(.02,Math.min(.8,Number(gameState.settings.cameraSmooth)||.18));
+  gameState.settings.cameraFov=Math.max(45,Math.min(110,Number(gameState.settings.cameraFov)||72));
+  if(!["16:9","9:16","1:1"].includes(gameState.settings.cameraAspect))gameState.settings.cameraAspect="16:9";
+  {const hv=Number(gameState.settings.hapticStrength);gameState.settings.hapticStrength=Math.max(0,Math.min(1,Number.isFinite(hv)?hv:.85));}
+  if(!["PERFORMANCE","QUALITY"].includes(gameState.settings.performanceMode))gameState.settings.performanceMode="PERFORMANCE";
+  // Network sessions do not survive a page reload: always boot as solo.
+  gameState.partySize=1;
+  {
+    const legacy={
+      classicBrown:{r:6,g:3,b:1},goldenTan:{r:8,g:6,b:3},rose:{r:8,g:4,b:5},mint:{r:4,g:7,b:6},
+      iceBlue:{r:4,g:6,b:8},violet:{r:6,g:4,b:8},charcoal:{r:3,g:3,b:3},neonLime:{r:5,g:9,b:3},
+      sunset:{r:9,g:4,b:2},royal:{r:4,g:2,b:8}
+    };
+    if(legacyPotatoColorToMigrate)gameState.potatoRGB=legacy[legacyPotatoColorToMigrate]||{r:6,g:3,b:1};
+    else if(!gameState.potatoRGB||typeof gameState.potatoRGB!=="object")gameState.potatoRGB={r:6,g:3,b:1};
+  }
+  delete gameState.potatoColor;
+  delete gameState.ownedPotatoColors;
+  for(const k of ["r","g","b"]){
+    const n=Math.round(Number(gameState.potatoRGB[k]));
+    gameState.potatoRGB[k]=Number.isFinite(n)?Math.max(0,Math.min(9,n)):(k==="r"?6:k==="g"?3:1);
+  }
+  if(!gameState.cosmetics||typeof gameState.cosmetics!=="object")gameState.cosmetics={};
+  if(!gameState.equippedCosmetics||typeof gameState.equippedCosmetics!=="object")gameState.equippedCosmetics={head:null,face:null,chest:null,back:null};
+  if(!Array.isArray(gameState.favorites))gameState.favorites=[];
+  gameState.favorites=gameState.favorites.filter(id=>BAT_CATALOG.some(b=>b.id===id)).slice(0,50);
+  if(!Array.isArray(gameState.loadouts))gameState.loadouts=["office",null,null];
+  gameState.loadouts=gameState.loadouts.slice(0,3);
+
+  for(const b of BAT_CATALOG){
+    const s=gameState.bats[b.id];
+    if(!s) continue;
+    s.count=Math.max(1,Number.isFinite(s.count)?Math.floor(s.count):1);
+    s.level=Math.max(1,Math.min(50,Number.isFinite(s.level)?Math.floor(s.level):1));
+    s.xp=Math.max(0,Number.isFinite(s.xp)?Math.floor(s.xp):0);
+    if(s.level>=50)s.xp=0;
+    else s.xp=Math.min(s.xp,batXpNeeded(s.level)-1);
+  }
+  for(const m of MAP_CATALOG){
+    const p=gameState.mapProgress[m.id]||(gameState.mapProgress[m.id]={level:1,waveKills:0,bossWins:0});
+    p.level=Math.max(1,Math.min(10,Number.isFinite(p.level)?Math.floor(p.level):1));
+    p.waveKills=Math.max(0,Math.min(2,Number.isFinite(p.waveKills)?Math.floor(p.waveKills):0));
+    p.bossWins=Math.max(0,Number.isFinite(p.bossWins)?Math.floor(p.bossWins):0);
+  }
+  if(!["left","right"].includes(gameState.settings.batHand))gameState.settings.batHand="right";
+  if(!["left","right"].includes(gameState.settings.dominantHand))gameState.settings.dominantHand=gameState.settings.leftHanded?"left":"right";
+  gameState.settings.leftHanded=gameState.settings.dominantHand==="left";
+  if(!["left","right"].includes(gameState.settings.menuHand))gameState.settings.menuHand="left";
+  if(!["CHILL","NORMAL","CRAZY"].includes(gameState.settings.npcDifficulty))gameState.settings.npcDifficulty="NORMAL";
+  if(!Number.isFinite(Number(gameState.settings.handReach)))gameState.settings.handReach=1.00;
+  gameState.settings.handReach=BABYLON.Scalar.Clamp(Number(gameState.settings.handReach),.85,1.15);
+  gameState.settings.holsterEnabled=gameState.settings.holsterEnabled!==false;
+  saveGame();applyPerformanceMode();updateStatsUI();
+
+  function oppositeHand(side){return side==="left"?"right":"left";}
+  function batHandSide(){return gameState.settings.batHand==="left"?"left":"right";}
+  function dominantHandSide(){return gameState.settings.dominantHand==="left"?"left":"right";}
+  function menuHandSide(){return gameState.settings.menuHand==="right"?"right":"left";}
+  function batHand(){return hands[batHandSide()];}
+  function supportHand(){return hands[oppositeHand(batHandSide())];}
+  function menuHand(){return hands[menuHandSide()];}
+
+  function attachBatToSelectedHand(){
+    const h=batHand();
+    if(!h?.node){
+      batThrown=false;batRecalling=false;batThrowVel.set(0,0,0);
+      batTipLast=null;batBaseLast=null;
+      batRoot.parent=null;batRoot.setEnabled(false);
+      return false;
+    }
+    batRoot.parent=h.node;
+    batRoot.position.set(0,0,0);
+    batRoot.rotationQuaternion=BABYLON.Quaternion.Identity();
+    batRoot.setEnabled(true);
+    batThrown=false;batRecalling=false;batHolstered=false;batThrowVel.set(0,0,0);
+    batTipLast=null;batBaseLast=null;
+    return true;
+  }
+
+  function saveControlChoice(key,value){
+    if(!["left","right"].includes(value))return;
+    gameState.settings[key]=value;
+    if(key==="dominantHand")gameState.settings.leftHanded=value==="left";
+    saveGame();
+    if(key==="batHand")attachBatToSelectedHand();
+  }
+
+  // ------------------------------------------------------------
+  // Shared lobby: mirror exists ONLY here. Procedural map arenas keep Quest cost low.
+  // ------------------------------------------------------------
+
+  // ------------------------------------------------------------
+  // Inventory quality-of-life / shop
+  // ------------------------------------------------------------
+  function toggleFavoriteBat(id=gameState.selectedBat){
+    const i=gameState.favorites.indexOf(id);
+    if(i>=0)gameState.favorites.splice(i,1);else gameState.favorites.push(id);
+    saveGame();
+  }
+  function saveLoadout(slot){
+    if(slot<0||slot>2)return;
+    gameState.loadouts[slot]=gameState.selectedBat;saveGame();
+  }
+  function equipLoadout(slot){
+    const id=gameState.loadouts[slot];
+    if(id&&gameState.bats[id]){gameState.selectedBat=id;applyBatLook();saveGame();}
+  }
+  function dailyShopItems(){
+    const seed=Number(todayKey().replaceAll("-",""));
+    const arr=[...BAT_CATALOG].sort((a,b)=>((a.id.charCodeAt(0)*31+seed)%97)-((b.id.charCodeAt(0)*31+seed)%97));
+    return arr.slice(0,3);
+  }
+
+  const LOBBY_CENTER=new BABYLON.Vector3(30,0,-6),RUNTIME_CENTER=new BABYLON.Vector3(66,0,-6);
+  const lobbyFloorMat=mkMat("lobbyFloorMat","#202b38"),lobbyWallMat=mkMat("lobbyWallMat","#334155"),lobbyAccent=mkMat("lobbyAccent","#1688c8");
+  const lobbyMeshes=[];
+  function lobbyBox(n,p,s,m=lobbyWallMat,c=true){const x=box(n,p,s,m,c);lobbyMeshes.push(x);return x;}
+  lobbyBox("lobbyFloor",new BABYLON.Vector3(30,-.12,-6),new BABYLON.Vector3(14,.24,14),lobbyFloorMat,true);
+  lobbyBox("lobbyBack",new BABYLON.Vector3(30,2.1,-13),new BABYLON.Vector3(14,4.2,.2));
+  lobbyBox("lobbyLeft",new BABYLON.Vector3(23,2.1,-6),new BABYLON.Vector3(.2,4.2,14));
+  lobbyBox("lobbyRight",new BABYLON.Vector3(37,2.1,-6),new BABYLON.Vector3(.2,4.2,14));
+  lobbyBox("lobbyFrontL",new BABYLON.Vector3(25.3,2.1,1),new BABYLON.Vector3(4.6,4.2,.2));
+  lobbyBox("lobbyFrontR",new BABYLON.Vector3(34.7,2.1,1),new BABYLON.Vector3(4.6,4.2,.2));
+  [[25,-10.8,"BAT"],[28.35,-10.8,"SKIN"],[31.7,-10.8,"MAP"],[35,-10.8,"BUNDLE"]].forEach((d,i)=>lobbyBox("lobbyStand"+i,new BABYLON.Vector3(d[0],.55,d[1]),new BABYLON.Vector3(2.3,1.1,.7),i===3?darkTrimMat:lobbyAccent));
+
+  // Move the existing mirror out of the Office and into the lobby.
+  mirrorFrame.position.set(23.12,1.78,-6);mirror.position.set(23.015,1.78,-6);mirror.rotation.y=Math.PI/2;mirrorTex.mirrorPlane=new BABYLON.Plane(1,0,0,-23.0);
+
+  let gameMode="lobby",runtimeMapRoot=null,runtimeColliders=[],lobbySelection=0,lobbySub="main",lobbyIndex=0,lastLobbyMessage="";
+  let lobbyAvatarPreviewRoot=null,lobbyBatPreviewRoot=null,practiceDummy=null;
+  let practiceDummyHitFlash=0,practiceDummyLastHit=0,practiceDummyBestHit=0;
+  let batHolstered=false,holsterCooldown=0;
+  const lobbyMenu=["PLAY / MAPS","BAT CRATE — 750 COINS","SKIN CRATE — 650 COINS","MAP CRATE — 1200 COINS","GEM CRATE — 80 GEMS","BAT INVENTORY","SKIN INVENTORY","COSMETIC SHOP","POTATO COLOR MIXER","MODES — NORMAL/SURVIVAL/ENDLESS/HARDCORE","DAILY + WEEKLY MISSIONS","COLLECTION","TRADING — ONLINE BUILD","PUBLIC LOBBY • UP TO 8","BUNDLES — €4.99 / €8.00","AUDIO / CAMERA / TRAINING (also in menu)","CONTROL SETUP","AVATAR PREVIEW","BAT INSPECT","PRACTICE DUMMY","NPC DIFFICULTY","HAND CALIBRATION","BAT HOLSTER","GEM SHOP • REAL MONEY",...(OWNER_ACCESS?["OWNER VAULT / GIVEAWAY"]:[])];
+  const lobbyScreen=BABYLON.MeshBuilder.CreatePlane("lobbyScreen",{width:4.5,height:3.25},scene);lobbyScreen.position.set(30,2.15,-12.82);lobbyScreen.isPickable=false;
+  const lobbyGui=BABYLON.GUI.AdvancedDynamicTexture.CreateForMesh(lobbyScreen,1100,800),lobbyBg=new BABYLON.GUI.Rectangle();lobbyBg.background="#07111FEE";lobbyBg.color="#5dd6ff";lobbyBg.thickness=5;lobbyBg.cornerRadius=26;lobbyGui.addControl(lobbyBg);
+  const lobbyText=new BABYLON.GUI.TextBlock();lobbyText.color="white";lobbyText.fontSize=28;lobbyText.fontWeight="700";lobbyText.textHorizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;lobbyText.textVerticalAlignment=BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;lobbyText.paddingTop="25px";lobbyText.paddingLeft="30px";lobbyText.paddingRight="25px";lobbyText.textWrapping=true;lobbyBg.addControl(lobbyText);
+  const wrap=(i,n)=>n?((i%n)+n)%n:0;
+  function lobbyMain(){lobbyText.fontSize=OWNER_ACCESS?22:23;const b=selectedBatData(),s=selectedBatState();let t=`POTATO BRAWL LOBBY${OWNER_ACCESS?" • OWNER":""}
+🪙 ${gameState.coins}   💎 ${gameState.gems}\n${b.name} Lv.${s.level} • ${b.ability}\n\n`;lobbyMenu.forEach((x,i)=>t+=`${i===lobbySelection?"▶ ":"   "}${x}\n`);if(lastLobbyMessage)t+=`\n${lastLobbyMessage}`;return t;}
+  function lobbyMaps(){const ids=ownedMapIds(),id=ids[wrap(lobbyIndex,ids.length)]||"office",m=MAP_CATALOG.find(x=>x.id===id),p=gameState.mapProgress[id];return `MAP SELECT\n\n${lobbyIndex+1}/${ids.length} ${m.name}\n${m.rarity} • Level ${p.level}/10\nWave KOs ${p.waveKills}/3 • Boss wins ${p.bossWins}\nMode: ${gameState.mode}\n\nStick = change • Trigger = PLAY • Grip = back`;}
+  function lobbyBats(){const ids=ownedBatIds(),id=ids[wrap(lobbyIndex,ids.length)]||"office",b=BAT_CATALOG.find(x=>x.id===id),s=gameState.bats[id];return `BAT INVENTORY\n\n${b.name}\n${b.rarity}\nAbility: ${b.ability}\nLEVEL ${s.level}/50 • XP ${s.level>=50?"MAX":`${s.xp}/${batXpNeeded(s.level)}`}\nCopies: ${s.count}\n\nTrigger = equip • Stick = next • Grip = back`;}
+  function lobbySkins(){const ids=ownedSkinIds(),id=ids[wrap(lobbyIndex,ids.length)]||"classic",s=SKIN_CATALOG.find(x=>x.id===id);return `SKIN INVENTORY\n\n${s.name}\n${s.rarity}\nCopies: ${gameState.skins[id]}\n\nTrigger = equip • Stick = next • Grip = back`;}
+  function lobbyDup(){const d=gameState.pendingDuplicate,[c,g]=REFUND[d.rarity];const opts=["KEEP FOR TRADING",`COINS +${c}`,`GEMS +${g}`];return `DUPLICATE!\n\n${d.name} • ${d.rarity}\n\n${opts.map((x,i)=>(i===lobbyIndex?"▶ ":"   ")+x).join("\n")}\n\nStick = choose • Trigger = confirm`;}
+
+  let avatarHandprintMat=null,avatarFloatHandMat=null;
+  let voiceAnalyser=null,voiceData=null,voiceStream=null,voiceMicRequested=false;
+  let localVoiceActive=false,voiceHold=0;
+
+  async function initVoiceFaceMic(){
+    if(voiceMicRequested)return;
+    voiceMicRequested=true;
+    try{
+      if(!navigator.mediaDevices?.getUserMedia)return;
+      voiceStream=await navigator.mediaDevices.getUserMedia({
+        audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},
+        video:false
+      });
+      const AC=window.AudioContext||window.webkitAudioContext;
+      if(!AC)return;
+      const ac=new AC();
+      if(ac.state==="suspended")await ac.resume();
+      const src=ac.createMediaStreamSource(voiceStream);
+      voiceAnalyser=ac.createAnalyser();
+      voiceAnalyser.fftSize=256;
+      voiceAnalyser.smoothingTimeConstant=.35;
+      voiceData=new Uint8Array(voiceAnalyser.fftSize);
+      src.connect(voiceAnalyser);
+    }catch(_){
+      voiceAnalyser=null;voiceData=null;
+    }
+  }
+
+  function updateLocalVoiceFace(dt){
+    let rms=0;
+    if(voiceAnalyser&&voiceData){
+      voiceAnalyser.getByteTimeDomainData(voiceData);
+      let sum=0;
+      for(let i=0;i<voiceData.length;i++){
+        const v=(voiceData[i]-128)/128;
+        sum+=v*v;
+      }
+      rms=Math.sqrt(sum/voiceData.length);
+    }
+    if(rms>.025)voiceHold=.30;
+    else voiceHold=Math.max(0,voiceHold-dt);
+    localVoiceActive=voiceHold>0;
+  }
+
+  addEventListener("crazy-office-start-click",()=>{initVoiceFaceMic();},{once:true});
+
+  function ensureAvatarSlapMats(){
+    if(avatarHandprintMat&&avatarFloatHandMat)return;
+    const makeHandTex=(name,color)=>{
+      const tex=new BABYLON.DynamicTexture(name,{width:256,height:256},scene,true);
+      const ctx=tex.getContext();ctx.clearRect(0,0,256,256);
+      ctx.fillStyle="rgba(0,0,0,0)";
+      ctx.fillRect(0,0,256,256);
+      ctx.fillStyle=color;
+      ctx.beginPath();ctx.arc(128,154,48,0,Math.PI*2);ctx.fill();
+      const fingers=[
+        [70,42,24,82,-.10],[100,26,22,90,-.04],[128,18,22,96,0],[156,26,22,90,.04],[186,44,24,82,.10]
+      ];
+      for(const [x,y,w,h,rot] of fingers){
+        ctx.save();
+        ctx.translate(x+w*.5,y+h*.5);ctx.rotate(rot);
+        ctx.fillRect(-w*.5,-h*.5,w,h);
+        ctx.restore();
+      }
+      ctx.fillRect(86,148,34,58);
+      ctx.fillRect(132,148,34,58);
+      ctx.save();
+      ctx.translate(72,142);ctx.rotate(-.72);ctx.fillRect(-18,-12,58,24);ctx.restore();
+      tex.update();
+      return tex;
+    };
+
+    const handTex=makeHandTex("avatarFloatHandTex","#f7d1b4");
+    avatarFloatHandMat=new BABYLON.StandardMaterial("avatarFloatHandMat",scene);
+    avatarFloatHandMat.diffuseTexture=handTex;
+    avatarFloatHandMat.opacityTexture=handTex;
+    avatarFloatHandMat.emissiveColor=new BABYLON.Color3(.35,.24,.18);
+    avatarFloatHandMat.disableLighting=true;
+    avatarFloatHandMat.backFaceCulling=false;
+
+    const printTex=makeHandTex("avatarHandprintTex","rgba(230,45,45,.95)");
+    avatarHandprintMat=new BABYLON.StandardMaterial("avatarHandprintMat",scene);
+    avatarHandprintMat.diffuseTexture=printTex;
+    avatarHandprintMat.opacityTexture=printTex;
+    avatarHandprintMat.emissiveColor=new BABYLON.Color3(.65,.08,.08);
+    avatarHandprintMat.disableLighting=true;
+    avatarHandprintMat.backFaceCulling=false;
+  }
+
+  function funnyPotatoFaceParts(head,prefix){
+    const eyeWhite=mkMat(prefix+"EyeWhite","#f7f7f4");
+    const pupilMat=mkMat(prefix+"Pupil","#131313");
+    const browMat=mkMat(prefix+"Brow","#49342a");
+    const mouthMat=mkMat(prefix+"Mouth","#2a1711");
+    const cheekMat=mkMat(prefix+"Cheek","#f1a2a6");
+    const toothMat=mkMat(prefix+"Tooth","#fff8ef");
+    const noseMat=mkMat(prefix+"Nose","#d49b73");
+
+    const parts={eyes:[],pupils:[],brows:[],cheeks:[]};
+
+    for(const sx of [-1,1]){
+      const eye=BABYLON.MeshBuilder.CreateSphere(prefix+"Eye"+sx,{diameter:.115,segments:10},scene);
+      eye.parent=head;eye.position.set(.115*sx,.065,.255);eye.scaling.z=.46;eye.material=eyeWhite;
+      const pupil=BABYLON.MeshBuilder.CreateSphere(prefix+"Pupil"+sx,{diameter:.05,segments:8},scene);
+      pupil.parent=head;pupil.position.set(.13*sx,.045,.312);pupil.scaling.z=.28;pupil.material=pupilMat;
+      const brow=BABYLON.MeshBuilder.CreateBox(prefix+"Brow"+sx,{width:.12,height:.025,depth:.02},scene);
+      brow.parent=head;brow.position.set(.11*sx,.145,.245);brow.rotation.z=sx<0?-.18:.18;brow.material=browMat;
+      const cheek=BABYLON.MeshBuilder.CreateSphere(prefix+"Cheek"+sx,{diameter:.07,segments:8},scene);
+      cheek.parent=head;cheek.position.set(.16*sx,-.04,.245);cheek.scaling.z=.34;cheek.material=cheekMat;
+      parts.eyes.push(eye);parts.pupils.push(pupil);parts.brows.push(brow);parts.cheeks.push(cheek);
+    }
+
+    const nose=BABYLON.MeshBuilder.CreateSphere(prefix+"Nose",{diameter:.07,segments:8},scene);
+    nose.parent=head;nose.position.set(0,.00,.28);nose.scaling.z=.45;nose.material=noseMat;
+
+    const mouth=BABYLON.MeshBuilder.CreateTorus(prefix+"Smile",{diameter:.21,thickness:.028,tessellation:18},scene);
+    mouth.parent=head;mouth.position.set(0,-.06,.238);mouth.rotation.x=Math.PI*.5;mouth.rotation.z=Math.PI;mouth.scaling.y=.55;mouth.material=mouthMat;
+
+    const toothL=BABYLON.MeshBuilder.CreateBox(prefix+"ToothL",{width:.038,height:.05,depth:.018},scene);
+    toothL.parent=head;toothL.position.set(-.024,-.08,.253);toothL.material=toothMat;
+    const toothR=toothL.clone(prefix+"ToothR");toothR.parent=head;toothR.position.x=.024;
+
+    const tongue=BABYLON.MeshBuilder.CreateSphere(prefix+"Tongue",{diameter:.052,segments:8},scene);
+    tongue.parent=head;tongue.position.set(.008,-.112,.232);tongue.scaling.set(1,.72,.46);tongue.material=mkMat(prefix+"TongueMat","#f17a92");
+
+    parts.nose=nose;parts.mouth=mouth;parts.toothL=toothL;parts.toothR=toothR;parts.tongue=tongue;
+    return parts;
+  }
+
+  function addAvatarButtRig(root,bodyMat,prefix){
+    ensureAvatarSlapMats();
+    const buttL=BABYLON.MeshBuilder.CreateSphere(prefix+"ButtL",{diameter:.46,segments:12},scene);
+    buttL.parent=root;buttL.material=bodyMat;
+    const buttR=buttL.clone(prefix+"ButtR");buttR.parent=root;
+
+    const printPlane=BABYLON.MeshBuilder.CreatePlane(prefix+"ButtPrint",{width:.26,height:.26},scene);
+    printPlane.parent=root;printPlane.material=avatarHandprintMat;printPlane.isPickable=false;
+    printPlane.billboardMode=0;printPlane.rotation.x=.08;printPlane.setEnabled(false);
+
+    const floatHand=BABYLON.MeshBuilder.CreatePlane(prefix+"FloatHand",{width:.32,height:.32},scene);
+    floatHand.parent=root;floatHand.material=avatarFloatHandMat;floatHand.isPickable=false;
+    floatHand.billboardMode=BABYLON.Mesh.BILLBOARDMODE_ALL;floatHand.setEnabled(false);
+
+    return {buttL,buttR,printPlane,floatHand};
+  }
+
+  function avatarRearVector(av){
+    const q=av?.head?.rotationQuaternion||BABYLON.Quaternion.Identity();
+    let rear=BABYLON.Vector3.TransformNormal(new BABYLON.Vector3(0,0,-1),BABYLON.Matrix.FromQuaternion(q));
+    rear.y=0;if(rear.lengthSquared()<.0001)rear.set(0,0,-1);
+    return rear.normalize();
+  }
+
+  function avatarRightVector(av){
+    const q=av?.head?.rotationQuaternion||BABYLON.Quaternion.Identity();
+    let right=BABYLON.Vector3.TransformNormal(new BABYLON.Vector3(1,0,0),BABYLON.Matrix.FromQuaternion(q));
+    right.y=0;if(right.lengthSquared()<.0001)right.set(1,0,0);
+    return right.normalize();
+  }
+
+  function avatarButtCenter(av){
+    if(!av?.chest)return BABYLON.Vector3.Zero();
+    return av.chest.position.add(avatarRearVector(av).scale(.30)).add(new BABYLON.Vector3(0,.02,0));
+  }
+
+  function triggerAvatarSlapVisual(av,zone="butt",handSide="right",strength=.9,targetSide=null){
+    if(!av)return;
+    playImpactSound("slap",Math.max(.55,Math.min(1.2,strength)));
+    if(zone==="butt"){
+      av.slapPrintTimer=15;
+      av.slapFloatTimer=1;
+      av.slapPrintSide=handSide==="left"?-1:1;
+      av.buttJiggle=Math.max(av.buttJiggle||0,.28+Math.min(.42,strength*.30));
+      av.buttJiggleTimer=2.4;
+      if(av.printPlane){
+        av.printPlane.setEnabled(true);
+        const rear=avatarRearVector(av),right=avatarRightVector(av);
+        av.printPlane.position.copyFrom(avatarButtCenter(av).add(rear.scale(.17)).add(right.scale(.10*av.slapPrintSide)));
+        av.printPlane.lookAt(av.printPlane.position.add(rear));
+      }
+      if(av.floatHand){
+        av.floatHand.setEnabled(true);
+        const rear=avatarRearVector(av),right=avatarRightVector(av);
+        av.floatHand.position.copyFrom(avatarButtCenter(av).add(rear.scale(.08)).add(right.scale(.12*av.slapPrintSide)).add(new BABYLON.Vector3(0,.16,0)));
+      }
+    }else if(zone==="hand"){
+      av.handSlapTimer=.55;
+      av.handSlapSide=targetSide==="left"?"left":targetSide==="right"?"right":(handSide==="left"?"left":"right");
+      av.handSlapKick=.10+Math.min(.16,strength*.08);
+      av.faceReactTimer=.65;
+    }
+  }
+
+  function applySlapToTarget(targetId,zone="butt",handSide="right",strength=.9,targetSide=null){
+    let hitAvatar=null;
+    for(const [id,p] of net.players){
+      if(id===targetId&&p?.avatar){hitAvatar=p.avatar;break;}
+    }
+    if(hitAvatar&&hitAvatar.root?.isEnabled?.())triggerAvatarSlapVisual(hitAvatar,zone,handSide,strength,targetSide);
+    else if(targetId==="host"||targetId===net.playerId){
+      playImpactSound("slap",Math.max(.55,Math.min(1.2,strength)));
+      cameraImpactShake=Math.max(cameraImpactShake,zone==="butt"?.22:.14);
+      if(zone==="hand"&&targetSide&&hands[targetSide])pulse(hands[targetSide],.34,55);
+      else {pulse(hands.left,.14,32);pulse(hands.right,.14,32);}
+    }
+  }
+
+  function localSlapTarget(targetId,zone="butt",handSide="right",strength=.9,targetSide=null){
+    if(!net.connected||!targetId)return;
+    if(net.isHost){
+      applySlapToTarget(targetId,zone,handSide,strength,targetSide);
+      if(gameMode==="map")broadcastMatch({t:"slap",target:targetId,zone,side:handSide,targetSide,strength});
+      else broadcast({t:"slap",target:targetId,zone,side:handSide,targetSide,strength});
+    }else{
+      sendHost({t:"slap",target:targetId,zone,side:handSide,targetSide,strength});
+    }
+  }
+
+  function updateMultiplayerSlaps(dt){
+    if(gameMode!=="map"||!net.connected||playerDead||!isInXR())return;
+    for(const side of ["left","right"]){
+      const h=hands[side];
+      if(!h||!h.node)continue;
+      h.slapCooldown=Math.max(0,(h.slapCooldown||0)-dt);
+      const pos=calibratedHandWorld(h); if(!pos)continue;
+      if(!h.slapPrevPos)h.slapPrevPos=pos.clone();
+      const prevSlapPos=h.slapPrevPos.clone();
+      const vel=pos.subtract(prevSlapPos).scale(1/Math.max(dt,.016));
+      h.slapPrevWorld=prevSlapPos;
+      h.slapPrevPos.copyFrom(pos);
+      const speed=vel.length();
+      if(speed<1.05||h.slapCooldown>0)continue;
+
+      const guestNpcSlap=net.connected&&!net.isHost;
+      const npcZone=trySlapNpc(side,pos,speed,!guestNpcSlap);
+      if(npcZone){
+        h.slapCooldown=.32;
+        const slapStrength=Math.min(1.15,.45+speed*.12);
+        if(guestNpcSlap)sendHost({t:"npcSlap",zone:npcZone,side,strength:slapStrength});
+        else if(net.isHost&&net.connected)broadcastMatch({t:"npcSlap",zone:npcZone,side,strength:slapStrength,by:"host"});
+        pulse(h,npcZone==="butt"?.55:.36,npcZone==="butt"?70:48);
+        continue;
+      }
+
+      let chosen=null;
+      for(const [id,p] of net.players){
+        const av=p?.avatar;
+        if(!av||!av.root?.isEnabled?.()||p.dead)continue;
+
+        const handZoneRadius=.19,buttZoneRadius=.23;
+        const buttCenter=avatarButtCenter(av);
+        const dButt=BABYLON.Vector3.Distance(pos,buttCenter);
+        if(dButt<buttZoneRadius){
+          chosen={id,zone:"butt",score:dButt,av};
+          break;
+        }
+
+        const sweepFrom=h.slapPrevWorld||pos;
+        const dl=av.left?pointSegmentDistance(av.left.position,sweepFrom,pos):99;
+        const dr=av.right?pointSegmentDistance(av.right.position,sweepFrom,pos):99;
+        const bestHand=Math.min(dl,dr);
+        if(bestHand<handZoneRadius){
+          chosen={id,zone:"hand",score:bestHand,av,targetSide:dl<=dr?"left":"right"};
+        }
+      }
+
+      if(chosen){
+        h.slapCooldown=chosen.zone==="butt"?.38:.24;
+        const slapStrength=Math.min(1.15,.45+speed*.12);
+        localSlapTarget(chosen.id,chosen.zone,side,slapStrength,chosen.targetSide||null);
+        pulse(h,chosen.zone==="butt"?.55:.38,chosen.zone==="butt"?70:50);
+      }
+    }
+  }
+
+  const OWNER_GIFT_POSITION=new BABYLON.Vector3(31.4,.82,-7.15);
+  let ownerGiftState={active:false,id:null,dropId:0,ownerId:null,claimed:new Set()};
+  let ownerGiftRoot=null,ownerGiftSpin=0,ownerGiftPickupCooldown=0;
+
+  function disposeOwnerGiftVisual(){
+    try{ownerGiftRoot?.dispose?.(false,true);}catch(_){}
+    ownerGiftRoot=null;
+  }
+
+  function buildOwnerGiftVisual(id){
+    disposeOwnerGiftVisual();
+    if(!OWNER_COSMETIC_IDS.includes(id))return;
+    ownerGiftRoot=new BABYLON.TransformNode("ownerGiftRoot",scene);
+    ownerGiftRoot.position.copyFrom(OWNER_GIFT_POSITION);
+
+    const cyan=mkMat("giftCyan"+Math.random(),"#20e7ff");
+    const pink=mkMat("giftPink"+Math.random(),"#ff46df");
+    const gold=mkMat("giftGold"+Math.random(),"#ffd76a");
+    const dark=mkMat("giftDark"+Math.random(),"#080a14");
+    cyan.emissiveColor=BABYLON.Color3.FromHexString("#20e7ff").scale(.95);
+    pink.emissiveColor=BABYLON.Color3.FromHexString("#ff46df").scale(.85);
+    gold.emissiveColor=BABYLON.Color3.FromHexString("#ffd76a").scale(.6);
+
+    const pedestal=BABYLON.MeshBuilder.CreateCylinder("ownerGiftPedestal",{height:.18,diameterTop:.50,diameterBottom:.62,tessellation:20},scene);
+    pedestal.parent=ownerGiftRoot;pedestal.position.y=-.62;pedestal.material=dark;
+    const glowRing=BABYLON.MeshBuilder.CreateTorus("ownerGiftGlow",{diameter:.58,thickness:.035,tessellation:24},scene);
+    glowRing.parent=ownerGiftRoot;glowRing.position.y=-.50;glowRing.rotation.x=Math.PI/2;glowRing.material=cyan;
+
+    if(id==="ownerCrown"){
+      const ring=BABYLON.MeshBuilder.CreateTorus("giftCrown",{diameter:.34,thickness:.04,tessellation:20},scene);
+      ring.parent=ownerGiftRoot;ring.position.y=.10;ring.rotation.x=Math.PI/2;ring.material=cyan;
+      for(let i=0;i<6;i++){
+        const s=BABYLON.MeshBuilder.CreateCylinder("giftCrownSpike"+i,{height:.20,diameterTop:0,diameterBottom:.065,tessellation:6},scene);
+        const a=i/6*Math.PI*2;s.parent=ownerGiftRoot;s.position.set(Math.cos(a)*.12,.23,Math.sin(a)*.12);s.material=i%2?gold:pink;
+      }
+    }else if(id==="ownerVisor"){
+      const body=BABYLON.MeshBuilder.CreateBox("giftVisor",{width:.42,height:.11,depth:.06},scene);
+      body.parent=ownerGiftRoot;body.position.y=.10;body.material=dark;
+      const glow=BABYLON.MeshBuilder.CreateBox("giftVisorGlow",{width:.34,height:.03,depth:.015},scene);
+      glow.parent=ownerGiftRoot;glow.position.set(0,.10,.04);glow.material=pink;
+    }else if(id==="ownerCore"){
+      const ring=BABYLON.MeshBuilder.CreateTorus("giftCore",{diameter:.36,thickness:.045,tessellation:20},scene);
+      ring.parent=ownerGiftRoot;ring.position.y=.10;ring.rotation.x=Math.PI/2;ring.material=cyan;
+      const orb=BABYLON.MeshBuilder.CreateSphere("giftCoreOrb",{diameter:.14,segments:12},scene);
+      orb.parent=ownerGiftRoot;orb.position.y=.10;orb.material=pink;
+    }else if(id==="ownerCape"){
+      const cape=BABYLON.MeshBuilder.CreateBox("giftCape",{width:.42,height:.50,depth:.035},scene);
+      cape.parent=ownerGiftRoot;cape.position.y=.04;cape.material=dark;
+      const edge=BABYLON.MeshBuilder.CreateBox("giftCapeGlow",{width:.34,height:.035,depth:.012},scene);
+      edge.parent=ownerGiftRoot;edge.position.set(0,.12,.025);edge.material=pink;
+    }
+
+    ownerGiftRoot.setEnabled(gameMode==="lobby"&&(OWNER_ACCESS||!gameState.cosmetics?.[id]));
+  }
+
+  function syncOwnerGiftVisual(){
+    if(!ownerGiftState.active||!ownerGiftState.id){
+      disposeOwnerGiftVisual();return;
+    }
+    if(!ownerGiftRoot)buildOwnerGiftVisual(ownerGiftState.id);
+    ownerGiftRoot?.setEnabled?.(gameMode==="lobby"&&(OWNER_ACCESS||!gameState.cosmetics?.[ownerGiftState.id]));
+  }
+
+  function activateOwnerGiftDrop(id,ownerId){
+    if(!OWNER_COSMETIC_IDS.includes(id))return false;
+    ownerGiftState.active=true;
+    ownerGiftState.id=id;
+    ownerGiftState.dropId=(ownerGiftState.dropId||0)+1;
+    ownerGiftState.ownerId=ownerId;
+    ownerGiftState.claimed=new Set([ownerId]);
+    buildOwnerGiftVisual(id);
+    if(net.isHost)broadcast({t:"ownerGiftDrop",id,dropId:ownerGiftState.dropId,ownerId});
+    return true;
+  }
+
+  function clearOwnerGiftDrop(){
+    const dropId=ownerGiftState.dropId||0;
+    ownerGiftState={active:false,id:null,dropId,ownerId:null,claimed:new Set()};
+    disposeOwnerGiftVisual();
+    if(net.isHost)broadcast({t:"ownerGiftClear"});
+  }
+
+  function requestOwnerGiftDrop(id){
+    if(!OWNER_ACCESS||!OWNER_COSMETIC_IDS.includes(id)){
+      lastLobbyMessage="OWNER ONLY";return;
+    }
+    if(gameMode!=="lobby"){
+      lastLobbyMessage="DROP GIFTS IN THE PUBLIC LOBBY";return;
+    }
+    if(net.isHost){
+      activateOwnerGiftDrop(id,"host");
+      lastLobbyMessage=`GIFT DROP LIVE • ${COSMETIC_CATALOG.find(x=>x.id===id)?.name||id}`;
+    }else if(net.connected){
+      sendHost({t:"ownerGiftDropRequest",id});
+      lastLobbyMessage="OWNER GIFT DROP SENT";
+    }else{
+      lastLobbyMessage="CONNECTING TO PUBLIC LOBBY...";
+      ensurePublicLobby();
+    }
+  }
+
+  function grantOwnerGift(id){
+    if(!OWNER_COSMETIC_IDS.includes(id))return;
+    gameState.cosmetics=gameState.cosmetics||{};
+    gameState.cosmetics[id]=true;
+    saveGame();applyCosmetics();
+    lastLobbyMessage=`OWNER GIFT CLAIMED • ${COSMETIC_CATALOG.find(x=>x.id===id)?.name||id}`;
+    syncOwnerGiftVisual();
+    refreshLobby();
+  }
+
+  function updateOwnerGift(dt){
+    ownerGiftPickupCooldown=Math.max(0,ownerGiftPickupCooldown-dt);
+
+    if(ownerGiftRoot&&ownerGiftRoot.isEnabled()){
+      ownerGiftSpin+=dt;
+      ownerGiftRoot.rotation.y=ownerGiftSpin*.9;
+      ownerGiftRoot.position.y=OWNER_GIFT_POSITION.y+Math.sin(ownerGiftSpin*2.1)*.06;
+    }
+
+    if(gameMode!=="lobby"||!ownerGiftState.active||!ownerGiftState.id||gameState.cosmetics?.[ownerGiftState.id]||ownerGiftPickupCooldown>0)return;
+
+    const handPositions=[hands.left,hands.right]
+      .filter(h=>h?.node)
+      .map(h=>calibratedHandWorld(h))
+      .filter(Boolean);
+
+    if(!handPositions.some(p=>BABYLON.Vector3.Distance(p,OWNER_GIFT_POSITION)<.42))return;
+
+    ownerGiftPickupCooldown=1.0;
+    if(net.isHost){
+      if(!ownerGiftState.claimed.has("host")){
+        ownerGiftState.claimed.add("host");
+        grantOwnerGift(ownerGiftState.id);
+      }
+    }else if(net.connected){
+      sendHost({t:"ownerGiftClaim",dropId:ownerGiftState.dropId});
+    }
+  }
+
+  function lobbyOwnerVault(){
+    const id=OWNER_COSMETIC_IDS[wrap(lobbyIndex,OWNER_COSMETIC_IDS.length)];
+    const c=COSMETIC_CATALOG.find(x=>x.id===id);
+    return `OWNER VAULT • GIVEAWAY\n\n${lobbyIndex+1}/${OWNER_COSMETIC_IDS.length} ${c.name}\n${c.rarity} • ${c.slot.toUpperCase()}\n\nTrigger = DROP THIS GIFT IN THE PUBLIC LOBBY\nPlayers can physically grab it from the glowing pedestal.\nThey keep it in their inventory, but cannot gift it onward.\n\nCURRENT DROP: ${ownerGiftState.active?(COSMETIC_CATALOG.find(x=>x.id===ownerGiftState.id)?.name||ownerGiftState.id):"NONE"}\nPUBLIC LOBBY: ${netPlayerCount()}/8\n\nStick = choose gift • Grip = back`;
+  }
+
+  function updateCosmeticPreview(){
+    applyCosmetics();
+    if(lobbySub==="cosmetics"){
+      const c=COSMETIC_CATALOG[wrap(lobbyIndex,COSMETIC_CATALOG.length)];
+      previewCosmeticId=c?.id||null;
+      if(c&&!gameState.cosmetics[c.id]){
+        const equippedSameSlot=gameState.equippedCosmetics?.[c.slot];
+        if(equippedSameSlot&&cosmeticMeshes[equippedSameSlot])cosmeticMeshes[equippedSameSlot].setEnabled(false);
+        const m=makeCosmeticMesh(c.id);m?.setEnabled?.(true);
+      }
+    }else{
+      previewCosmeticId=null;
+    }
+  }
+
+  function lobbyCosmetics(){
+    updateCosmeticPreview();
+    const c=COSMETIC_CATALOG[wrap(lobbyIndex,COSMETIC_CATALOG.length)];
+    const owned=!!gameState.cosmetics[c.id];
+    const equipped=gameState.equippedCosmetics?.[c.slot]===c.id;
+    const price=c.type==="gem"?`${c.price} GEMS`:c.type==="owner"?"OWNER GIFT ONLY":c.price;
+    const action=owned?(equipped?"EQUIPPED • Trigger = UNEQUIP":"OWNED • Trigger = EQUIP"):
+      c.type==="gem"?"Trigger = BUY":
+      c.type==="owner"?"Find the OWNER in a public lobby":"PREMIUM • Meta purchase later";
+    return `COSMETIC SHOP
+
+${lobbyIndex+1}/${COSMETIC_CATALOG.length} ${c.name}
+${c.rarity} • ${c.slot.toUpperCase()}
+PRICE: ${price}
+
+${action}
+
+💎 ${gameState.gems}
+Stick = browse • Trigger = select • Grip = back`;
+  }
+
+  function lobbyPotatoColors(){
+    const rows=[
+      `RED:   ${gameState.potatoRGB.r}`,
+      `GREEN: ${gameState.potatoRGB.g}`,
+      `BLUE:  ${gameState.potatoRGB.b}`
+    ];
+    let t=`POTATO COLOR MIXER\n\nCOLOR CODE: ${gameState.potatoRGB.r} ${gameState.potatoRGB.g} ${gameState.potatoRGB.b}\n${potatoRgbHex(gameState.potatoRGB).toUpperCase()}\n\n`;
+    rows.forEach((x,i)=>t+=`${i===lobbyIndex?"▶ ":"   "}${x}\n`);
+    t+=`\nStick = choose R/G/B\nTrigger = +1 • 9 wraps to 0\nGrip = back\n\nMix all 3 numbers to make your own color.`;
+    return t;
+  }
+
+  function enableFreeTestMode(){
+    if(!gameState.testModeBackup){
+      gameState.testModeBackup=JSON.parse(JSON.stringify({
+        coins:gameState.coins||0,gems:gameState.gems||0,
+        bats:gameState.bats||{},skins:gameState.skins||{},
+        maps:gameState.maps||{},mapProgress:gameState.mapProgress||{},cosmetics:gameState.cosmetics||{},
+        selectedBat:gameState.selectedBat,selectedSkin:gameState.selectedSkin,
+        equippedCosmetics:gameState.equippedCosmetics||{}
+      }));
+    }
+    gameState.settings.testMode=true;
+
+    // Plenty of test currency.
+    gameState.coins=Math.max(gameState.coins||0,999999);
+    gameState.gems=Math.max(gameState.gems||0,999999);
+
+    // Unlock every bat with at least one copy and max test level.
+    gameState.bats=gameState.bats||{};
+    for(const b of BAT_CATALOG){
+      const s=gameState.bats[b.id]||{};
+      s.count=Math.max(1,s.count||0);
+      s.level=50;
+      s.locked=false;
+      gameState.bats[b.id]=s;
+    }
+
+    // Unlock all skins.
+    gameState.skins=gameState.skins||{};
+    for(const s of SKIN_CATALOG)gameState.skins[s.id]=true;
+
+    // Unlock every map/progress entry.
+    gameState.maps=gameState.maps||{};
+    gameState.mapProgress=gameState.mapProgress||{};
+    for(const m of MAP_CATALOG){
+      gameState.maps[m.id]=Math.max(1,gameState.maps[m.id]||0);
+      const p=gameState.mapProgress[m.id]||{};
+      p.unlocked=true;
+      p.level=Math.max(1,p.level||1);
+      gameState.mapProgress[m.id]=p;
+    }
+
+    // Unlock cosmetics, including premium ones, in TEST MODE only.
+    gameState.cosmetics=gameState.cosmetics||{};
+    for(const c of COSMETIC_CATALOG)gameState.cosmetics[c.id]=true;
+
+    saveGame();
+    lastLobbyMessage="TEST MODE ON • EVERYTHING UNLOCKED";
+  }
+
+  function disableFreeTestMode(){
+    gameState.settings.testMode=false;
+    if(gameState.testModeBackup){
+      const b=gameState.testModeBackup;
+      gameState.coins=b.coins??gameState.coins;gameState.gems=b.gems??gameState.gems;
+      gameState.bats=b.bats||gameState.bats;gameState.skins=b.skins||gameState.skins;
+      gameState.maps=b.maps||gameState.maps;gameState.mapProgress=b.mapProgress||gameState.mapProgress;gameState.cosmetics=b.cosmetics||gameState.cosmetics;
+      gameState.selectedBat=b.selectedBat||"office";gameState.selectedSkin=b.selectedSkin||"classic";
+      gameState.equippedCosmetics=b.equippedCosmetics||{};
+      delete gameState.testModeBackup;
+      applyBatLook();applySkinLook();applyCosmetics();
+    }
+    saveGame();
+    lastLobbyMessage="TEST MODE OFF • ORIGINAL INVENTORY RESTORED";
+  }
+
+  function lobbyTestMode(){
+    return `FREE TEST MODE
+
+${gameState.settings.testMode?"ON ✓ — TEST EVERYTHING":"OFF"}
+
+When ON:
+• ALL BATS • LEVEL 50
+• ALL SKINS
+• ALL MAPS
+• ALL COSMETICS
+• 999999 COINS + GEMS
+• PREMIUM ITEMS FREE FOR TESTING
+
+This is TESTING ONLY — no real purchase happens.
+
+Trigger = toggle
+Grip = back`;
+  }
+
+  function requestPaidProduct(product){
+    if(!product)return false;
+    if(OWNER_ACCESS){
+      lastLobbyMessage="OWNER MODE • PURCHASE NOT NEEDED";
+      return false;
+    }
+    lastLobbyMessage=`${product.price} • META IAP NOT CONNECTED IN WEBXR`;
+    return false;
+  }
+
+  function lobbyGemShop(){
+    const p=GEM_PACKS[wrap(lobbyIndex,GEM_PACKS.length)];
+    return `GEM SHOP • REAL MONEY\n\n${lobbyIndex+1}/${GEM_PACKS.length} ${p.name}\n💎 ${p.gems} GEMS\nPRICE: ${p.price}\n\nTrigger = BUY\n\nWEBXR TEST BUILD:\nMeta IAP is not connected yet, so this button will NOT charge money or grant gems.\nThe product SKU is ready for a native Meta Store build.${lastLobbyMessage?`\n\n${lastLobbyMessage}`:""}\n\nStick = next • Grip = back`;
+  }
+
+  function lobbyBundles(){
+    const b=BUNDLES[wrap(lobbyIndex,BUNDLES.length)];
+    const bat=BAT_CATALOG.find(x=>x.id===b.bat),skin=SKIN_CATALOG.find(x=>x.id===b.skin);
+    const cosmetic=b.cosmetic?COSMETIC_CATALOG.find(x=>x.id===b.cosmetic):null;
+    const premiumLine=b.price==="€8.00"?"PREMIUM COSMETIC BUNDLE\n":"";
+    return `BUNDLE\n\n${b.name} — ${b.price}\n${bat?.name||b.bat}\n${skin?.name||b.skin}${cosmetic?`\nCOSMETIC: ${cosmetic.name}`:""}\n🪙 ${b.coins}  💎 ${b.gems}\n\nFixed contents — no paid random loot.\n${premiumLine}\nTrigger = BUY\nMeta IAP is not connected in this WebXR build.${lastLobbyMessage?`\n\n${lastLobbyMessage}`:""}\n\nStick = next • Grip = back`;
+  }
+
+  function disposePack2Node(n){try{n?.dispose?.(false,true);}catch(_){}}
+
+  function buildAvatarPreview(){
+    disposePack2Node(lobbyAvatarPreviewRoot);
+    lobbyAvatarPreviewRoot=new BABYLON.TransformNode("lobbyAvatarPreviewRoot",scene);
+    lobbyAvatarPreviewRoot.position.set(32.4,.05,-9.0);
+
+    const bodyMat=mkMat("previewBodyMat"+Math.random(),potatoRgbHex(gameState.potatoRGB));
+    const darkMat=mkMat("previewDarkMat"+Math.random(),"#4b3428");
+
+    const body=BABYLON.MeshBuilder.CreateSphere("previewBody",{diameter:1.0,segments:16},scene);
+    body.parent=lobbyAvatarPreviewRoot;body.position.y=.95;body.scaling.set(.78,1.02,.68);body.material=bodyMat;
+
+    const head=BABYLON.MeshBuilder.CreateSphere("previewHead",{diameter:.60,segments:14},scene);
+    head.parent=lobbyAvatarPreviewRoot;head.position.set(0,1.58,.02);head.material=bodyMat;
+
+    funnyPotatoFaceParts(head,"previewFunny");
+
+    for(const sx of [-1,1]){
+      const hand=BABYLON.MeshBuilder.CreateSphere("previewHand"+sx,{diameter:.20,segments:10},scene);
+      hand.parent=lobbyAvatarPreviewRoot;hand.position.set(.54*sx,1.04,.02);hand.material=bodyMat;
+      const foot=BABYLON.MeshBuilder.CreateSphere("previewFoot"+sx,{diameter:.18,segments:10},scene);
+      foot.parent=lobbyAvatarPreviewRoot;foot.position.set(.18*sx,.34,.05);foot.scaling.z=.72;foot.material=darkMat;
+    }
+
+    const butt=addAvatarButtRig(lobbyAvatarPreviewRoot,bodyMat,"preview");
+    butt.buttL.position.set(-.17,.70,-.34);
+    butt.buttR.position.set(.17,.70,-.34);
+    butt.buttL.scaling.set(1.04,1.02,1.22);
+    butt.buttR.scaling.set(1.04,1.02,1.22);
+
+    const eq=gameState.equippedCosmetics||{};
+    if(eq.head){
+      const hat=BABYLON.MeshBuilder.CreateCylinder("previewHat",{diameterTop:.22,diameterBottom:.34,height:.18,tessellation:16},scene);
+      hat.parent=head;hat.position.set(0,.34,0);hat.material=darkMat;
+      const brim=BABYLON.MeshBuilder.CreateCylinder("previewHatBrim",{diameter:.48,height:.03,tessellation:18},scene);
+      brim.parent=head;brim.position.set(0,.26,0);brim.material=darkMat;
+    }
+    if(eq.face){
+      const frame=mkMat("previewGlassFrame","#101010");
+      for(const sx of [-1,1]){
+        const lens=BABYLON.MeshBuilder.CreateTorus("previewLens"+sx,{diameter:.17,thickness:.018,tessellation:18},scene);
+        lens.parent=head;lens.position.set(.12*sx,.055,.27);lens.rotation.x=Math.PI*.5;lens.material=frame;
+      }
+      const bridge=BABYLON.MeshBuilder.CreateBox("previewGlassBridge",{width:.06,height:.02,depth:.02},scene);
+      bridge.parent=head;bridge.position.set(0,.055,.27);bridge.material=frame;
+    }
+    if(eq.chest){
+      const tie=BABYLON.MeshBuilder.CreateCylinder("previewTie",{diameterTop:.05,diameterBottom:.10,height:.26,tessellation:4},scene);
+      tie.parent=lobbyAvatarPreviewRoot;tie.position.set(0,1.14,.34);tie.rotation.z=Math.PI*.25;tie.material=darkMat;
+    }
+    if(eq.back){
+      const backpack=BABYLON.MeshBuilder.CreateBox("previewBackpack",{width:.36,height:.42,depth:.16},scene);
+      backpack.parent=lobbyAvatarPreviewRoot;backpack.position.set(0,.96,-.39);backpack.material=darkMat;
+    }
+
+    const bat=selectedBatData();
+    const batMesh=BABYLON.MeshBuilder.CreateCylinder("previewBat"+Math.random(),{height:.92,diameterTop:.055,diameterBottom:.10,tessellation:12},scene);
+    batMesh.parent=lobbyAvatarPreviewRoot;
+    const side=batHandSide()==="left"?-1:1;
+    batMesh.position.set(.58*side,1.06,.02);batMesh.rotation.z=side>0?-.22:.22;
+    batMesh.material=mkMat("previewBatMat"+Math.random(),bat.color||"#8b5a2b");
+  }
+
+  function showAvatarPreview(on){
+    if(!on){lobbyAvatarPreviewRoot?.setEnabled?.(false);return;}
+    buildAvatarPreview();
+    lobbyAvatarPreviewRoot.setEnabled(true);
+  }
+
+  function lobbyAvatarPreview(){
+    showAvatarPreview(true);
+    const skin=SKIN_CATALOG.find(x=>x.id===gameState.selectedSkin)||SKIN_CATALOG[0];
+    return `AVATAR PREVIEW\n\nRGB: ${gameState.potatoRGB.r} ${gameState.potatoRGB.g} ${gameState.potatoRGB.b}\nSKIN: ${skin.name}\nBAT: ${selectedBatData().name}\nBAT HAND: ${batHandSide().toUpperCase()}\n\nEquipped cosmetics are shown.\nTrigger = spin ON/OFF\nGrip = back`;
+  }
+
+  function buildBatPreview(){
+    disposePack2Node(lobbyBatPreviewRoot);
+    lobbyBatPreviewRoot=new BABYLON.TransformNode("lobbyBatPreviewRoot",scene);
+    lobbyBatPreviewRoot.position.set(29.0,1.05,-9.0);
+    const bat=selectedBatData();
+    const mesh=BABYLON.MeshBuilder.CreateCylinder("inspectBatMesh",{height:1.22,diameterTop:.06,diameterBottom:.13,tessellation:16},scene);
+    mesh.parent=lobbyBatPreviewRoot;mesh.rotation.z=Math.PI/2;
+    mesh.material=mkMat("inspectBatMat"+Math.random(),bat.color||"#8b5a2b");
+  }
+
+  function showBatPreview(on){
+    if(!on){lobbyBatPreviewRoot?.setEnabled?.(false);return;}
+    buildBatPreview();
+    lobbyBatPreviewRoot.setEnabled(true);
+  }
+
+  function lobbyBatInspect(){
+    showBatPreview(true);
+    const bat=selectedBatData(),state=selectedBatState();
+    return `BAT INSPECT\n\n${bat.name}\n${bat.rarity} • LEVEL ${state.level}/50\nABILITY: ${bat.ability||"Impact"}\nCOPIES: ${state.count||1}\n\nTrigger = next owned bat\nGrip = back`;
+  }
+
+  function buildPracticeDummy(){
+    disposePack2Node(practiceDummy?.root);
+    const root=new BABYLON.TransformNode("practiceDummyRoot",scene);
+    root.position.set(26.7,0,-8.5);
+    const normal=mkMat("practiceDummyNormal","#d39a65");
+    const flash=mkMat("practiceDummyFlash","#fff0a0");
+
+    const body=BABYLON.MeshBuilder.CreateCapsule("practiceDummyBody",{height:1.15,radius:.27,tessellation:14},scene);
+    body.parent=root;body.position.y=.86;body.material=normal;
+    const head=BABYLON.MeshBuilder.CreateSphere("practiceDummyHead",{diameter:.50,segments:14},scene);
+    head.parent=root;head.position.y=1.62;head.material=normal;
+    const base=BABYLON.MeshBuilder.CreateCylinder("practiceDummyBase",{height:.14,diameter:.76,tessellation:16},scene);
+    base.parent=root;base.position.y=.07;base.material=darkTrimMat;
+
+    practiceDummy={root,body,head,normal,flash};
+    practiceDummyHitFlash=0;
+    practiceDummyLastHit=0;
+  }
+
+  function showPracticeDummy(on){
+    if(!on){practiceDummy?.root?.setEnabled?.(false);return;}
+    if(!practiceDummy?.root||practiceDummy.root.isDisposed?.())buildPracticeDummy();
+    practiceDummy.root.setEnabled(true);
+  }
+
+  function lobbyPractice(){
+    showPracticeDummy(true);
+    return `PRACTICE DUMMY\n\nLAST HIT: ${practiceDummyLastHit.toFixed(1)} m/s\nBEST HIT: ${practiceDummyBestHit.toFixed(1)} m/s\n\nHit the dummy to test swing power.\nGrip = back`;
+  }
+
+  function hitPracticeDummySweep(prevTip,tip,base,speed){
+    if(gameMode!=="lobby"||lobbySub!=="practice"||!practiceDummy?.root?.isEnabled?.())return false;
+    const targets=[
+      practiceDummy.root.position.add(new BABYLON.Vector3(0,1.62,0)),
+      practiceDummy.root.position.add(new BABYLON.Vector3(0,.95,0))
+    ];
+    for(const target of targets){
+      const d=Math.min(pointSegmentDistance(target,prevTip,tip),pointSegmentDistance(target,base,tip));
+      if(d<.34){
+        practiceDummyLastHit=Math.max(0,speed);
+        practiceDummyBestHit=Math.max(practiceDummyBestHit,practiceDummyLastHit);
+        practiceDummyHitFlash=.14;
+        practiceDummy.body.material=practiceDummy.flash;
+        practiceDummy.head.material=practiceDummy.flash;
+        pulse(batHand(),Math.min(1,.2+speed*.08),40+Math.min(80,speed*6));
+        playImpactSound("body",Math.min(1,.35+speed*.05));
+        lastLobbyMessage=`HIT ${practiceDummyLastHit.toFixed(1)} m/s`;
+        refreshLobby();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function updatePack2(dt){
+    if(lobbyAvatarPreviewRoot?.isEnabled?.()&&gameState.settings.previewSpin!==false)lobbyAvatarPreviewRoot.rotation.y+=dt*.55;
+    if(lobbyBatPreviewRoot?.isEnabled?.())lobbyBatPreviewRoot.rotation.y+=dt*.72;
+    if(practiceDummy){
+      practiceDummyHitFlash=Math.max(0,practiceDummyHitFlash-dt);
+      if(practiceDummyHitFlash<=0){
+        practiceDummy.body.material=practiceDummy.normal;
+        practiceDummy.head.material=practiceDummy.normal;
+      }
+    }
+  }
+
+  function hidePack2(){
+    showAvatarPreview(false);showBatPreview(false);showPracticeDummy(false);
+  }
+
+  function npcDifficultyMul(){
+    const d=gameState.settings.npcDifficulty||"NORMAL";
+    if(d==="CHILL")return {speed:.82,attack:.76,damage:.72,anger:.75};
+    if(d==="CRAZY")return {speed:1.18,attack:1.22,damage:1.20,anger:1.30};
+    return {speed:1,attack:1,damage:1,anger:1};
+  }
+
+  function lobbyDifficulty(){
+    const d=gameState.settings.npcDifficulty||"NORMAL";
+    return `NPC DIFFICULTY\n\n▶ ${d}\n\nCHILL = slower + easier\nNORMAL = balanced\nCRAZY = faster + harder hits\n\nTrigger = next\nGrip = back`;
+  }
+
+  function cycleNpcDifficulty(){
+    const vals=["CHILL","NORMAL","CRAZY"];
+    const cur=gameState.settings.npcDifficulty||"NORMAL";
+    gameState.settings.npcDifficulty=vals[(vals.indexOf(cur)+1)%vals.length];
+    saveGame();
+    if(net.isHost&&net.connected){resetNetworkReady();broadcast(currentLobbyState());}
+  }
+
+  function lobbyHandCalibration(){
+    const pct=Math.round((gameState.settings.handReach||1)*100);
+    return `HAND CALIBRATION\n\nREACH SCALE: ${pct}%\n\nTrigger = +5%\nRange: 85%–115%\n\nUse this if your virtual reach feels too short or too long.\nGrip = back`;
+  }
+
+  function cycleHandCalibration(){
+    let v=Number(gameState.settings.handReach)||1;
+    v=Math.round((v+.05)*100)/100;
+    if(v>1.15)v=.85;
+    gameState.settings.handReach=v;saveGame();
+  }
+
+  function lobbyHolster(){
+    return `BAT HOLSTER\n\n${gameState.settings.holsterEnabled?"ENABLED":"DISABLED"}\n\nPress the bat-hand secondary button near your body to holster/draw.\nTrigger = toggle setting\nGrip = back`;
+  }
+
+  function controlRowsText(includeStart=false){
+    const rows=[
+      `BAT HAND: ${batHandSide().toUpperCase()}`,
+      `DOMINANT HAND: ${dominantHandSide().toUpperCase()}`,
+      `MENU HAND: ${menuHandSide().toUpperCase()}`
+    ];
+    if(includeStart)rows.push("START MATCH");
+    return rows;
+  }
+
+  function lobbyControls(){
+    const rows=controlRowsText(false);
+    let t=`CONTROL SETUP\n\n`;
+    rows.forEach((x,i)=>t+=`${i===lobbyIndex?"▶ ":"   "}${x}\n`);
+    t+=`\nStick = choose • Trigger = switch\nGrip = back\n\nSaved automatically.`;
+    return t;
+  }
+
+  function lobbyPrematch(){
+    const rows=controlRowsText(true);
+    let t=`PRE-MATCH SETUP\n\nMAP: ${gameState.selectedMap.toUpperCase()}\nMODE: ${gameState.mode}\nDIFFICULTY: ${gameState.settings.npcDifficulty}\n\n`;
+    rows.forEach((x,i)=>t+=`${i===lobbyIndex?"▶ ":"   "}${x}\n`);
+    t+=`\nChoose your hands, then START MATCH.\nGrip = back`;
+    return t;
+  }
+
+  function lobbySettings(){
+    const opts=[
+      `MUSIC: ${volumePct(gameState.settings.musicVolume)}`,
+      `CHAT: ${volumePct(gameState.settings.chatVolume)}`,
+      `SOUND EFFECTS: ${volumePct(gameState.settings.sfxVolume)}`,
+      `CAMERA: ${cameraHeld?"ON":"OFF"}`,
+      "TRAINING AREA"
+    ];
+    return `AUDIO / CAMERA\n\n${opts.map((x,j)=>(j===lobbyIndex?"▶ ":"   ")+x).join("\n")}\n\nStick = choose • Trigger = change/select • Grip = back`;
+  }
+  function lobbyOnline(kind){
+    if(kind.startsWith("MULTIPLAYER"))return lobbyMultiplayer();
+    return `${kind}\n\nTrading still needs account/backend support.\n\nGrip = back`;
+  }
+
+  // ------------------------------------------------------------
+  // REAL 1–4 PLAYER P2P TEST MULTIPLAYER
+  // Host accepts up to 3 guests. Guests connect only to host.
+  // Host is authoritative for NPC/map progression and relays remote poses.
+  // ------------------------------------------------------------
+  const net={
+    peer:null,connections:new Map(),hostConn:null,connected:false,isHost:false,code:"",
+    status:"OFFLINE",ready:false,lastSend:0,lastRecv:0,
+    playerId:"p"+Math.random().toString(36).slice(2,8),
+    players:new Map(),maxPlayers:8,reviveCooldown:0,hitCooldown:0,lastLobbySync:0,matchMembers:new Set(),
+    publicMode:false,publicSlot:-1,publicSearching:false,publicToken:0
+  };
+  let multiDigits=[0,0,0,0,0];
+
+  const netCode=()=>multiDigits.join("");
+  const v3arr=v=>v?[v.x,v.y,v.z]:null;
+  const qarr=q=>q?[q.x,q.y,q.z,q.w]:null;
+  const arrv=a=>Array.isArray(a)&&a.length>=3?new BABYLON.Vector3(a[0],a[1],a[2]):null;
+  const arrq=a=>Array.isArray(a)&&a.length>=4?new BABYLON.Quaternion(a[0],a[1],a[2],a[3]):null;
+
+  function netPlayerCount(){
+    if(net.isHost)return 1+[...net.connections.values()].filter(c=>c?.open).length;
+    return net.connected?Math.max(2,Math.min(8,gameState.partySize||2)):1;
+  }
+
+  function sendConn(conn,d){
+    try{if(conn?.open)conn.send(d);}catch(_){}
+  }
+  function sendHost(d){
+    if(net.isHost)return;
+    sendConn(net.hostConn,d);
+  }
+  function broadcast(d,exceptPeerId=null){
+    if(!net.isHost)return;
+    for(const [pid,c] of net.connections){
+      if(pid!==exceptPeerId)sendConn(c,d);
+    }
+  }
+
+  function broadcastMatch(d,exceptPeerId=null){
+    if(!net.isHost)return;
+    for(const pid of net.matchMembers){
+      if(pid===exceptPeerId)continue;
+      sendConn(net.connections.get(pid),d);
+    }
+  }
+
+  function broadcastWaitingLobby(d,exceptPeerId=null){
+    if(!net.isHost)return;
+    for(const [pid,c] of net.connections){
+      if(pid===exceptPeerId||!c?.open||net.matchMembers.has(pid))continue;
+      sendConn(c,d);
+    }
+  }
+
+  function isWaitingLobbyPlayer(pid){
+    const p=net.players.get(pid);
+    return !!net.connections.get(pid)?.open&&!net.matchMembers.has(pid)&&!p?.reportedInMatch;
+  }
+
+  const remoteMats=[
+    mkMat("remotePotatoMat1","#c98b4a"),
+    mkMat("remotePotatoMat2","#7f9fd4"),
+    mkMat("remotePotatoMat3","#87b96b")
+  ];
+  const remoteDark=mkMat("remoteDark","#5e3b24");
+
+  function makeRemoteAvatar(slot){
+    const root=new BABYLON.TransformNode("remotePlayerRoot"+slot,scene);
+    const avatarMat=remoteMats[slot%remoteMats.length].clone("remoteAvatarMatClone"+slot);
+    const darkMat=mkMat("remoteAvatarDark"+slot,"#4b3428");
+
+    const head=BABYLON.MeshBuilder.CreateSphere("remoteHead"+slot,{diameter:.28,segments:12},scene);
+    head.parent=root;head.material=avatarMat;
+
+    const chest=BABYLON.MeshBuilder.CreateSphere("remoteChest"+slot,{diameter:.48,segments:14},scene);
+    chest.parent=root;chest.scaling.set(.78,1,.68);chest.material=avatarMat;
+
+    const left=BABYLON.MeshBuilder.CreateSphere("remoteLeftHand"+slot,{diameter:.17,segments:10},scene);
+    left.parent=root;left.material=avatarMat;
+    const right=BABYLON.MeshBuilder.CreateSphere("remoteRightHand"+slot,{diameter:.17,segments:10},scene);
+    right.parent=root;right.material=avatarMat;
+
+    const bat=BABYLON.MeshBuilder.CreateCylinder("remoteBat"+slot,{height:.92,diameterTop:.055,diameterBottom:.085,tessellation:12},scene);
+    bat.parent=root;bat.material=remoteDark;
+
+    const face=funnyPotatoFaceParts(head,"remoteFace"+slot);
+    const butt=addAvatarButtRig(root,avatarMat,"remote"+slot);
+
+    const ownerVisuals={};
+    {
+      const cyan=mkMat("remoteOwnerCyan"+slot,"#20e7ff");
+      const pink=mkMat("remoteOwnerPink"+slot,"#ff46df");
+      const dark=mkMat("remoteOwnerDark"+slot,"#090b16");
+      cyan.emissiveColor=BABYLON.Color3.FromHexString("#20e7ff").scale(.75);
+      pink.emissiveColor=BABYLON.Color3.FromHexString("#ff46df").scale(.70);
+
+      const crown=new BABYLON.TransformNode("remoteOwnerCrown"+slot,scene);
+      crown.parent=head;
+      const ring=BABYLON.MeshBuilder.CreateTorus("remoteOwnerCrownRing"+slot,{diameter:.27,thickness:.025,tessellation:18},scene);
+      ring.parent=crown;ring.position.set(0,.21,0);ring.rotation.x=Math.PI/2;ring.material=cyan;
+      for(let i=0;i<5;i++){
+        const s=BABYLON.MeshBuilder.CreateCylinder("remoteOwnerSpike"+slot+"_"+i,{height:.12,diameterTop:0,diameterBottom:.045,tessellation:5},scene);
+        const a=i/5*Math.PI*2;s.parent=crown;s.position.set(Math.cos(a)*.09,.29,Math.sin(a)*.09);s.material=i%2?pink:cyan;
+      }
+      crown.setEnabled(false);ownerVisuals.ownerCrown=crown;
+
+      const visor=new BABYLON.TransformNode("remoteOwnerVisor"+slot,scene);visor.parent=head;
+      const vb=BABYLON.MeshBuilder.CreateBox("remoteOwnerVisorBody"+slot,{width:.25,height:.06,depth:.035},scene);
+      vb.parent=visor;vb.position.set(0,.02,.15);vb.material=dark;
+      const vg=BABYLON.MeshBuilder.CreateBox("remoteOwnerVisorGlow"+slot,{width:.21,height:.018,depth:.012},scene);
+      vg.parent=visor;vg.position.set(0,.02,.173);vg.material=pink;
+      visor.setEnabled(false);ownerVisuals.ownerVisor=visor;
+
+      const core=new BABYLON.TransformNode("remoteOwnerCore"+slot,scene);core.parent=chest;
+      const cor=BABYLON.MeshBuilder.CreateTorus("remoteOwnerCoreRing"+slot,{diameter:.18,thickness:.025,tessellation:18},scene);
+      cor.parent=core;cor.position.set(0,.08,.26);cor.rotation.x=Math.PI/2;cor.material=cyan;
+      core.setEnabled(false);ownerVisuals.ownerCore=core;
+
+      const cape=new BABYLON.TransformNode("remoteOwnerCape"+slot,scene);cape.parent=chest;
+      const cp=BABYLON.MeshBuilder.CreateBox("remoteOwnerCapeBody"+slot,{width:.36,height:.45,depth:.025},scene);
+      cp.parent=cape;cp.position.set(0,-.09,-.29);cp.material=dark;
+      const ce=BABYLON.MeshBuilder.CreateBox("remoteOwnerCapeEdge"+slot,{width:.30,height:.025,depth:.012},scene);
+      ce.parent=cape;ce.position.set(0,.06,-.305);ce.material=pink;
+      cape.setEnabled(false);ownerVisuals.ownerCape=cape;
+    }
+
+    root.setEnabled(false);
+    return {
+      root,head,chest,left,right,bat,slot,pose:null,hp:100,downed:false,dead:false,ready:false,lastRecv:0,
+      targetHead:null,targetHeadRot:null,targetLeft:null,targetRight:null,targetBatPos:null,targetBatRot:null,targetDowned:false,
+      buttL:butt.buttL,buttR:butt.buttR,printPlane:butt.printPlane,floatHand:butt.floatHand,
+      face,buttJiggle:0,buttJiggleTimer:0,slapPrintTimer:0,slapFloatTimer:0,slapPrintSide:1,
+      handSlapTimer:0,handSlapSide:"right",handSlapKick:0,faceReactTimer:0,
+      talking:false,talkLevel:0,ownerVisuals
+    };
+  }
+
+  const remoteAvatars=[0,1,2,3,4,5,6].map(makeRemoteAvatar);
+  remoteAvatars.forEach(a=>{a.root.position.set(0,0,0);a.root.rotation.set(0,0,0);a.root.scaling.set(1,1,1);});
+
+  function avatarForPlayer(id){
+    const p=net.players.get(id);
+    if(p?.avatar)return p.avatar;
+    const used=new Set([...net.players.values()].map(x=>x.avatar?.slot).filter(x=>x!==undefined));
+    const av=remoteAvatars.find(a=>!used.has(a.slot));
+    if(!av)return null;
+    const entry=p||{};
+    av.talking=false;av.talkLevel=0;av.faceReactTimer=0;av.buttJiggle=0;av.buttJiggleTimer=0;
+    for(const id of OWNER_COSMETIC_IDS)av.ownerVisuals?.[id]?.setEnabled?.(false);
+    entry.avatar=av;entry.ready=!!entry.ready;entry.lastRecv=performance.now();
+    net.players.set(id,entry);
+    return av;
+  }
+
+  function hidePlayerAvatar(id){
+    const p=net.players.get(id);
+    if(p?.avatar){
+      p.avatar.root.setEnabled(false);p.avatar.bat?.setEnabled?.(false);
+      p.avatar.pose=null;
+      p.avatar.targetHead=null;p.avatar.targetHeadRot=null;p.avatar.targetLeft=null;p.avatar.targetRight=null;
+      p.avatar.targetBatPos=null;p.avatar.targetBatRot=null;p.avatar.targetDowned=false;
+      p.avatar.slapPrintTimer=0;p.avatar.slapFloatTimer=0;p.avatar.handSlapTimer=0;p.avatar.faceReactTimer=0;p.avatar.talking=false;p.avatar.talkLevel=0;p.avatar.buttJiggleTimer=0;
+      p.avatar.printPlane?.setEnabled?.(false);p.avatar.floatHand?.setEnabled?.(false);
+      for(const id of OWNER_COSMETIC_IDS)p.avatar.ownerVisuals?.[id]?.setEnabled?.(false);
+    }
+  }
+
+  function setRemotePose(id,d){
+    const av=avatarForPlayer(id);if(!av)return;
+    const entry=net.players.get(id);
+    entry.pose=d;entry.hp=d.hp??100;entry.downed=!!d.downed;entry.dead=!!d.dead;entry.lastRecv=performance.now();
+    av.pose=d;av.hp=entry.hp;av.downed=entry.downed;av.dead=entry.dead;av.lastRecv=entry.lastRecv;
+    av.talking=!!d.talking;
+    const remoteOwnerCosmetics=Array.isArray(d.ownerCosmetics)?d.ownerCosmetics:[];
+    for(const id of OWNER_COSMETIC_IDS)av.ownerVisuals?.[id]?.setEnabled?.(remoteOwnerCosmetics.includes(id));
+    if(d.color&&typeof d.color==="object"){
+      const cc=BABYLON.Color3.FromHexString(potatoRgbHex(d.color));
+      if(av.head?.material)av.head.material.diffuseColor=cc;
+    }
+
+    if(!d.head||entry.dead){
+      av.root.setEnabled(false);av.bat.setEnabled(false);
+      av.targetHead=null;av.targetHeadRot=null;av.targetLeft=null;av.targetRight=null;
+      av.targetBatPos=null;av.targetBatRot=null;av.targetDowned=false;
+      return;
+    }
+    const allowedHere=gameMode==="lobby"||net.matchMembers.has(id)||(id==="host"&&net.matchMembers.has("host"));
+    av.root.setEnabled((net.connected||net.isHost)&&allowedHere);
+    if(!allowedHere)return;
+    const h=arrv(d.head),hq=arrq(d.headRot),l=arrv(d.left),r=arrv(d.right),bp=arrv(d.batPos),bq=arrq(d.batRot);
+    if(bp)av.bat.setEnabled(true);
+    av.targetHead=h;av.targetHeadRot=hq;av.targetLeft=l;av.targetRight=r;av.targetBatPos=bp;av.targetBatRot=bq;
+    av.bat.setEnabled(!!bp&&d.batVisible!==false&&!d.batHolstered);
+    av.targetDowned=entry.downed;
+  }
+
+  function clearRemotePlayers(){
+    for(const av of remoteAvatars){
+      av.root.setEnabled(false);av.pose=null;av.targetHead=null;av.targetHeadRot=null;av.targetLeft=null;av.targetRight=null;
+      av.targetBatPos=null;av.targetBatRot=null;av.targetDowned=false;
+      av.slapPrintTimer=0;av.slapFloatTimer=0;av.handSlapTimer=0;av.faceReactTimer=0;av.talking=false;av.talkLevel=0;av.buttJiggleTimer=0;
+      av.printPlane?.setEnabled?.(false);av.floatHand?.setEnabled?.(false);
+      for(const id of OWNER_COSMETIC_IDS)av.ownerVisuals?.[id]?.setEnabled?.(false);
+    }
+    net.players.clear();
+  }
+
+  function destroyNetwork(silent=false){
+    const staleGiftDropId=ownerGiftState?.dropId||0;
+    ownerGiftState={active:false,id:null,dropId:staleGiftDropId,ownerId:null,claimed:new Set()};
+    disposeOwnerGiftVisual();
+    try{
+      if(net.isHost){
+        for(const c of net.connections.values())try{c.close();}catch(_){}
+      }else try{net.hostConn?.close();}catch(_){}
+      try{net.peer?.destroy();}catch(_){}
+    }catch(_){}
+    net.peer=null;net.connections.clear();net.hostConn=null;net.connected=false;net.isHost=false;net.code="";net.matchMembers.clear();
+    net.publicSearching=false;net.publicMode=false;net.publicSlot=-1;net.publicToken++;
+    net.ready=false;net.status="OFFLINE";net.lastRecv=0;net.lastSend=0;net.lastLobbySync=0;net.blockCooldown=0;clearRemotePlayers();
+    gameState.partySize=1;saveGame();if(!silent)refreshLobby();
+  }
+
+  function resetNetworkReady(){
+    net.ready=false;
+    if(net.isHost){
+      for(const [id,p] of net.players){
+        p.ready=false;
+        net.players.set(id,p);
+      }
+      if(net.connected)broadcast({t:"resetReady"});
+    }
+  }
+
+  function currentLobbyState(){
+    return {
+      t:"lobby",
+      map:gameState.selectedMap,
+      mode:gameState.mode,
+      difficulty:gameState.settings.npcDifficulty,
+      players:netPlayerCount(),
+      gift:ownerGiftState.active?{id:ownerGiftState.id,dropId:ownerGiftState.dropId,ownerId:ownerGiftState.ownerId}:null,
+      ready:[...net.players.entries()].filter(([,p])=>p?.ready).map(([id])=>id)
+    };
+  }
+
+  function bindHostSideConnection(conn){
+    const pid=conn.peer;
+
+    conn.on("open",()=>{
+      if(net.connections.has(pid)){
+        sendConn(conn,{t:"duplicate"});
+        setTimeout(()=>{try{conn.close();}catch(_){}},100);
+        return;
+      }
+      if([...net.connections.values()].filter(c=>c?.open).length>=7){
+        sendConn(conn,{t:"full",max:8});
+        setTimeout(()=>{try{conn.close();}catch(_){}},100);
+        return;
+      }
+
+      net.connections.set(pid,conn);
+      const av=avatarForPlayer(pid);
+      const joined=net.players.get(pid)||{};
+      joined.ready=false;joined.inMatch=false;joined.reportedInMatch=false;joined.avatar=av;joined.lastRecv=performance.now();
+      net.players.set(pid,joined);
+      net.connected=true;gameState.partySize=Math.min(8,netPlayerCount());
+      saveGame();
+
+      sendConn(conn,{t:"welcome",id:pid,players:netPlayerCount(),hostId:net.playerId});
+      sendConn(conn,currentLobbyState());
+      broadcast({t:"playerCount",count:netPlayerCount()});
+      net.status=`PUBLIC LOBBY • ${netPlayerCount()}/8`;
+      refreshLobby();
+    });
+
+    conn.on("data",d=>handleHostMessage(pid,d));
+    conn.on("close",()=>{
+      if(!net.isHost||!net.peer||!net.connections.has(pid))return;
+      hidePlayerAvatar(pid);
+      net.connections.delete(pid);
+      net.matchMembers.delete(pid);
+      const gone=net.players.get(pid);if(gone)gone.ready=false;
+      net.players.delete(pid);
+      if(ownerGiftState.active&&ownerGiftState.ownerId===pid)clearOwnerGiftDrop();
+      if(gameMode==="lobby")gameState.partySize=Math.max(1,Math.min(8,netPlayerCount()));
+      else gameState.partySize=Math.max(1,Math.min(4,1+[...net.matchMembers].filter(id=>net.connections.get(id)?.open).length));
+      net.connected=[...net.connections.values()].some(c=>c?.open);
+      net.status=gameMode==="lobby"?(net.connected?`PUBLIC LOBBY • ${netPlayerCount()}/8`:"PUBLIC LOBBY • WAITING"):`MATCH • ${gameState.partySize}/4`;
+      broadcast({t:"playerLeft",id:pid});
+      broadcast({t:"playerCount",count:netPlayerCount()});
+      saveGame();refreshLobby();
+    });
+    conn.on("error",()=>{net.status="A PLAYER CONNECTION ERRORED";refreshLobby();});
+  }
+
+  function bindGuestConnection(conn){
+    net.hostConn=conn;net.status="CONNECTING";refreshLobby();
+    let opened=false,closingHandled=false;
+    const finishOpen=()=>{
+      if(opened)return;
+      opened=true;
+      net.connected=true;gameState.partySize=2;
+      net.status=net.publicMode?"PUBLIC • CONNECTED":"CONNECTED";
+      sendHost({t:"hello",id:net.playerId,bat:gameState.selectedBat,skin:gameState.selectedSkin,color:gameState.potatoRGB,ownerGiftAccess:!!OWNER_ACCESS});
+      saveGame();refreshLobby();
+    };
+    const recoverPublic=()=>{
+      if(closingHandled)return;
+      closingHandled=true;
+      const wasPublic=net.publicMode;
+      const wasMap=gameMode==="map";
+      net.connected=false;net.ready=false;net.hostConn=null;net.matchMembers.clear();
+      gameState.partySize=1;clearRemotePlayers();
+      try{net.peer?.destroy();}catch(_){}
+      net.peer=null;saveGame();
+      if(wasMap)goLobby(true);else refreshLobby();
+      if(wasPublic)setTimeout(()=>ensurePublicLobby(),220);
+    };
+    conn.on("open",finishOpen);
+    conn.on("data",handleGuestMessage);
+    conn.on("close",()=>{
+      if(!net.peer&&!net.hostConn)return;
+      if(!["ROOM FULL (8/8)","ALREADY CONNECTED","OFFLINE","HOST LEFT"].includes(net.status))net.status="HOST DISCONNECTED";
+      recoverPublic();
+    });
+    conn.on("error",()=>{
+      net.status="CONNECTION ERROR";
+      try{net.hostConn?.close();}catch(_){}
+      recoverPublic();
+    });
+    if(conn.open)finishOpen();
+  }
+
+  const PUBLIC_POOL_SIZE=16;
+  function publicPeerId(slot){return "vrbb-public-"+slot;}
+
+  function createPublicRoom(slot,attempt=0){
+    if(typeof Peer==="undefined"){net.status="NETWORK LIBRARY FAILED";refreshLobby();return;}
+    destroyNetwork(true);
+    net.publicMode=true;net.publicSlot=slot;net.status="CREATING PUBLIC ROOM";
+    try{
+      net.peer=new Peer(publicPeerId(slot));
+      net.peer.on("open",()=>{
+        net.isHost=true;net.connected=false;net.code="PUBLIC";
+        net.status="PUBLIC • WAITING FOR PLAYERS";
+        net.peer.on("connection",conn=>bindHostSideConnection(conn));
+        refreshLobby();
+      });
+      net.peer.on("error",err=>{
+        try{net.peer?.destroy();}catch(_){}
+        net.peer=null;
+        if(err?.type==="unavailable-id"&&attempt<PUBLIC_POOL_SIZE-1){
+          setTimeout(()=>createPublicRoom((slot+1)%PUBLIC_POOL_SIZE,attempt+1),80);
+          return;
+        }
+        net.status=err?.type==="unavailable-id"?"PUBLIC ROOMS BUSY — TRY AGAIN":"PUBLIC NETWORK ERROR";
+        refreshLobby();
+      });
+    }catch(_){net.status="PUBLIC NETWORK ERROR";refreshLobby();}
+  }
+
+  function joinPublicMatch(){
+    if(typeof Peer==="undefined"){net.status="NETWORK LIBRARY FAILED";refreshLobby();return;}
+    destroyNetwork(true);
+    net.publicMode=true;net.publicSearching=true;net.status="SEARCHING PUBLIC MATCH";refreshLobby();
+    const token=++net.publicToken;
+    const order=[...Array(PUBLIC_POOL_SIZE).keys()].sort(()=>Math.random()-.5);
+
+    const tryIndex=(i)=>{
+      if(token!==net.publicToken||!net.publicSearching)return;
+      if(i>=order.length){
+        net.publicSearching=false;
+        createPublicRoom(order[Math.floor(Math.random()*order.length)]);
+        return;
+      }
+
+      const slot=order[i];
+      net.status=`SEARCHING PUBLIC • ${i+1}/${PUBLIC_POOL_SIZE}`;refreshLobby();
+      let tempPeer=null,conn=null,finished=false;
+      const fail=()=>{
+        if(finished)return;
+        finished=true;
+        try{conn?.close();}catch(_){}
+        try{tempPeer?.destroy();}catch(_){}
+        setTimeout(()=>tryIndex(i+1),80);
+      };
+
+      try{
+        tempPeer=new Peer();
+        const timer=setTimeout(fail,950);
+        tempPeer.on("open",()=>{
+          conn=tempPeer.connect(publicPeerId(slot),{reliable:true});
+          conn.on("open",()=>{
+            if(finished)return;
+            finished=true;clearTimeout(timer);
+            net.peer=tempPeer;net.publicMode=true;net.publicSlot=slot;net.publicSearching=false;
+            net.status="PUBLIC • CONNECTED";
+            bindGuestConnection(conn);
+          });
+          conn.on("error",fail);
+        });
+        tempPeer.on("error",fail);
+      }catch(_){fail();}
+    };
+
+    tryIndex(0);
+  }
+
+  function createRoom(){
+    if(typeof Peer==="undefined"){net.status="NETWORK LIBRARY FAILED";refreshLobby();return;}
+    destroyNetwork(true);
+    net.publicMode=false;net.publicSlot=-1;
+    net.isHost=true;net.code=String(Math.floor(10000+Math.random()*90000));
+    multiDigits=net.code.split("").map(Number);
+    net.status="CREATING";
+    const peerId="vrbb-"+net.code;
+    try{
+      net.peer=new Peer(peerId);
+      net.peer.on("open",()=>{net.status="PUBLIC LOBBY • WAITING • 1/8";refreshLobby();});
+      net.peer.on("connection",conn=>bindHostSideConnection(conn));
+      net.peer.on("error",err=>{
+        if(err?.type==="unavailable-id"){
+          net.status="CODE BUSY — CREATE AGAIN";
+          try{net.peer.destroy();}catch(_){}
+          net.peer=null;
+        }else net.status="NETWORK ERROR";
+        refreshLobby();
+      });
+    }catch(_){net.status="NETWORK ERROR";refreshLobby();}
+  }
+
+  function joinRoom(){
+    const code=netCode();
+    if(!/^\d{5}$/.test(code)||code==="00000"){net.status="SET A 5-DIGIT CODE";refreshLobby();return;}
+    if(typeof Peer==="undefined"){net.status="NETWORK LIBRARY FAILED";refreshLobby();return;}
+    destroyNetwork(true);
+    net.publicMode=false;net.publicSlot=-1;
+    multiDigits=code.split("").map(Number);
+    net.code=code;net.isHost=false;net.status="JOINING";
+    try{
+      net.peer=new Peer();
+      net.peer.on("open",()=>{
+        const conn=net.peer.connect("vrbb-"+code,{reliable:true});
+        bindGuestConnection(conn);
+      });
+      net.peer.on("error",()=>{
+        net.status="ROOM NOT FOUND / NETWORK ERROR";net.connected=false;net.ready=false;gameState.partySize=1;
+        try{net.hostConn?.close();}catch(_){}
+        net.hostConn=null;
+        try{net.peer?.destroy();}catch(_){}
+        net.peer=null;
+        clearRemotePlayers();saveGame();refreshLobby();
+      });
+    }catch(_){net.status="NETWORK ERROR";refreshLobby();}
+  }
+
+  function poseRearVector(pose){
+    const q=arrq(pose?.headRot)||BABYLON.Quaternion.Identity();
+    let rear=BABYLON.Vector3.TransformNormal(new BABYLON.Vector3(0,0,-1),BABYLON.Matrix.FromQuaternion(q));
+    rear.y=0;if(rear.lengthSquared()<.0001)rear.set(0,0,-1);
+    return rear.normalize();
+  }
+
+  function poseButtPoint(pose){
+    const head=arrv(pose?.head);if(!head)return null;
+    return head.add(new BABYLON.Vector3(0,-.40,0)).add(poseRearVector(pose).scale(.30));
+  }
+
+  function localButtPoint(){
+    const head=playerWorldPos();
+    const q=xrCamera?.absoluteRotationQuaternion||xrCamera?.rotationQuaternion||BABYLON.Quaternion.Identity();
+    let rear=BABYLON.Vector3.TransformNormal(new BABYLON.Vector3(0,0,-1),BABYLON.Matrix.FromQuaternion(q));
+    rear.y=0;if(rear.lengthSquared()<.0001)rear.set(0,0,-1);rear.normalize();
+    return head.add(new BABYLON.Vector3(0,-.40,0)).add(rear.scale(.30));
+  }
+
+  function validateWaitingLobbySlap(pid,d){
+    if(!isWaitingLobbyPlayer(pid)||d.target==="host"||!isWaitingLobbyPlayer(d.target))return false;
+    const src=net.players.get(pid),target=net.players.get(d.target);
+    if(!src?.pose||!target?.pose)return false;
+    if(!src.lastPoseRecv||performance.now()-src.lastPoseRecv>650)return false;
+    if(!target.lastPoseRecv||performance.now()-target.lastPoseRecv>900)return false;
+
+    const side=d.side==="left"?"left":"right";
+    const hand=arrv(src.pose?.[side]);if(!hand)return false;
+    const zone=d.zone==="hand"?"hand":"butt";
+
+    if(zone==="butt"){
+      const butt=poseButtPoint(target.pose);
+      return !!butt&&BABYLON.Vector3.Distance(hand,butt)<.42;
+    }
+    const targetSide=d.targetSide==="left"?"left":d.targetSide==="right"?"right":null;
+    if(!targetSide)return false;
+    const targetHand=arrv(target.pose?.[targetSide]);
+    return !!targetHand&&BABYLON.Vector3.Distance(hand,targetHand)<.34;
+  }
+
+  function validateGuestSlap(pid,d){
+    const src=net.players.get(pid);
+    if(!src?.pose||!src.lastPoseRecv||performance.now()-src.lastPoseRecv>650)return false;
+    const side=d.side==="left"?"left":"right";
+    const hand=arrv(src.pose?.[side]);if(!hand)return false;
+    const zone=d.zone==="hand"?"hand":"butt";
+    if(d.target==="host"){
+      if(zone==="butt")return BABYLON.Vector3.Distance(hand,localButtPoint())<.42;
+      const targetSide=d.targetSide==="left"?"left":d.targetSide==="right"?"right":null;
+      if(!targetSide)return false;
+      const targetHand=hands[targetSide]?.node?calibratedHandWorld(hands[targetSide]):null;
+      return !!targetHand&&BABYLON.Vector3.Distance(hand,targetHand)<.34;
+    }
+    const target=net.players.get(d.target);
+    if(!target?.pose||target.dead||!target.lastPoseRecv||performance.now()-target.lastPoseRecv>900)return false;
+    if(zone==="butt"){
+      const butt=poseButtPoint(target.pose);
+      return !!butt&&BABYLON.Vector3.Distance(hand,butt)<.42;
+    }
+    const targetSide=d.targetSide==="left"?"left":d.targetSide==="right"?"right":null;
+    if(!targetSide)return false;
+    const targetHand=arrv(target.pose?.[targetSide]);
+    return !!targetHand&&BABYLON.Vector3.Distance(hand,targetHand)<.34;
+  }
+
+  function validateGuestNpcSlap(pid,d){
+    const src=net.players.get(pid);
+    if(!src?.pose||!src.lastPoseRecv||performance.now()-src.lastPoseRecv>650||!npc||npc.dead)return false;
+    const side=d.side==="left"?"left":"right";
+    const hand=arrv(src.pose?.[side]);if(!hand)return false;
+    const zone=d.zone==="body"?"body":"butt";
+    const target=zone==="butt"?npcButtWorldCenter():npcLocalToWorld(new BABYLON.Vector3(0,1.05,0));
+    return !!target&&BABYLON.Vector3.Distance(hand,target)<(zone==="butt"?.42:.48);
+  }
+
+  function validateRemoteOwnerGiftPickup(pid,dropId){
+    if(gameMode==="map"&&net.matchMembers.has(pid))return false;
+    if(!ownerGiftState.active||Number(dropId)!==Number(ownerGiftState.dropId))return false;
+    const p=net.players.get(pid);
+    if(p?.reportedInMatch)return false;
+    if(!p?.pose||!p.lastPoseRecv||performance.now()-p.lastPoseRecv>850)return false;
+    const left=arrv(p.pose.left),right=arrv(p.pose.right);
+    return !!((left&&BABYLON.Vector3.Distance(left,OWNER_GIFT_POSITION)<.48)||(right&&BABYLON.Vector3.Distance(right,OWNER_GIFT_POSITION)<.48));
+  }
+
+  function handleHostMessage(pid,d){
+    if(!d||typeof d!=="object")return;
+    const entry=net.players.get(pid)||{};
+    entry.lastRecv=performance.now();net.players.set(pid,entry);
+
+    if(d.t==="hello"){
+      entry.ownerGiftAccess=!!d.ownerGiftAccess;
+      net.players.set(pid,entry);
+      sendConn(net.connections.get(pid),{t:"welcome",players:netPlayerCount()});
+      sendConn(net.connections.get(pid),currentLobbyState());
+    }else if(d.t==="ready"){
+      entry.ready=!!d.value;net.players.set(pid,entry);
+      broadcast({t:"readyState",id:pid,value:entry.ready});
+      refreshLobby();
+    }else if(d.t==="pose"){
+      if(!net.connections.get(pid)?.open)return;
+      entry.lastPoseRecv=performance.now();
+      entry.reportedInMatch=!!d.inMatch;
+      net.players.set(pid,entry);
+      setRemotePose(pid,d);
+      if(gameMode==="map"){
+        if(net.matchMembers.has(pid)&&entry.reportedInMatch){
+          for(const id of net.matchMembers){if(id!==pid)sendConn(net.connections.get(id),{...d,t:"remotePose",id:pid});}
+        }else{
+          broadcastWaitingLobby({...d,t:"remotePose",id:pid},pid);
+        }
+      }else broadcast({...d,t:"remotePose",id:pid},pid);
+    }else if(d.t==="hit"&&net.connections.get(pid)?.open&&gameMode==="map"&&net.matchMembers.has(pid)&&entry.reportedInMatch&&npc&&!npc.dead){
+      const p=arrv(d.pos),v=arrv(d.vel);
+      const remoteEntry=net.players.get(pid);
+      const rp=remoteEntry?.pose;
+      const rb=arrv(rp?.batPos);
+      const poseFresh=!!remoteEntry?.lastPoseRecv&&(performance.now()-remoteEntry.lastPoseRecv)<900;
+      const plausible=p&&v&&rb&&poseFresh &&
+        BABYLON.Vector3.Distance(p,npc.root.position)<2.4 &&
+        BABYLON.Vector3.Distance(p,rb)<1.45;
+      if(plausible){
+        damageNpc(p,v,Math.max(0,Math.min(12,Number(d.speed)||0)));
+      }
+    }else if(d.t==="block"&&gameMode==="map"&&net.matchMembers.has(pid)&&entry.reportedInMatch&&npc&&!npc.dead&&net.connections.get(pid)?.open){
+      const target=npcCombatTarget();
+      const progress=npc.attackDuration>0?BABYLON.Scalar.Clamp(npc.attackAnim/npc.attackDuration,0,1):0;
+      if(target?.id===pid&&!target.local&&!npc.attackBlocked&&!npc.attackHasHit&&progress>.16&&progress<.95){
+        const wb=npc.weaponPrevBase||npc.weaponBase?.getAbsolutePosition?.();
+        const wt=npc.weaponPrevTip||npc.weaponTip?.getAbsolutePosition?.();
+        if(wb&&wt&&validateRemoteBlock(pid,wb,wt)){
+          npc.attackBlocked=true;npc.attackHasHit=true;npc.attackAnim=0;
+          npc.stun=Math.max(npc.stun,.52);
+          npc.weaponDurability=Math.max(0,(npc.weaponDurability||1)-1);
+          if(npc.weaponDurability<=0)breakNpcWeapon();
+          reactNpc("block",1);
+          sendConn(net.connections.get(pid),{t:"blockConfirmed"});
+        }
+      }
+    }else if(d.t==="slap"&&typeof d.target==="string"){
+      const zone=d.zone==="hand"?"hand":"butt";
+      const side=d.side==="left"?"left":"right";
+      const targetSide=d.targetSide==="left"?"left":d.targetSide==="right"?"right":null;
+      const strength=Math.max(.45,Math.min(1.2,Number(d.strength)||.9));
+
+      if(gameMode==="map"&&isWaitingLobbyPlayer(pid)){
+        if(validateWaitingLobbySlap(pid,{...d,zone,side,targetSide})){
+          broadcastWaitingLobby({t:"slap",target:d.target,zone,side,targetSide,strength,by:pid});
+        }
+      }else if(gameMode!=="map"||(net.matchMembers.has(pid)&&entry.reportedInMatch)){
+        if((d.target==="host"||net.players.has(d.target))&&validateGuestSlap(pid,{...d,zone,side,targetSide})){
+          applySlapToTarget(d.target,zone,side,strength,targetSide);
+          if(gameMode==="map")broadcastMatch({t:"slap",target:d.target,zone,side,targetSide,strength,by:pid});
+          else broadcast({t:"slap",target:d.target,zone,side,targetSide,strength,by:pid});
+        }
+      }
+    }else if(d.t==="npcSlap"&&gameMode==="map"&&net.matchMembers.has(pid)&&entry.reportedInMatch&&npc&&!npc.dead){
+      const zone=d.zone==="body"?"body":"butt";
+      const side=d.side==="left"?"left":"right";
+      const strength=Math.max(.45,Math.min(1.2,Number(d.strength)||.9));
+      if(validateGuestNpcSlap(pid,{...d,zone,side})){
+        slapNpc(zone,side,strength);
+        broadcastMatch({t:"npcSlap",zone,side,strength,by:pid});
+      }
+    }else if(d.t==="ownerGiftDropRequest"){
+      if(entry.ownerGiftAccess&&!entry.reportedInMatch&&!net.matchMembers.has(pid)&&OWNER_COSMETIC_IDS.includes(d.id)){
+        activateOwnerGiftDrop(d.id,pid);
+      }
+    }else if(d.t==="ownerGiftClaim"&&ownerGiftState.active&&Number(d.dropId)===Number(ownerGiftState.dropId)){
+      if(!ownerGiftState.claimed.has(pid)&&validateRemoteOwnerGiftPickup(pid,d.dropId)){
+        ownerGiftState.claimed.add(pid);
+        sendConn(net.connections.get(pid),{t:"ownerGiftGranted",id:ownerGiftState.id,dropId:ownerGiftState.dropId});
+      }
+    }else if(d.t==="revive"&&d.target){
+      const targetConn=net.connections.get(d.target);
+      if(d.target==="host") {
+        if(playerDowned)reviveLocalPlayer();
+      } else if(targetConn && net.players.get(d.target)?.downed) {
+        sendConn(targetConn,{t:"revive"});
+      }
+    }else if(d.t==="leave"){
+      try{net.connections.get(pid)?.close();}catch(_){}
+    }
+  }
+
+  function handleGuestMessage(d){
+    if(!d||typeof d!=="object")return;
+    net.lastRecv=performance.now();
+
+    if(d.t==="duplicate"){
+      const retryPublic=!!net.publicMode;
+      net.status="ALREADY CONNECTED";
+      try{net.hostConn?.close();}catch(_){}
+      net.hostConn=null;net.connected=false;net.ready=false;gameState.partySize=1;
+      clearRemotePlayers();
+      try{net.peer?.destroy();}catch(_){}net.peer=null;
+      saveGame();
+      if(gameMode==="map")goLobby(true);else refreshLobby();
+      if(retryPublic&&gameMode!=="map")setTimeout(()=>joinPublicMatch(),160);
+    }else if(d.t==="full"){
+      const retryPublic=!!net.publicMode;
+      net.status="ROOM FULL (8/8)";
+      try{net.hostConn?.close();}catch(_){}
+      net.hostConn=null;net.connected=false;net.ready=false;gameState.partySize=1;
+      clearRemotePlayers();
+      try{net.peer?.destroy();}catch(_){}net.peer=null;
+      saveGame();
+      if(gameMode==="map")goLobby(true);else refreshLobby();
+      if(retryPublic&&gameMode!=="map")setTimeout(()=>joinPublicMatch(),160);
+    }else if(d.t==="welcome"){
+      net.connected=true;
+      net.status=`PUBLIC LOBBY • ${d.players||2}/8`;
+      gameState.partySize=Math.max(2,Math.min(8,d.players||2));saveGame();refreshLobby();
+    }else if(d.t==="playerCount"){
+      if(gameMode==="lobby"){
+        gameState.partySize=Math.max(1,Math.min(8,d.count||1));
+        net.status=`PUBLIC LOBBY • ${gameState.partySize}/8`;
+        saveGame();refreshLobby();
+      }
+    }else if(d.t==="readyState"&&d.id){
+      const p=net.players.get(d.id)||{};
+      p.ready=!!d.value;net.players.set(d.id,p);refreshLobby();
+    }else if(d.t==="lobby"){
+      if(Number.isFinite(d.players))gameState.partySize=Math.max(1,Math.min(8,d.players));
+      if(Array.isArray(d.ready)){
+        for(const [id,p] of net.players){
+          p.ready=d.ready.includes(id);
+          net.players.set(id,p);
+        }
+        for(const id of d.ready){
+          if(net.players.has(id))continue;
+          net.players.set(id,{ready:true,lastRecv:performance.now()});
+        }
+      }
+      if(d.gift&&OWNER_COSMETIC_IDS.includes(d.gift.id)){
+        ownerGiftState.active=true;
+        ownerGiftState.id=d.gift.id;
+        ownerGiftState.dropId=Number(d.gift.dropId)||0;
+        ownerGiftState.ownerId=d.gift.ownerId||null;
+        ownerGiftState.claimed=new Set();
+        buildOwnerGiftVisual(ownerGiftState.id);
+      }else if(!d.gift&&ownerGiftState.active){
+        ownerGiftState.active=false;
+        disposeOwnerGiftVisual();
+      }
+      if(d.map&&MAP_CATALOG.some(m=>m.id===d.map))gameState.selectedMap=d.map;
+      if(["NORMAL","SURVIVAL","ENDLESS","HARDCORE"].includes(d.mode))gameState.mode=d.mode;
+      if(["CHILL","NORMAL","CRAZY"].includes(d.difficulty))gameState.settings.npcDifficulty=d.difficulty;
+      saveGame();refreshLobby();
+    }else if(d.t==="start"){
+      net.ready=false;
+      net.matchMembers=new Set(Array.isArray(d.matchIds)?d.matchIds:[]);
+      gameState.partySize=Math.max(1,Math.min(4,Number(d.matchPlayers)||2));
+      if(d.map&&MAP_CATALOG.some(m=>m.id===d.map))gameState.selectedMap=d.map;
+      if(["NORMAL","SURVIVAL","ENDLESS","HARDCORE"].includes(d.mode))gameState.mode=d.mode;
+      if(["CHILL","NORMAL","CRAZY"].includes(d.difficulty))gameState.settings.npcDifficulty=d.difficulty;
+      if(d.progress&&gameState.mapProgress[d.map])gameState.mapProgress[d.map]={...gameState.mapProgress[d.map],...d.progress};
+      const forcedModifier=(typeof d.modifier==="string"&&WAVE_MODIFIERS.includes(d.modifier))?d.modifier:null;
+      saveGame();startMap(forcedModifier);
+      extraNpcs.forEach(e=>e.root.setEnabled(false));
+      if(xrCamera){
+        const s=getMapSpawn();
+        const slot=Math.max(1,Math.min(3,Number(d.slot)||1));
+        const offsets=[0,1.1,-1.1,2.0];
+        xrCamera.position.x=s.x+offsets[slot];
+        xrCamera.position.z=s.z+.35+(slot===3?.5:0);
+      }
+    }else if(d.t==="matchWaiting"){
+      net.matchMembers.clear();
+      net.status=`MATCH IN PROGRESS • ${Math.max(1,Math.min(4,Number(d.players)||1))} PLAYERS • YOU STAY READY IN PUBLIC LOBBY`;
+      refreshLobby();
+    }else if(d.t==="hostPose"){
+      setRemotePose("host",d);
+    }else if(d.t==="remotePose"&&d.id){
+      if(d.id!==net.playerId)setRemotePose(d.id,d);
+    }else if(d.t==="playerLeft"&&d.id){
+      hidePlayerAvatar(d.id);
+      net.players.delete(d.id);
+    }else if(d.t==="npc"){
+      applyHostNpcState(d);
+    }else if(d.t==="resetReady"){
+      net.ready=false;
+      for(const [id,p] of net.players){p.ready=false;net.players.set(id,p);}
+      refreshLobby();
+    }else if(d.t==="returnLobby"){
+      net.ready=false;net.matchMembers.clear();
+      for(const [,p] of net.players)p.reportedInMatch=false;
+      goLobby(true);
+    }else if(d.t==="leave"){
+      net.status="HOST LEFT";net.connected=false;net.ready=false;gameState.partySize=1;
+      try{net.hostConn?.close();}catch(_){}
+      net.hostConn=null;
+      try{net.peer?.destroy();}catch(_){}
+      net.peer=null;
+      clearRemotePlayers();saveGame();
+      if(gameMode==="map")goLobby(true);else refreshLobby();
+      setTimeout(()=>ensurePublicLobby(),220);
+      return;
+    }else if(d.t==="ownerGiftDrop"&&OWNER_COSMETIC_IDS.includes(d.id)){
+      ownerGiftState.active=true;
+      ownerGiftState.id=d.id;
+      ownerGiftState.dropId=Number(d.dropId)||0;
+      ownerGiftState.ownerId=d.ownerId||null;
+      ownerGiftState.claimed=new Set();
+      buildOwnerGiftVisual(d.id);refreshLobby();
+    }else if(d.t==="ownerGiftClear"){
+      ownerGiftState.active=false;ownerGiftState.id=null;
+      disposeOwnerGiftVisual();refreshLobby();
+    }else if(d.t==="ownerGiftGranted"&&OWNER_COSMETIC_IDS.includes(d.id)){
+      grantOwnerGift(d.id);
+    }else if(d.t==="mapEvent"){
+      if(gameMode==="map"&&d.map===gameState.selectedMap)applyLocalMapEvent(d.map,typeof d.label==="string"?d.label:null);
+    }else if(d.t==="blockConfirmed"){
+      if(npc){npc.attackBlocked=true;npc.attackHasHit=true;npc.attackAnim=0;}
+      pulse(batHand(),1,110);pulse(supportHand(),.30,45);
+      cameraImpactShake=Math.max(cameraImpactShake,.35);
+      playImpactSound("block",.9);
+      recordBlock();
+    }else if(d.t==="slap"&&typeof d.target==="string"){
+      applySlapToTarget(d.target,d.zone==="hand"?"hand":"butt",d.side==="left"?"left":"right",Math.max(.45,Math.min(1.2,Number(d.strength)||.9)),d.targetSide==="left"?"left":d.targetSide==="right"?"right":null);
+    }else if(d.t==="npcSlap"){
+      if(gameMode==="map")slapNpc(d.zone==="body"?"body":"butt",d.side==="left"?"left":"right",Math.max(.45,Math.min(1.2,Number(d.strength)||.9)));
+    }else if(d.t==="npcDamage"){
+      if(gameMode!=="map"||playerDead)return;
+      const from=arrv(d.from)||new BABYLON.Vector3();
+      const amount=Math.max(1,Math.min(100,Number(d.amount)||1));
+      hurtPlayer(amount,from);
+    }else if(d.t==="revive"){
+      if(playerDowned)reviveLocalPlayer();
+    }
+  }
+
+  function allGuestsReady(){
+    if(!net.isHost||net.connections.size===0)return false;
+    for(const [pid,c] of net.connections){
+      if(!c?.open||!net.players.get(pid)?.ready)return false;
+    }
+    return true;
+  }
+
+  function hostStartMultiplayer(){
+    if(!net.isHost)return;
+    const readyGuests=[...net.connections.entries()]
+      .filter(([pid,c])=>c?.open&&net.players.get(pid)?.ready)
+      .slice(0,3);
+
+    const selectedIds=readyGuests.map(([pid])=>pid);
+
+    // Gift drops only exist while the owner is physically in this public lobby.
+    if(ownerGiftState.active){
+      const ownerLeavesLobby=ownerGiftState.ownerId==="host"||selectedIds.includes(ownerGiftState.ownerId);
+      if(ownerLeavesLobby)clearOwnerGiftDrop();
+    }
+
+    net.matchMembers=new Set(selectedIds);
+    for(const [pid,p] of net.players){
+      p.inMatch=net.matchMembers.has(pid);
+      if(p.inMatch)p.ready=false;
+      net.players.set(pid,p);
+    }
+
+    const progress={...currentMapProgress()};
+    const matchCount=1+selectedIds.length;
+    gameState.partySize=matchCount;
+    for(const pid of selectedIds)broadcast({t:"readyState",id:pid,value:false});
+
+    // Start the host run first so waveModifier is the exact modifier sent to guests.
+    startMap();
+    const syncedModifier=waveModifier;
+
+    for(const [pid,c] of net.connections){
+      if(!c?.open)continue;
+      if(net.matchMembers.has(pid)){
+        const slot=1+selectedIds.indexOf(pid);
+        sendConn(c,{
+          t:"start",map:gameState.selectedMap,mode:gameState.mode,
+          difficulty:gameState.settings.npcDifficulty,progress,slot,modifier:syncedModifier,
+          matchPlayers:matchCount,matchIds:["host",...selectedIds]
+        });
+      }else{
+        sendConn(c,{t:"matchWaiting",players:matchCount});
+      }
+    }
+
+    if(xrCamera){
+      const s=getMapSpawn();
+      xrCamera.position.x=s.x-2.0;
+      xrCamera.position.z=s.z+.35;
+    }
+  }
+
+  function toggleNetReady(){
+    if(!net.connected||net.isHost)return;
+    net.ready=!net.ready;sendHost({t:"ready",value:net.ready});refreshLobby();
+  }
+
+  function lobbyMultiplayer(){
+    let t=`PUBLIC LOBBY • UP TO 8 PLAYERS
+MAP MATCHES • UP TO 4 PLAYERS
+
+`;
+    if((!net.peer&&!net.connected)||networkIsIdle()){
+      t+=`▶ RECONNECT TO PUBLIC LOBBY
+
+${net.status}
+
+You are automatically placed in a public lobby.
+Trigger = reconnect • Grip = back`;
+      return t;
+    }
+    if(net.isHost){
+      const ready=[...net.connections.entries()].filter(([pid,c])=>c?.open&&net.players.get(pid)?.ready).length;
+      t+=`PUBLIC LOBBY
+PLAYERS: ${netPlayerCount()}/8
+READY / QUEUED: ${ready}
+MAP: ${gameState.selectedMap.toUpperCase()} • ${gameState.mode}
+DIFFICULTY: ${gameState.settings.npcDifficulty}
+
+`;
+      t+=`${lobbyIndex===0?"▶ ":"   "}START MATCH WITH UP TO 3 READY PLAYERS
+`;
+      t+=`${lobbyIndex===1?"▶ ":"   "}REJOIN ANOTHER PUBLIC LOBBY
+`;
+    }else{
+      t+=`PUBLIC LOBBY
+PLAYERS: ${gameState.partySize}/8
+
+`;
+      t+=`${lobbyIndex===0?"▶ ":"   "}${net.ready?"READY / QUEUED FOR NEXT MATCH: YES ✓":"READY / QUEUED FOR NEXT MATCH: NO"}
+`;
+      t+=`${lobbyIndex===1?"▶ ":"   "}REJOIN ANOTHER PUBLIC LOBBY
+`;
+    }
+    t+=`
+${net.status}
+Grip = back`;
+    return t;
+  }
+
+  function activateMultiplayerLobby(){
+    if((!net.peer&&!net.connected)||networkIsIdle()){
+      joinPublicMatch();return;
+    }
+    if(net.isHost){
+      if(lobbyIndex===0)hostStartMultiplayer();
+      else {destroyNetwork(true);setTimeout(()=>joinPublicMatch(),120);}
+    }else{
+      if(lobbyIndex===0)toggleNetReady();
+      else {sendHost({t:"leave"});destroyNetwork(true);setTimeout(()=>joinPublicMatch(),120);}
+    }
+  }
+
+  function ensurePublicLobby(){
+    if(gameMode!=="lobby")return;
+    if(net.connected||net.isHost||net.publicSearching||net.peer)return;
+    setTimeout(()=>{
+      if(gameMode==="lobby"&&!net.connected&&!net.isHost&&!net.publicSearching&&!net.peer)joinPublicMatch();
+    },180);
+  }
+
+  function networkIsIdle(){
+    return !net.connected && (!net.peer || !net.hostConn) &&
+      ["OFFLINE","ROOM FULL (8/8)","ALREADY CONNECTED","ROOM NOT FOUND / NETWORK ERROR","NETWORK ERROR","CONNECTION ERROR","HOST DISCONNECTED","HOST LEFT","CONNECTION LOST"].includes(net.status);
+  }
+
+  function networkLobbyItemCount(){
+    if((!net.peer&&!net.connected)||networkIsIdle())return 1;
+    return 2;
+  }
+
+  function netPosePacket(){
+    if(!xrCamera)return null;
+    const head=xrCamera.globalPosition||xrCamera.position;
+    const headRot=xrCamera.absoluteRotationQuaternion||xrCamera.rotationQuaternion||BABYLON.Quaternion.Identity();
+    const left=hands.left?.node?calibratedHandWorld(hands.left):null;
+    const right=hands.right?.node?calibratedHandWorld(hands.right):null;
+    const batVisible=!!batRoot?.isEnabled?.()&&!batHolstered;
+    const bp=batVisible?(batRoot?.getAbsolutePosition?.()||batRoot?.position):null;
+    const bq=batVisible?(batRoot?.absoluteRotationQuaternion||batRoot?.rotationQuaternion):null;
+    return {
+      t:"pose",id:net.playerId,head:v3arr(head),headRot:qarr(headRot),left:v3arr(left),right:v3arr(right),
+      batPos:v3arr(bp),batRot:qarr(bq),batVisible,batHolstered:!!batHolstered,
+      hp:playerHP,downed:playerDowned,dead:playerDead,color:gameState.potatoRGB,
+      talking:!!localVoiceActive,
+      inMatch:gameMode==="map",
+      ownerCosmetics:Object.values(gameState.equippedCosmetics||{}).filter(id=>OWNER_COSMETIC_IDS.includes(id))
+    };
+  }
+
+  function remotePlayerCombatData(id){
+    const p=net.players.get(id);
+    if(!p?.pose?.head||p.dead||p.downed)return null;
+    if(!p.lastPoseRecv||performance.now()-p.lastPoseRecv>1200)return null;
+    const head=arrv(p.pose.head);if(!head)return null;
+    return {
+      id,
+      local:false,
+      head,
+      chest:head.add(new BABYLON.Vector3(0,-.34,0)),
+      pos:head
+    };
+  }
+
+  function npcCombatTarget(){
+    const localHead=playerWorldPos();
+    let best=(!playerDead&&!playerDowned)?{
+      id:"host",local:true,head:localHead.clone(),
+      chest:localHead.add(new BABYLON.Vector3(0,-.34,0)),
+      pos:localHead.clone()
+    }:null;
+    let bestD=best?BABYLON.Vector3.Distance(best.pos,npc?.root?.position||best.pos):Infinity;
+
+    if(net.isHost){
+      for(const [id] of net.players){
+        const c=net.connections.get(id);
+        if(!c?.open)continue;
+        if(gameMode==="map"&&!net.matchMembers.has(id))continue;
+        const t=remotePlayerCombatData(id);if(!t)continue;
+        const d=BABYLON.Vector3.Distance(t.pos,npc?.root?.position||t.pos);
+        if(d<bestD){best=t;bestD=d;}
+      }
+    }
+    return best;
+  }
+
+  function combatTargetSpheres(t){
+    if(!t)return [];
+    return [
+      {name:"head",center:t.head.clone(),radius:.135},
+      {name:"chest",center:t.chest.clone(),radius:.20}
+    ];
+  }
+
+  function remoteBatSegment(id){
+    const p=net.players.get(id);
+    if(!p?.pose||!p.lastPoseRecv||performance.now()-p.lastPoseRecv>900)return null;
+    if(p.pose.batVisible===false||p.pose.batHolstered)return null;
+    const bp=arrv(p.pose.batPos),bq=arrq(p.pose.batRot);
+    if(!bp||!bq)return null;
+    const rotM=BABYLON.Matrix.FromQuaternion(bq);
+    const localBase=new BABYLON.Vector3(0,-.14,0);
+    const localTip=new BABYLON.Vector3(0,.72,0);
+    const base=BABYLON.Vector3.TransformCoordinates(localBase,rotM).add(bp);
+    const tip=BABYLON.Vector3.TransformCoordinates(localTip,rotM).add(bp);
+    return {base,tip};
+  }
+
+  function validateRemoteBlock(id,weaponBase,weaponTip){
+    const seg=remoteBatSegment(id);
+    if(!seg)return false;
+    return segmentSegmentDistance(weaponBase,weaponTip,seg.base,seg.tip)<.28;
+  }
+
+  function damageCombatTarget(t,amount,fromWorldPos){
+    if(!t||amount<=0)return;
+    if(t.local){
+      hurtPlayer(amount,fromWorldPos);
+      return;
+    }
+    const c=net.connections.get(t.id);
+    if(c?.open)sendConn(c,{t:"npcDamage",amount:Math.max(1,Math.round(amount)),from:v3arr(fromWorldPos)});
+  }
+
+  function npcFaceTarget(){
+    if(!(net.connected&&!net.isHost))return npcCombatTarget();
+
+    const id=npc?.netTargetId;
+    if(id===net.playerId){
+      const head=playerWorldPos();
+      return {id,local:true,pos:head,head,chest:head.add(new BABYLON.Vector3(0,-.34,0))};
+    }
+    if(id==="host"){
+      const p=net.players.get("host");
+      if(p?.lastRecv&&performance.now()-p.lastRecv>1500)return null;
+      const head=arrv(p?.pose?.head);
+      if(head)return {id:"host",local:false,pos:head,head,chest:head.add(new BABYLON.Vector3(0,-.34,0))};
+      return null;
+    }
+    if(id){
+      const p=net.players.get(id);
+      if(p?.lastRecv&&performance.now()-p.lastRecv>1500)return null;
+      const head=arrv(p?.pose?.head);
+      if(head)return {id,local:false,pos:head,head,chest:head.add(new BABYLON.Vector3(0,-.34,0))};
+    }
+    return null;
+  }
+
+  function netNpcPacket(){
+    if(!npc)return null;
+    const target=npcCombatTarget();
+    return {
+      t:"npc",pos:v3arr(npc.root.position),rot:[npc.root.rotation.x,npc.root.rotation.y,npc.root.rotation.z],
+      hp:npc.hpValue,maxHp:npc.maxHp,armor:npc.bossArmor||0,dead:!!npc.dead,
+      deathPhase:npc.deathPhase||"none",deathTimer:npc.deathTotalTimer||0,
+      type:npc.typeName,variant:npc.variant,weaponBroken:!!npc.weaponBroken,
+      emotion:npc.emotion||"normal",screamKind:npc.screamKind||null,targetId:npc.dead?null:(target?.id||null),
+      faceStyle:npc.faceStyle||0,outfitStyle:npc.outfitStyle||0,
+      level:currentMapProgress().level
+    };
+  }
+
+  function applyHostNpcState(d){
+    if(!npc||gameMode!=="map")return;
+    const p=arrv(d.pos);if(p)npc.root.position.copyFrom(p);
+    if(Array.isArray(d.rot)&&d.rot.length>=3)npc.root.rotation.set(d.rot[0],d.rot[1],d.rot[2]);
+    if(Number.isFinite(d.hp))npc.hpValue=d.hp;
+    if(Number.isFinite(d.maxHp))npc.maxHp=d.maxHp;
+    if(Number.isFinite(d.armor))npc.bossArmor=d.armor;
+    const wasDead=!!npc.dead;
+    npc.dead=!!d.dead;npc.weaponBroken=!!d.weaponBroken;
+    if(typeof d.deathPhase==="string")npc.deathPhase=d.deathPhase;
+    if(Number.isFinite(d.deathTimer))npc.deathTotalTimer=d.deathTimer;
+    if(npc.dead&&!wasDead){
+      npc.deathPhase=(d.deathPhase&&d.deathPhase!=="none")?d.deathPhase:"collapse";
+      npc.deathTotalTimer=Number.isFinite(d.deathTimer)?d.deathTimer:0;
+      npc.velocity.y=Math.min(npc.velocity.y||0,.35);
+    }else if(!npc.dead&&wasDead){
+      npc.deathPhase="none";
+      npc.deathPhaseTimer=0;
+      npc.deathTotalTimer=0;
+      npc.velocity.set(0,0,0);
+      npc.angular?.set?.(0,0,0);
+    }
+    if(npc.dead)npc.netTargetId=null;
+    if(d.type)npc.typeName=d.type;if(d.variant)npc.variant=d.variant;
+    if(typeof d.emotion==="string"){
+      npc.emotion=d.emotion;
+      npc.emotionBurst=Math.max(npc.emotionBurst||0,.22);
+    }
+    if(typeof d.screamKind==="string")npc.screamKind=d.screamKind;
+    if(Number.isInteger(d.faceStyle))npc.faceStyle=BABYLON.Scalar.Clamp(d.faceStyle,0,3);
+    if(Number.isInteger(d.outfitStyle))npc.outfitStyle=BABYLON.Scalar.Clamp(d.outfitStyle,0,3);
+    npc.netTargetId=npc.dead?null:(typeof d.targetId==="string"?d.targetId:null);
+    updateNpcLabel();
+    npc.root.setEnabled(true);
+    if(!d.dead){
+      npc.body?.setEnabled?.(true);
+      npc.head?.setEnabled?.(true);
+      npc.hair?.setEnabled?.(true);
+      npc.hp?.plane?.setEnabled?.(true);
+      npc.weaponRoot?.setEnabled?.(!npc.weaponBroken);
+    }else{
+      npc.hp?.plane?.setEnabled?.(false);
+      npc.weaponRoot?.setEnabled?.(false);
+    }
+  }
+
+  function updateRemoteAvatars(dt){
+    const a=1-Math.exp(-dt*18);
+    const t=performance.now()*.001;
+    for(const av of remoteAvatars){
+      if(!av.root.isEnabled())continue;
+      if(av.targetHead){
+        av.head.position=BABYLON.Vector3.Lerp(av.head.position,av.targetHead,a);
+        if(av.targetHeadRot){
+          if(!av.head.rotationQuaternion)av.head.rotationQuaternion=BABYLON.Quaternion.Identity();
+          av.head.rotationQuaternion=BABYLON.Quaternion.Slerp(av.head.rotationQuaternion,av.targetHeadRot,a);
+        }
+        const chestTarget=av.targetHead.add(new BABYLON.Vector3(0,-.42,0));
+        if(av.targetDowned)chestTarget.y=Math.min(chestTarget.y,.35);
+        av.chest.position=BABYLON.Vector3.Lerp(av.chest.position,chestTarget,a);
+      }
+      if(av.targetLeft)av.left.position=BABYLON.Vector3.Lerp(av.left.position,av.targetLeft,a);
+      if(av.targetRight)av.right.position=BABYLON.Vector3.Lerp(av.right.position,av.targetRight,a);
+      if(av.targetBatPos)av.bat.position=BABYLON.Vector3.Lerp(av.bat.position,av.targetBatPos,a);
+      if(av.targetBatRot){
+        if(!av.bat.rotationQuaternion)av.bat.rotationQuaternion=BABYLON.Quaternion.Identity();
+        av.bat.rotationQuaternion=BABYLON.Quaternion.Slerp(av.bat.rotationQuaternion,av.targetBatRot,a);
+      }
+
+      const chestPos=av.chest.position.clone();
+      const sway=Math.sin(t*4.2+av.slot*.8)*.008;
+      av.buttJiggleTimer=Math.max(0,(av.buttJiggleTimer||0)-dt);
+      av.buttJiggle=(av.buttJiggle||0)*Math.pow(.14,dt);
+      const jig=av.buttJiggle||0;
+      const jigLife=Math.min(1,(av.buttJiggleTimer||0)/.8);
+      const shake=Math.sin(t*31+av.slot)*jig*jigLife*.075;
+      const rear=avatarRearVector(av),rightVec=avatarRightVector(av);
+      const buttBase=chestPos.add(rear.scale(.30+jig*.07));
+      av.buttL.position=BABYLON.Vector3.Lerp(av.buttL.position,buttBase.add(rightVec.scale(-.14-shake)).add(new BABYLON.Vector3(0,.02+sway+shake*.45,0)),a);
+      av.buttR.position=BABYLON.Vector3.Lerp(av.buttR.position,buttBase.add(rightVec.scale(.14+shake)).add(new BABYLON.Vector3(0,.02-sway-shake*.45,0)),a);
+      av.buttL.scaling.set(1.0,1.0+.13*jig+Math.abs(shake),1.18+.18*jig);
+      av.buttR.scaling.set(1.0,1.0+.13*jig+Math.abs(shake),1.18+.18*jig);
+
+      // Talking face: takes about 5 seconds to fully change, and 5 seconds to return.
+      const talkTarget=av.talking?1:0;
+      const talkStep=dt/5;
+      av.talkLevel=av.talkLevel<talkTarget?Math.min(talkTarget,av.talkLevel+talkStep):Math.max(talkTarget,av.talkLevel-talkStep);
+      const talk=av.talkLevel||0;
+      const mouthPulse=av.talking?(0.5+0.5*Math.sin(t*13+av.slot)):0;
+      if(av.face){
+        for(const e of av.face.eyes||[]){
+          e.scaling.x=1+talk*.28;
+          e.scaling.y=1+talk*.34;
+        }
+        for(const p of av.face.pupils||[]){
+          p.scaling.x=1+talk*.10;
+          p.scaling.y=1+talk*.10;
+        }
+        for(const b of av.face.brows||[]){
+          b.position.y=.145+talk*.065;
+        }
+      }
+
+      if(av.handSlapTimer>0){
+        av.handSlapTimer=Math.max(0,av.handSlapTimer-dt);
+        av.handSlapKick=Math.max(0,(av.handSlapKick||0)-dt*.30);
+        const target=av.handSlapSide==="left"?av.left:av.right;
+        if(target){
+          const phase=1-av.handSlapTimer/.55;
+          target.position.y+=Math.sin(phase*Math.PI)*(.05+(av.handSlapKick||0));
+          target.position.x+=(av.handSlapSide==="left"?-1:1)*Math.sin(phase*Math.PI)*.035;
+        }
+      }
+
+      av.faceReactTimer=Math.max(0,(av.faceReactTimer||0)-dt);
+      if(av.face?.mouth){
+        if(av.faceReactTimer>0){
+          av.face.mouth.scaling.y=Math.max(1.7,.55+(av.talkLevel||0)*(1.0+mouthPulse*.65));
+          av.face.mouth.scaling.x=.92;
+        }else{
+          av.face.mouth.scaling.y=.55+(av.talkLevel||0)*(.85+mouthPulse*.70);
+          av.face.mouth.scaling.x=1-(av.talkLevel||0)*.08;
+        }
+      }
+
+      av.slapPrintTimer=Math.max(0,(av.slapPrintTimer||0)-dt);
+      av.slapFloatTimer=Math.max(0,(av.slapFloatTimer||0)-dt);
+
+      if(av.printPlane){
+        if(av.slapPrintTimer>0){
+          av.printPlane.setEnabled(true);
+          const rear=avatarRearVector(av),right=avatarRightVector(av);
+          av.printPlane.position.copyFrom(avatarButtCenter(av).add(rear.scale(.17)).add(right.scale(.10*(av.slapPrintSide||1))));
+          av.printPlane.lookAt(av.printPlane.position.add(rear));
+        }else{
+          av.printPlane.setEnabled(false);
+        }
+      }
+
+      if(av.floatHand){
+        if(av.slapFloatTimer>0){
+          av.floatHand.setEnabled(true);
+          const k=1-av.slapFloatTimer/1;
+          const rear=avatarRearVector(av),right=avatarRightVector(av);
+          av.floatHand.position.copyFrom(avatarButtCenter(av).add(rear.scale(.08)).add(right.scale(.12*(av.slapPrintSide||1))).add(new BABYLON.Vector3(0,.18+k*.34,0)));
+          av.floatHand.scaling.setAll(1+.12*k);
+        }else{
+          av.floatHand.setEnabled(false);
+        }
+      }
+    }
+  }
+
+  function updateNetworking(){
+    const now=performance.now();
+    const ndt=Math.min(.1,engine.getDeltaTime()/1000);
+    net.reviveCooldown=Math.max(0,net.reviveCooldown-ndt);
+    net.hitCooldown=Math.max(0,net.hitCooldown-ndt);
+    net.blockCooldown=Math.max(0,(net.blockCooldown||0)-ndt);
+
+    if(net.isHost){
+      if(!net.peer)return;
+      for(const [pid,p] of [...net.players]){
+        if(p?.lastPoseRecv&&now-p.lastPoseRecv>4000)hidePlayerAvatar(pid);
+        if(p?.lastRecv&&now-p.lastRecv>10000){
+          const c=net.connections.get(pid);
+          hidePlayerAvatar(pid);
+          net.connections.delete(pid);
+          net.matchMembers.delete(pid);
+          net.players.delete(pid);
+          try{c?.close();}catch(_){}
+          broadcast({t:"playerLeft",id:pid});
+          broadcast({t:"playerCount",count:netPlayerCount()});
+        }
+      }
+      net.connected=[...net.connections.values()].some(c=>c?.open);
+      const previousPartySize=gameState.partySize;
+      if(gameMode==="lobby")gameState.partySize=Math.max(1,Math.min(8,netPlayerCount()));
+      else gameState.partySize=Math.max(1,Math.min(4,1+[...net.matchMembers].filter(id=>net.connections.get(id)?.open).length));
+      if(previousPartySize!==gameState.partySize)saveGame();
+      net.status=gameMode==="lobby"?(net.connected?`PUBLIC LOBBY • ${netPlayerCount()}/8`:"PUBLIC LOBBY • WAITING • 1/8"):`MATCH • ${gameState.partySize}/4`;
+      if(gameMode==="lobby"&&now-net.lastLobbySync>1000){
+        net.lastLobbySync=now;
+        broadcast(currentLobbyState());
+      }
+      if(now-net.lastSend<50)return;
+      net.lastSend=now;
+
+      const pose=netPosePacket();
+      if(pose){
+        for(const [pid,c] of net.connections){
+          if(gameMode==="map"&&!net.matchMembers.has(pid))continue;
+          sendConn(c,{...pose,t:"hostPose",id:"host"});
+        }
+      }
+      if(gameMode==="map"){
+        const np=netNpcPacket();
+        if(np){
+          for(const id of net.matchMembers)sendConn(net.connections.get(id),np);
+        }
+      }
+    }else{
+      if(!net.connected||!net.hostConn?.open)return;
+      if(now-net.lastSend<50)return;
+      net.lastSend=now;
+
+      const pose=netPosePacket();
+      if(pose)sendHost(pose);
+
+      if(net.lastRecv&&now-net.lastRecv>7000){
+        net.status="CONNECTION LOST";
+        net.connected=false;net.ready=false;gameState.partySize=1;
+        try{net.hostConn?.close();}catch(_){}
+        net.hostConn=null;
+        try{net.peer?.destroy();}catch(_){}
+        net.peer=null;
+        clearRemotePlayers();saveGame();
+        if(gameMode==="map")goLobby(true);else refreshLobby();
+        return;
+      }
+      for(const [pid,p] of [...net.players]){
+        if(p?.lastRecv&&now-p.lastRecv>10000){
+          hidePlayerAvatar(pid);
+          net.players.delete(pid);
+        }
+      }
+    }
+
+    // Revive any nearby downed teammate by holding left grip.
+    if(net.reviveCooldown<=0&&btn(hands.left,1)&&hands.left?.node){
+      const lp=hands.left.node.getAbsolutePosition?.()||hands.left.node.position;
+      for(const [pid,p] of net.players){
+        if(gameMode==="map"&&net.isHost&&!net.matchMembers.has(pid))continue;
+        if(gameMode==="map"&&!net.isHost&&net.matchMembers.size&&!net.matchMembers.has(pid))continue;
+        if(!p?.downed||!p.pose?.head)continue;
+        if(net.isHost&&!net.connections.get(pid)?.open)continue;
+        if(p.lastRecv&&performance.now()-p.lastRecv>1500)continue;
+        const rh=arrv(p.pose.head);
+        if(rh&&BABYLON.Vector3.Distance(lp,rh)<1.1){
+          if(net.isHost){
+            if(pid==="host")continue;
+            const c=net.connections.get(pid);
+            if(c){
+              sendConn(c,{t:"revive"});
+              const rp=net.players.get(pid);if(rp)rp.downed=false;
+            }
+          }else{
+            sendHost({t:"revive",target:pid});
+          }
+          net.reviveCooldown=.85;
+          break;
+        }
+      }
+    }
+  }
+
+  function netGuestHit(hitPos,swingVel,speed){
+    if(!(net.connected&&!net.isHost))return false;
+    if(net.hitCooldown>0)return true;
+    net.hitCooldown=.16;
+    sendHost({t:"hit",pos:v3arr(hitPos),vel:v3arr(swingVel),speed:Math.min(12,speed)});
+    pulse(batHand(),Math.min(.7,.10+speed*.08),35+Math.min(70,speed*5));
+    return true;
+  }
+
+  function refreshLobby(){if(lobbySub!=="main")lobbyText.fontSize=28;if(lobbySub!=="avatar")showAvatarPreview(false);if(lobbySub!=="inspect")showBatPreview(false);if(lobbySub!=="practice")showPracticeDummy(false);if(gameState.pendingDuplicate)lobbyText.text=lobbyDup();else if(lobbySub==="maps")lobbyText.text=lobbyMaps();else if(lobbySub==="bats")lobbyText.text=lobbyBats();else if(lobbySub==="skins")lobbyText.text=lobbySkins();else if(lobbySub==="cosmetics")lobbyText.text=lobbyCosmetics();else if(lobbySub==="colors")lobbyText.text=lobbyPotatoColors();else if(lobbySub==="bundles")lobbyText.text=lobbyBundles();else if(lobbySub==="gemshop")lobbyText.text=lobbyGemShop();else if(lobbySub==="settings")lobbyText.text=lobbySettings();else if(lobbySub==="controls")lobbyText.text=lobbyControls();else if(lobbySub==="prematch")lobbyText.text=lobbyPrematch();else if(lobbySub==="avatar")lobbyText.text=lobbyAvatarPreview();else if(lobbySub==="inspect")lobbyText.text=lobbyBatInspect();else if(lobbySub==="practice")lobbyText.text=lobbyPractice();else if(lobbySub==="difficulty")lobbyText.text=lobbyDifficulty();else if(lobbySub==="calibration")lobbyText.text=lobbyHandCalibration();else if(lobbySub==="holster")lobbyText.text=lobbyHolster();else if(lobbySub==="testmode")lobbyText.text=lobbyTestMode();else if(lobbySub==="owner")lobbyText.text=lobbyOwnerVault();else if(lobbySub==="trading")lobbyText.text=lobbyOnline("TRADING");else if(lobbySub==="multi")lobbyText.text=lobbyMultiplayer();else lobbyText.text=lobbyMain();}
+  function clearRuntimeMap(){runtimeColliders.forEach(removeCollision);runtimeColliders=[];if(runtimeMapRoot){runtimeMapRoot.dispose(false,true);runtimeMapRoot=null;}}
+  function mapTheme(id){return {school:["#9aa5b1","#e6dfc7","#4d6985"],house:["#8d7761","#e9dfd0","#6b8a63"],supermarket:["#7a8794","#e6e8eb","#dc4d41"],gym:["#343c48","#c9ced5","#e87235"],hotel:["#7a695d","#e5ded6","#a77a48"],bank:["#5a6773","#dde2e6","#92773f"],metro:["#39434f","#9ba4ad","#d6a627"],factory:["#333b43","#727b82","#d56d28"],cinema:["#231f2e","#5f596c","#b83a4c"],arcade:["#242038","#493d67","#ff4fb7"],city:["#414b55","#8f9ba5","#3d8dc4"],forest:["#53664b","#31452e","#77945d"],beach:["#d2b87c","#8ed0dd","#f4d35e"],construction:["#655c50","#8f8a82","#f0a52b"],mall:["#89949f","#e4e7e9","#6fa7c7"],police:["#3d4d63","#d9dde3","#315fa8"],hospital:["#a9b8bd","#e9eeee","#49a6a6"],lab:["#7f8992","#d9e1e6","#67c6d5"],stadium:["#4f6751","#9aa0a6","#5d9f61"],castle:["#66635c","#8b877e","#8b2635"],farm:["#7a684d","#71845a","#d4aa58"],pirate:["#5d4936","#7a6b5b","#a73c2e"],amusement:["#6c76a2","#d4d6e1","#e85d75"],volcano:["#352a2a","#5b3c36","#e65325"],space:["#242c38","#586477","#62a5d8"],alien:["#2d2940","#4b3c66","#7ad36f"]}[id]||["#555f68","#c8cdd2","#4c91c4"];}
+  function buildRuntimeMap(id){clearRuntimeMap();if(id==="office")return;runtimeMapRoot=new BABYLON.TransformNode("runtime_"+id,scene);runtimeMapRoot.position.copyFrom(RUNTIME_CENTER);const [fh,wh,ah]=mapTheme(id),fm=mkMat("floor_"+id,fh),wm=mkMat("wall_"+id,wh),am=mkMat("accent_"+id,ah);const add=(n,world,s,mat,c=true)=>{const m=BABYLON.MeshBuilder.CreateBox(n,{width:s.x,height:s.y,depth:s.z},scene);m.parent=runtimeMapRoot;m.position.copyFrom(world.subtract(RUNTIME_CENTER));m.material=mat;if(c){addCollision(m);runtimeColliders.push(m);}return m;};add("arenaFloor",new BABYLON.Vector3(66,-.12,-6),new BABYLON.Vector3(18,.24,18),fm);add("arenaBack",new BABYLON.Vector3(66,2.5,-15),new BABYLON.Vector3(18,5,.2),wm);add("arenaLeft",new BABYLON.Vector3(57,2.5,-6),new BABYLON.Vector3(.2,5,18),wm);add("arenaRight",new BABYLON.Vector3(75,2.5,-6),new BABYLON.Vector3(.2,5,18),wm);add("arenaFrontL",new BABYLON.Vector3(60,2.5,3),new BABYLON.Vector3(6,5,.2),wm);add("arenaFrontR",new BABYLON.Vector3(72,2.5,3),new BABYLON.Vector3(6,5,.2),wm);for(let i=0;i<10;i++){const a=i/10*Math.PI*2,r=3.8+(i%3)*.9;add("mapProp"+i,new BABYLON.Vector3(66+Math.cos(a)*r,.55,-6+Math.sin(a)*r),new BABYLON.Vector3(.7+(i%2)*.35,1.1,.7),i%2?am:wm);}add("bossPlatform",new BABYLON.Vector3(66,.08,-12.5),new BABYLON.Vector3(4.5,.16,2.5),am);}
+  const getMapSpawn=()=>gameState.selectedMap==="office"?new BABYLON.Vector3(0,0,-1.5):new BABYLON.Vector3(66,0,-3);
+  function getNpcSpawnPosition(){const c=gameState.selectedMap==="office"?new BABYLON.Vector3(0,0,-6):RUNTIME_CENTER;return new BABYLON.Vector3(c.x+(Math.random()-.5)*3.2,0,c.z-3.7+Math.random()*1.2);}
+  function goLobby(fromNetwork=false){for(const [,p] of net.players){p.inMatch=false;p.reportedInMatch=false;}const wasHolstered=batHolstered;batHolstered=false;if(wasHolstered&&!attachBatToSelectedHand()){batRoot.parent=null;batRoot.setEnabled(false);}
+    mapEventText="";mapEventTextTimer=0;
+    playerDead=false;playerDowned=false;downedTimer=0;deathTimer=0;playerHP=PLAYER_MAX_HP;playerInvuln=.5;
+    deathPlane?.setEnabled?.(false);hudPlane?.setEnabled?.(true);
+    if(!fromNetwork){
+      if(net.isHost&&net.connected){broadcastMatch({t:"returnLobby"});}
+      else if(net.connected&&!net.isHost){
+        sendHost({t:"leave"});
+        destroyNetwork(true);
+      }
+    }
+    net.matchMembers.clear();
+    if(npc)npc.netTargetId=null;quickMenuDebounce=0;groundSlamCooldown=0;combatInputPrev.trigger=false;combatInputPrev.grip=false;chargeTime=0;batTipLast=null;batBaseLast=null;playerDowned=false;downedTimer=0;if(batThrown&&!attachBatToRightHand()){batRoot.parent=null;batRoot.setEnabled(false);}closeQuickMenu();gameMode="lobby";setMusicMode("normal");clearRuntimeMap();lobbySub="main";lobbyIndex=0;lastLobbyMessage="";mirror.setEnabled(true);mirrorFrame.setEnabled(true);lobbyScreen.setEnabled(true);if(xrCamera){xrCamera.position.set(30,.08,-5);bodyVelocity.set(0,0,0);keepRigAboveFloor();}if(npc?.root)npc.root.setEnabled(false);extraNpcs.forEach(e=>e.root.setEnabled(false));syncOwnerGiftVisual();refreshLobby();ensurePublicLobby();}
+  function startMap(forcedModifier=null){hidePack2();const wasHolstered=batHolstered;batHolstered=false;if(wasHolstered&&!attachBatToSelectedHand()){batRoot.parent=null;batRoot.setEnabled(false);}mapEventText="";mapEventTextTimer=0;quickMenuDebounce=0;groundSlamCooldown=0;combatInputPrev.trigger=false;combatInputPrev.grip=false;chargeTime=0;batTipLast=null;batBaseLast=null;if(batThrown&&!attachBatToRightHand()){batRoot.parent=null;batRoot.setEnabled(false);}gameMode="map";syncOwnerGiftVisual();playerDowned=false;downedTimer=0;resetRunStats(forcedModifier);playerHP=PLAYER_MAX_HP;playerDead=false;playerInvuln=1.0;deathTimer=0;deathPlane?.setEnabled?.(false);hudPlane?.setEnabled?.(true);setMusicMode(currentMapProgress().level>=10?"boss":"normal");gameMode="map";buildRuntimeMap(gameState.selectedMap);mirror.setEnabled(false);mirrorFrame.setEnabled(false);lobbyScreen.setEnabled(false);if(xrCamera){const p=getMapSpawn();xrCamera.position.set(p.x,.08,p.z);bodyVelocity.set(0,0,0);keepRigAboveFloor();}if(npc?.root)npc.root.dispose();createNpc();configureNpcForCurrentLevel();npc.root.setEnabled(true);npc.root.position.copyFrom(getNpcSpawnPosition());configureExtraSquad();applyBatLook();applySkinLook();}
+  function applyBatLook(){const b=selectedBatData(),c=BABYLON.Color3.FromHexString(b.color);batWood.diffuseColor=c;batWood.emissiveColor=c.scale(b.rarity==="Mythic"?.14:b.rarity==="Legendary"?.08:.02);}
+
+  let chestRoot=null;
+  let cosmeticRoot=null;
+  const cosmeticMeshes={};
+
+  function ensureCosmeticRoot(){
+    if(cosmeticRoot)return cosmeticRoot;
+    if(!chestRoot)return null;
+    cosmeticRoot=new BABYLON.TransformNode("cosmeticRoot",scene);
+    cosmeticRoot.parent=chestRoot;
+    return cosmeticRoot;
+  }
+
+  function makeCosmeticMesh(id){
+    if(cosmeticMeshes[id])return cosmeticMeshes[id];
+    const root=ensureCosmeticRoot();if(!root)return null;
+    let m=null;
+    if(id==="capRed"||id==="capBlue"){
+      m=BABYLON.MeshBuilder.CreateCylinder("cos_"+id,{height:.10,diameter:.34,tessellation:18},scene);
+      m.position.set(0,.69,.18);m.rotation.z=0;
+      m.material=mkMat("mat_"+id,id==="capRed"?"#d94a4a":"#4779d9");
+    }else if(id==="sunglasses"||id==="pixelShades"){
+      m=BABYLON.MeshBuilder.CreateBox("cos_"+id,{width:.30,height:.07,depth:.045},scene);
+      m.position.set(0,.56,.24);
+      m.material=mkMat("mat_"+id,id==="pixelShades"?"#111111":"#2d2d35");
+    }else if(id==="headphones"){
+      m=BABYLON.MeshBuilder.CreateTorus("cos_"+id,{diameter:.42,thickness:.045,tessellation:20},scene);
+      m.position.set(0,.61,.14);m.rotation.x=Math.PI/2;
+      m.material=mkMat("mat_"+id,"#4b5563");
+    }else if(id==="crown"||id==="voidCrown"){
+      m=BABYLON.MeshBuilder.CreateCylinder("cos_"+id,{height:.16,diameterTop:.24,diameterBottom:.32,tessellation:6},scene);
+      m.position.set(0,.76,.17);
+      m.material=mkMat("mat_"+id,id==="voidCrown"?"#4b2b68":"#d4af37");
+    }else if(id==="angelHalo"){
+      m=BABYLON.MeshBuilder.CreateTorus("cos_"+id,{diameter:.38,thickness:.025,tessellation:24},scene);
+      m.position.set(0,.88,.16);m.rotation.x=Math.PI/2;
+      m.material=mkMat("mat_"+id,"#f7e98a");
+    }else if(id==="backpack"){
+      m=BABYLON.MeshBuilder.CreateBox("cos_"+id,{width:.30,height:.38,depth:.15},scene);
+      m.position.set(0,-.04,-.33);
+      m.material=mkMat("mat_"+id,"#4f6a5e");
+    }else if(id==="goldChain"){
+      m=BABYLON.MeshBuilder.CreateTorus("cos_"+id,{diameter:.28,thickness:.025,tessellation:20},scene);
+      m.position.set(0,.22,.28);m.rotation.x=Math.PI/2;
+      m.material=mkMat("mat_"+id,"#d4af37");
+    }else if(id==="ownerCrown"){
+      m=new BABYLON.TransformNode("cos_"+id,scene);
+      const black=mkMat("ownerCrownBlack","#070a12");
+      const cyan=mkMat("ownerCrownCyan","#26ecff");
+      const gold=mkMat("ownerCrownGold","#ffd76a");
+      cyan.emissiveColor=BABYLON.Color3.FromHexString("#26ecff").scale(.9);
+      gold.emissiveColor=BABYLON.Color3.FromHexString("#ffd76a").scale(.45);
+      const base=BABYLON.MeshBuilder.CreateCylinder("ownerCrownBase",{height:.09,diameterTop:.29,diameterBottom:.36,tessellation:10},scene);
+      base.parent=m;base.position.set(0,.77,.17);base.material=black;
+      const ring=BABYLON.MeshBuilder.CreateTorus("ownerCrownRing",{diameter:.39,thickness:.03,tessellation:24},scene);
+      ring.parent=m;ring.position.set(0,.83,.17);ring.rotation.x=Math.PI/2;ring.material=cyan;
+      for(let i=0;i<6;i++){
+        const spike=BABYLON.MeshBuilder.CreateCylinder("ownerCrownSpike"+i,{height:.18,diameterTop:0,diameterBottom:.07,tessellation:6},scene);
+        const a=i/6*Math.PI*2;
+        spike.parent=m;spike.position.set(Math.cos(a)*.13,.92,.17+Math.sin(a)*.13);spike.material=i%2?gold:cyan;
+      }
+    }else if(id==="ownerVisor"){
+      m=new BABYLON.TransformNode("cos_"+id,scene);
+      const dark=mkMat("ownerVisorDark","#070914");
+      const cyan=mkMat("ownerVisorCyan","#20e7ff");
+      const pink=mkMat("ownerVisorPink","#ff46df");
+      cyan.emissiveColor=BABYLON.Color3.FromHexString("#20e7ff").scale(.85);
+      pink.emissiveColor=BABYLON.Color3.FromHexString("#ff46df").scale(.85);
+      const body=BABYLON.MeshBuilder.CreateBox("ownerVisorBody",{width:.34,height:.085,depth:.045},scene);
+      body.parent=m;body.position.set(0,.56,.255);body.material=dark;
+      const l=BABYLON.MeshBuilder.CreateBox("ownerVisorLeft",{width:.145,height:.035,depth:.012},scene);
+      l.parent=m;l.position.set(-.09,.56,.284);l.rotation.z=-.08;l.material=cyan;
+      const r=BABYLON.MeshBuilder.CreateBox("ownerVisorRight",{width:.145,height:.035,depth:.012},scene);
+      r.parent=m;r.position.set(.09,.56,.284);r.rotation.z=.08;r.material=pink;
+    }else if(id==="ownerCore"){
+      m=new BABYLON.TransformNode("cos_"+id,scene);
+      const cyan=mkMat("ownerCoreCyan","#14e7ff");
+      const violet=mkMat("ownerCoreViolet","#965cff");
+      cyan.emissiveColor=BABYLON.Color3.FromHexString("#14e7ff").scale(.95);
+      violet.emissiveColor=BABYLON.Color3.FromHexString("#965cff").scale(.8);
+      const ring=BABYLON.MeshBuilder.CreateTorus("ownerCoreRing",{diameter:.26,thickness:.035,tessellation:24},scene);
+      ring.parent=m;ring.position.set(0,.22,.30);ring.rotation.x=Math.PI/2;ring.material=cyan;
+      const orb=BABYLON.MeshBuilder.CreateSphere("ownerCoreOrb",{diameter:.10,segments:12},scene);
+      orb.parent=m;orb.position.set(0,.22,.315);orb.material=violet;
+    }else if(id==="ownerCape"){
+      m=new BABYLON.TransformNode("cos_"+id,scene);
+      const dark=mkMat("ownerCapeDark","#080a16");
+      const edge=mkMat("ownerCapeEdge","#ff46df");
+      edge.emissiveColor=BABYLON.Color3.FromHexString("#ff46df").scale(.75);
+      const cape=BABYLON.MeshBuilder.CreateBox("ownerCapeBody",{width:.48,height:.62,depth:.035},scene);
+      cape.parent=m;cape.position.set(0,-.02,-.40);cape.rotation.x=-.10;cape.material=dark;
+      const stripe1=BABYLON.MeshBuilder.CreateBox("ownerCapeStripe1",{width:.38,height:.045,depth:.012},scene);
+      stripe1.parent=m;stripe1.position.set(0,.17,-.425);stripe1.material=edge;
+      const stripe2=BABYLON.MeshBuilder.CreateBox("ownerCapeStripe2",{width:.30,height:.035,depth:.012},scene);
+      stripe2.parent=m;stripe2.position.set(0,-.10,-.425);stripe2.material=edge;
+    }
+    if(m){m.parent=root;m.setEnabled(false);cosmeticMeshes[id]=m;}
+    return m;
+  }
+
+  function applyPotatoColor(){
+    const col=BABYLON.Color3.FromHexString(potatoRgbHex(gameState.potatoRGB));
+    potatoMat.diffuseColor=col;
+    potatoLightMat.diffuseColor=BABYLON.Color3.Lerp(col,new BABYLON.Color3(1,1,1),.18);
+  }
+
+  function applyCosmetics(){
+    if(!ensureCosmeticRoot())return;
+    Object.values(cosmeticMeshes).forEach(m=>m?.setEnabled?.(false));
+    for(const slot of ["head","face","chest","back"]){
+      const id=gameState.equippedCosmetics?.[slot];
+      if(!id||!gameState.cosmetics?.[id])continue;
+      const m=makeCosmeticMesh(id);
+      m?.setEnabled?.(true);
+    }
+  }
+
+  function cyclePotatoRgb(channel){
+    if(!["r","g","b"].includes(channel))return;
+    gameState.potatoRGB[channel]=(gameState.potatoRGB[channel]+1)%10;
+    applySkinLook();saveGame();
+  }
+
+  function buyOrEquipCosmetic(id){
+    const c=COSMETIC_CATALOG.find(x=>x.id===id);if(!c)return false;
+    if(gameState.cosmetics[id]){
+      gameState.equippedCosmetics[c.slot]=gameState.equippedCosmetics[c.slot]===id?null:id;
+      applyCosmetics();saveGame();return true;
+    }
+    if(c.type==="gem"){
+      if(gameState.gems<c.price){lastLobbyMessage="NOT ENOUGH GEMS";return false;}
+      gameState.gems-=c.price;gameState.cosmetics[id]=1;gameState.equippedCosmetics[c.slot]=id;
+      previewCosmeticId=null;applyCosmetics();saveGame();return true;
+    }
+    if(c.type==="owner"){
+      lastLobbyMessage="OWNER GIFT ONLY • GET IT FROM THE OWNER IN A PUBLIC LOBBY";
+      return false;
+    }
+    lastLobbyMessage=`PREMIUM ${c.price} • META IAP NOT CONNECTED YET`;
+    updateCosmeticPreview();
+    return false;
+  }
+
+  function applySkinLook(){
+    applyPotatoColor();
+    const s=SKIN_CATALOG.find(x=>x.id===gameState.selectedSkin)||SKIN_CATALOG[0];
+    if(s?.color){
+      const tint=BABYLON.Color3.FromHexString(s.color);
+      potatoLightMat.diffuseColor=BABYLON.Color3.Lerp(potatoLightMat.diffuseColor,tint,.10);
+    }
+    applyCosmetics();
+  }
+  function activateLobby(){lastLobbyMessage="";if(gameState.pendingDuplicate){resolveDuplicate(["keep","coins","gems"][wrap(lobbyIndex,3)]);lobbyIndex=0;lastLobbyMessage="Duplicate choice saved.";refreshLobby();return;}if(lobbySub==="maps"){const ids=ownedMapIds();gameState.selectedMap=ids[wrap(lobbyIndex,ids.length)];saveGame();lobbySub="prematch";lobbyIndex=0;refreshLobby();return;}if(lobbySub==="bats"){const ids=ownedBatIds();gameState.selectedBat=ids[wrap(lobbyIndex,ids.length)];saveGame();applyBatLook();refreshLobby();return;}if(lobbySub==="skins"){const ids=ownedSkinIds();gameState.selectedSkin=ids[wrap(lobbyIndex,ids.length)];saveGame();applySkinLook();refreshLobby();return;}if(lobbySub==="cosmetics"){buyOrEquipCosmetic(COSMETIC_CATALOG[wrap(lobbyIndex,COSMETIC_CATALOG.length)].id);refreshLobby();return;}if(lobbySub==="colors"){cyclePotatoRgb(["r","g","b"][wrap(lobbyIndex,3)]);refreshLobby();return;}if(lobbySub==="bundles"){requestPaidProduct(BUNDLES[wrap(lobbyIndex,BUNDLES.length)]);refreshLobby();return;}if(lobbySub==="gemshop"){requestPaidProduct(GEM_PACKS[wrap(lobbyIndex,GEM_PACKS.length)]);refreshLobby();return;}if(lobbySub==="settings"){if(lobbyIndex===0)cycleAudioSetting("musicVolume");else if(lobbyIndex===1)cycleAudioSetting("chatVolume");else if(lobbyIndex===2)cycleAudioSetting("sfxVolume");else if(lobbyIndex===3)toggleCameraHeld();else lastLobbyMessage="Training area active — test movement, hits and blocks here.";refreshLobby();return;}if(lobbySub==="controls"){if(lobbyIndex===0)saveControlChoice("batHand",oppositeHand(batHandSide()));else if(lobbyIndex===1)saveControlChoice("dominantHand",oppositeHand(dominantHandSide()));else if(lobbyIndex===2)saveControlChoice("menuHand",oppositeHand(menuHandSide()));refreshLobby();return;}if(lobbySub==="prematch"){if(lobbyIndex===0)saveControlChoice("batHand",oppositeHand(batHandSide()));else if(lobbyIndex===1)saveControlChoice("dominantHand",oppositeHand(dominantHandSide()));else if(lobbyIndex===2)saveControlChoice("menuHand",oppositeHand(menuHandSide()));else startMap();refreshLobby();return;}if(lobbySub==="avatar"){gameState.settings.previewSpin=!gameState.settings.previewSpin;saveGame();refreshLobby();return;}if(lobbySub==="inspect"){const ids=ownedBatIds();const i=Math.max(0,ids.indexOf(gameState.selectedBat));gameState.selectedBat=ids[(i+1)%ids.length];saveGame();applyBatLook();refreshLobby();return;}if(lobbySub==="practice"){lastLobbyMessage=`BEST ${practiceDummyBestHit.toFixed(1)} m/s`;refreshLobby();return;}if(lobbySub==="difficulty"){cycleNpcDifficulty();refreshLobby();return;}if(lobbySub==="calibration"){cycleHandCalibration();refreshLobby();return;}if(lobbySub==="holster"){gameState.settings.holsterEnabled=!gameState.settings.holsterEnabled;if(!gameState.settings.holsterEnabled&&batHolstered)drawBatFromHolster();saveGame();refreshLobby();return;}if(lobbySub==="testmode"){if(gameState.settings.testMode)disableFreeTestMode();else enableFreeTestMode();refreshLobby();return;}if(lobbySub==="owner"){requestOwnerGiftDrop(OWNER_COSMETIC_IDS[wrap(lobbyIndex,OWNER_COSMETIC_IDS.length)]);refreshLobby();return;}if(lobbySub==="multi"){activateMultiplayerLobby();return;}if(lobbySub!=="main")return;const c=lobbySelection;if(c===0){lobbySub="maps";lobbyIndex=0;}else if(c>=1&&c<=4){const r=openCrate({1:"bat",2:"skin",3:"map",4:"gem"}[c]);lastLobbyMessage=r?.error||`OPENED: ${r.item.rarity} ${r.item.name}`;}else if(c===5){lobbySub="bats";lobbyIndex=0;}else if(c===6){lobbySub="skins";lobbyIndex=0;}else if(c===7){lobbySub="cosmetics";lobbyIndex=0;}else if(c===8){lobbySub="colors";lobbyIndex=0;}else if(c===9){const modes=["NORMAL","SURVIVAL","ENDLESS","HARDCORE"];gameState.mode=modes[(modes.indexOf(gameState.mode)+1)%modes.length];saveGame();if(net.isHost)broadcast(currentLobbyState());lastLobbyMessage=`Mode: ${gameState.mode}`;}else if(c===10){lastLobbyMessage=`DAILY ${missionShort()} • WEEKLY BOSSES ${gameState.weekly.boss.progress}/${gameState.weekly.boss.goal}`;}else if(c===11){lastLobbyMessage=`COLLECTION: ${ownedBatIds().length}/${BAT_CATALOG.length} bats • ${ownedSkinIds().length}/${SKIN_CATALOG.length} skins • ${ownedMapIds().length}/${MAP_CATALOG.length} maps • ${Object.keys(gameState.cosmetics).length}/${COSMETIC_CATALOG.length} cosmetics`;}else if(c===12)lobbySub="trading";else if(c===13){lobbySub="multi";lobbyIndex=0;}else if(c===14){lobbySub="bundles";lobbyIndex=0;}else if(c===15){lobbySub="settings";lobbyIndex=0;}else if(c===16){lobbySub="controls";lobbyIndex=0;}else if(c===17){lobbySub="avatar";lobbyIndex=0;}else if(c===18){lobbySub="inspect";lobbyIndex=0;}else if(c===19){lobbySub="practice";lobbyIndex=0;}else if(c===20){lobbySub="difficulty";lobbyIndex=0;}else if(c===21){lobbySub="calibration";lobbyIndex=0;}else if(c===22){lobbySub="holster";lobbyIndex=0;}else if(c===23){lobbySub="gemshop";lobbyIndex=0;}else if(c===24&&OWNER_ACCESS){lobbySub="owner";lobbyIndex=0;}refreshLobby();}
+  function backLobby(){if(!gameState.pendingDuplicate&&lobbySub!=="main"){lobbySub="main";lobbyIndex=0;previewCosmeticId=null;applyCosmetics();refreshLobby();}}
+  refreshLobby();
+  setTimeout(()=>ensurePublicLobby(),350);
 
   // ------------------------------------------------------------
   // Player / XR globals
@@ -2136,11 +4735,12 @@
   let bodyVelocity=new BABYLON.Vector3(0,0,0);
 
   // Much lighter than previous versions.
-  const PLAYER_GRAVITY = -2.35;
-  const PUSH_GAIN = 1.64;
+  const PLAYER_GRAVITY = -5.15;
+  const PUSH_GAIN = 1.78;
   const MAX_PLAYER_SPEED = 8.8;
-  const FLOOR_FORWARD_BOOST = 1.42;
-  const FLOOR_SIDE_BOOST = 1.08;
+  const FLOOR_FORWARD_BOOST = 1.52;
+  const FLOOR_SIDE_BOOST = 1.10;
+  const FLOOR_LIFT_BOOST = 1.82;
 
   // ------------------------------------------------------------
   // Camera-fixed player HUD: always shows your own HP.
@@ -2274,11 +4874,14 @@
   let blockFlashTimer=0;
 
   function updatePlayerHud() {
-    youHpText.text=`HP ${Math.max(0,Math.ceil(playerHP))} / ${PLAYER_MAX_HP}`;
+    youHpText.text=playerDowned
+      ? `DOWNED ${Math.max(0,Math.ceil(downedTimer))}s`
+      : `HP ${Math.max(0,Math.ceil(playerHP))} / ${PLAYER_MAX_HP}`;
     hpBar.width=Math.max(.001,playerHP/PLAYER_MAX_HP);
     hpBar.background = playerHP>55 ? "#22c55e" : playerHP>25 ? "#f59e0b" : "#ef4444";
-    gameInfoText.text=`LV ${gameState.level} • ${gameState.coins} COINS • XP ${gameState.xp}/${xpNeeded(gameState.level)}`;
-    missionText.text=missionShort();
+    gameInfoText.text=`${gameState.coins} COINS • ${gameState.gems} GEMS • ${selectedBatData().name} LV ${selectedBatState().level}${(net.connected||net.isHost)?" • PARTY "+gameState.partySize+"/"+(gameMode==="lobby"?8:4):""}`;
+    missionText.text=mapEventTextTimer>0?`${mapEventText}`:`${waveModifier!=="NONE"?"MOD: "+waveModifier:""}`;
+    missionText.isVisible=!!missionText.text;missionText.fontSize=18;missionText.height=missionText.text?"24px":"0px";
     updateStatsUI();
   }
 
@@ -2305,7 +4908,7 @@
   }
 
   function hurtPlayer(amount, fromWorldPos) {
-    if (playerDead || playerInvuln>0) return;
+    if (playerDead || playerDowned || playerInvuln>0) return;
     playerHP=Math.max(0,playerHP-amount);
     playerInvuln=.42;
     damageFlashTimer=.18;
@@ -2324,7 +4927,8 @@
     pulse(hands.right,.92,115);
     updatePlayerHud();
 
-    if (playerHP<=0) {
+    if (playerHP<=0 && !playerDowned) {
+      if(enterDownedState()){updatePlayerHud();return;}
       playerDead=true;
       deathTimer=3.0;
       if(isInXR()){
@@ -2336,17 +4940,19 @@
   }
 
   function respawnPlayer() {
-    playerHP=PLAYER_MAX_HP;
+    playerDowned=false;downedTimer=0;playerHP=PLAYER_MAX_HP;
     playerDead=false;
     playerInvuln=1.5;
     deathPlane.setEnabled(false);
     hudPlane.setEnabled(true);
     bodyVelocity.set(0,0,0);
     if (xrCamera) {
-      xrCamera.position.set(0,.08,-3.2);
+      const sp=getMapSpawn();
+      xrCamera.position.set(sp.x,.08,sp.z);
       keepRigAboveFloor();
       resolvePlayerWorldCollision();
     }
+    if(chestRoot)chestRoot.setEnabled(!!xrCamera);
     updatePlayerHud();
   }
 
@@ -2354,7 +4960,7 @@
   // Potato player body — visual only.
   // The actual player collision remains head + chest only.
   // ------------------------------------------------------------
-  const chestRoot = new BABYLON.TransformNode("potatoBodyRoot",scene);
+  chestRoot = new BABYLON.TransformNode("potatoBodyRoot",scene);
 
   const potatoBody=BABYLON.MeshBuilder.CreateSphere("playerPotatoBody",{
     diameter:.54,segments:20
@@ -2406,6 +5012,7 @@
   let potatoBodyLastPos=null;
 
   chestRoot.setEnabled(false);
+  ensureCosmeticRoot();applyPotatoColor();applyCosmetics();
 
   function updateBodyVisual(dt=1/72) {
     if(!xrCamera || playerDead){
@@ -2633,49 +5240,50 @@
   };
 
   function makeHand(side) {
-    const root=new BABYLON.TransformNode(side+"PotatoHand",scene);
+    const root=new BABYLON.TransformNode(side+"PotatoMitten",scene);
 
-    // Main hand is one chunky potato instead of a human hand.
-    const palm=BABYLON.MeshBuilder.CreateSphere(side+"PotatoPalm",{
-      diameter:.145,segments:16
+    // Chunky mitten-style potato hand.
+    const palm=BABYLON.MeshBuilder.CreateSphere(side+"MittenPalm",{
+      diameter:.155,segments:18
     },scene);
     palm.parent=root;
-    palm.position.z=.025;
-    palm.scaling.set(1.02,.78,1.22);
+    palm.position.set(0,0,.020);
+    palm.scaling.set(.95,.80,1.18);
     palm.material=potatoMat;
 
-    // Three small potato nubs.
-    for(let i=0;i<3;i++){
-      const nub=BABYLON.MeshBuilder.CreateSphere(side+"PotatoNub"+i,{
-        diameter:.045,segments:10
-      },scene);
-      nub.parent=root;
-      nub.position.set((i-1)*.042,-.005,.103);
-      nub.scaling.set(.80,.72,1.12);
-      nub.material=potatoLightMat;
-    }
+    // Big fused finger pad instead of separate human fingers.
+    const fingerPad=BABYLON.MeshBuilder.CreateCapsule(side+"MittenFingers",{
+      height:.125,radius:.040,tessellation:12
+    },scene);
+    fingerPad.parent=root;
+    fingerPad.rotation.x=Math.PI/2;
+    fingerPad.position.set(0,.002,.115);
+    fingerPad.scaling.set(1.25,.78,1);
+    fingerPad.material=potatoLightMat;
 
-    const thumb=BABYLON.MeshBuilder.CreateSphere(side+"PotatoThumb",{
-      diameter:.055,segments:10
+    // Round thumb.
+    const thumb=BABYLON.MeshBuilder.CreateSphere(side+"MittenThumb",{
+      diameter:.067,segments:12
     },scene);
     thumb.parent=root;
-    thumb.position.set(side==="left"?.075:-.075,-.012,.025);
-    thumb.scaling.set(1.12,.78,.85);
+    thumb.position.set(side==="left"?.080:-.080,-.018,.035);
+    thumb.scaling.set(1.05,.78,.95);
     thumb.material=potatoLightMat;
 
-    // Small dark potato dimples.
-    const dimplePositions=[
-      [-.035,.032,.082],
-      [.038,-.024,.076],
-      [.010,.040,-.035]
+    // Little potato eyes/dimples.
+    const spots=[
+      [-.038,.030,.070],
+      [.040,-.025,.067],
+      [0,.042,-.030],
+      [side==="left"?.055:-.055,.018,-.020]
     ];
-    dimplePositions.forEach((p,i)=>{
-      const d=BABYLON.MeshBuilder.CreateSphere(side+"HandDimple"+i,{
-        diameter:.017,segments:7
+    spots.forEach((p,i)=>{
+      const d=BABYLON.MeshBuilder.CreateSphere(side+"MittenDimple"+i,{
+        diameter:.016,segments:7
       },scene);
       d.parent=root;
       d.position.set(p[0],p[1],p[2]);
-      d.scaling.set(1,.45,.35);
+      d.scaling.set(1,.45,.32);
       d.material=potatoDarkMat;
     });
 
@@ -2686,6 +5294,7 @@
   hands.right.mesh=makeHand("right");
 
   async function pulse(h,intensity,duration) {
+    intensity*=gameState.settings?.hapticStrength??.85;
     try {
       const gp=h?.controller?.inputSource?.gamepad;
       if (!gp) return;
@@ -2701,6 +5310,9 @@
   }
 
   const HAND_RADIUS=.105;
+  let groundSlamCooldown=0;
+  const GROUND_SLAM_MIN_SPEED=2.55;
+  const GROUND_SLAM_MAX_BOOST=4.15;
   function closestPointAabb(p,mesh) {
     const bb=mesh.getBoundingInfo().boundingBox;
     const min=bb.minimumWorld,max=bb.maximumWorld;
@@ -2744,7 +5356,15 @@
 
   function controllerNode(c){ return c.grip||c.pointer; }
   function handWorld(h){ return h.node?.getAbsolutePosition().clone()||null; }
-  function handTrack(h){ return h.node?.position?.clone()||handWorld(h); }
+  function calibratedHandWorld(h){
+    if(!h?.node)return handWorld(h);
+    const raw=h.node.getAbsolutePosition?.()||h.node.position;
+    if(!xrCamera)return raw.clone();
+    const head=xrCamera.globalPosition||xrCamera.position;
+    const scale=BABYLON.Scalar.Clamp(Number(gameState.settings.handReach)||1,.85,1.15);
+    return head.add(raw.subtract(head).scale(scale));
+  }
+  function handTrack(h){return calibratedHandWorld(h);}
 
   function safeVisibleHandPosition(pos){
     const p=pos.clone();
@@ -2757,6 +5377,7 @@
   }
 
   function updateHandLocomotion(h,worldPos,trackPos,dt) {
+    let didGroundSlam=false;
     let c=surfaceContact(worldPos);
 
     if(!c && worldPos.y<HAND_RADIUS+.025){
@@ -2775,10 +5396,37 @@
       h.anchor=c.point.add(h.normal.scale(HAND_RADIUS+.014));
       h.plantTrack=trackPos.clone();
       h.mesh.position.copyFrom(safeVisibleHandPosition(h.anchor));
-      pulse(h,.35,30);
+
+      // One-shot hard ground slam. Normal gravity stays active after the launch.
+      // It only fires on a fresh floor contact, so landing never auto-bounces.
+      const isFloorLike=h.normal.y>.72;
+      let slamSpeed=0;
+      if(h.trackLast){
+        const handDelta=trackPos.subtract(h.trackLast);
+        slamSpeed=Math.max(0,-BABYLON.Vector3.Dot(handDelta,h.normal)/Math.max(dt,.008));
+      }
+
+      if(isFloorLike && slamSpeed>=GROUND_SLAM_MIN_SPEED && groundSlamCooldown<=0){
+        const t=BABYLON.Scalar.Clamp((slamSpeed-GROUND_SLAM_MIN_SPEED)/4.5,0,1);
+        const upBoost=BABYLON.Scalar.Lerp(1.55,GROUND_SLAM_MAX_BOOST,t);
+
+        const hv=h.trackLast.subtract(trackPos).scale(1/Math.max(dt,.008));
+        hv.y=0;
+        if(hv.length()>4.8)hv.normalize().scaleInPlace(4.8);
+
+        bodyVelocity.x+=hv.x*.46;
+        bodyVelocity.z+=hv.z*.46;
+        bodyVelocity.y=Math.max(bodyVelocity.y,upBoost);
+        didGroundSlam=true;
+
+        groundSlamCooldown=.28;
+        pulse(h,.85,75);
+      }else{
+        pulse(h,.35,30);
+      }
     }
 
-    if (h.contact && h.normal && h.plantTrack && h.trackLast) {
+    if (h.contact && h.normal && h.plantTrack && h.trackLast && !didGroundSlam) {
       const n=h.normal;
       const fromPlant=trackPos.subtract(h.plantTrack);
       const outward=BABYLON.Vector3.Dot(fromPlant,n);
@@ -2796,7 +5444,14 @@
         const tangent=delta.subtract(n.scale(normalDelta));
         const into=n.scale(Math.min(normalDelta,0));
 
-        const effective=tangent.add(into.scale(1.18));
+        let effective=tangent.add(into.scale(1.18));
+
+        // Stronger arms: pushing DOWN into the floor gives a stronger lift.
+        if(n.y>.60 && normalDelta<0){
+          const liftInto=n.scale(normalDelta*FLOOR_LIFT_BOOST);
+          effective=tangent.add(liftInto);
+        }
+
         let rigDelta=effective.scale(-PUSH_GAIN);
 
         // Floor pushes get a forward-biased assist.
@@ -2820,7 +5475,7 @@
           }
         }
 
-        const max=.135;
+        const max=.155;
         if (rigDelta.length()>max) rigDelta=rigDelta.normalize().scale(max);
 
         if (rigDelta.length()>.0010) {
@@ -2833,7 +5488,7 @@
             bodyVelocity=bodyVelocity.normalize().scale(MAX_PLAYER_SPEED);
           }
           bodyVelocity.x=BABYLON.Scalar.Clamp(bodyVelocity.x,-7.2,7.2);
-          bodyVelocity.y=BABYLON.Scalar.Clamp(bodyVelocity.y,-5.0,5.0);
+          bodyVelocity.y=BABYLON.Scalar.Clamp(bodyVelocity.y,-6.8,7.0);
           bodyVelocity.z=BABYLON.Scalar.Clamp(bodyVelocity.z,-7.2,7.2);
         }
       }
@@ -2962,6 +5617,48 @@
     }catch(_){return null;}
   }
 
+  let musicRunning=false,musicTimer=null,musicStep=0,musicMode="normal";
+  function playMusicNote(freq,dur=.22,vol=.055,type="triangle"){
+    const ac=audioCtx();if(!ac||!musicRunning)return;
+    const mv=gameState.settings?.musicVolume??.5;if(mv<=0)return;
+    try{
+      if(ac.state==="suspended")ac.resume();
+      const o=ac.createOscillator(),g=ac.createGain(),now=ac.currentTime;
+      o.type=type;o.frequency.value=freq;
+      g.gain.setValueAtTime(Math.max(.0001,vol*mv),now);
+      g.gain.exponentialRampToValueAtTime(.0001,now+dur);
+      o.connect(g);g.connect(ac.destination);o.start(now);o.stop(now+dur+.02);
+    }catch(_){}
+  }
+  function setMusicMode(mode){
+    const next=mode==="boss"?"boss":"normal";
+    if(next!==musicMode){musicMode=next;musicStep=0;}
+  }
+  function startBackgroundMusic(){
+    if(musicRunning)return;
+    musicRunning=true;
+    const normal=[110,146.83,164.81,146.83,123.47,164.81,196,164.81];
+    const boss=[82.41,82.41,98.00,73.42,82.41,110.00,98.00,73.42];
+    const tick=()=>{
+      if(!musicRunning)return;
+      const isBoss=musicMode==="boss";
+      const seq=isBoss?boss:normal;
+      const f=seq[musicStep%seq.length];
+      if(isBoss){
+        playMusicNote(f,.22,.072,"sawtooth");
+        if(musicStep%2===0)playMusicNote(f/2,.34,.045,"square");
+        if(musicStep%4===3)playMusicNote(f*1.5,.12,.028,"triangle");
+      }else{
+        playMusicNote(f,.28,.05,"triangle");
+        if(musicStep%4===0)playMusicNote(f/2,.42,.028,"sine");
+      }
+      musicStep++;
+      musicTimer=setTimeout(tick,isBoss?300:430);
+    };
+    tick();
+  }
+  function stopBackgroundMusic(){musicRunning=false;if(musicTimer){clearTimeout(musicTimer);musicTimer=null;}}
+
   function noiseBuffer(ac,duration=.16){
     const len=Math.max(1,Math.floor(ac.sampleRate*duration));
     const b=ac.createBuffer(1,len,ac.sampleRate);
@@ -2972,7 +5669,9 @@
 
   function playImpactSound(kind="body",strength=.5){
     const ac=audioCtx(); if(!ac) return;
-    strength=Math.max(.05,Math.min(1.3,strength));
+    const sfxVol=gameState.settings?.sfxVolume??.75;
+    if(sfxVol<=0)return;
+    strength=Math.max(.05,Math.min(1.3,strength))*sfxVol;
     try{
       if(ac.state==="suspended") ac.resume();
       const now=ac.currentTime;
@@ -3024,6 +5723,15 @@
         o.type="sine";o.frequency.value=70;
         g.gain.setValueAtTime(.045*strength,now);g.gain.exponentialRampToValueAtTime(.001,now+.06);
         o.connect(g);g.connect(ac.destination);o.start(now);o.stop(now+.07);
+      }else if(kind==="slap"){
+        const src=ac.createBufferSource(),bp=ac.createBiquadFilter(),peak=ac.createBiquadFilter(),g=ac.createGain();
+        src.buffer=noiseBuffer(ac,.12);
+        bp.type="bandpass";bp.frequency.value=980;bp.Q.value=.55;
+        peak.type="peaking";peak.frequency.value=2100;peak.Q.value=1.1;peak.gain.value=3.8;
+        g.gain.setValueAtTime(.001,now);
+        g.gain.linearRampToValueAtTime(.16*strength,now+.008);
+        g.gain.exponentialRampToValueAtTime(.001,now+.12);
+        src.connect(bp);bp.connect(peak);peak.connect(g);g.connect(ac.destination);src.start(now);
       }
     }catch(_){}
   }
@@ -3044,54 +5752,14 @@
   // NPC voice: no more embedded eSpeak robot audio.
   // Uses the best native browser/system voice the Quest exposes.
   // ------------------------------------------------------------
-  let selectedVoice=null;
-  let currentNpcUtterance=null;
-
-  function voiceScore(v){
-    const name=(v.name||"").toLowerCase();
-    const lang=(v.lang||"").toLowerCase();
-    let s=0;
-
-    if(lang.startsWith("en-us")) s+=26;
-    else if(lang.startsWith("en-gb")) s+=21;
-    else if(lang.startsWith("en")) s+=13;
-
-    const preferred=[
-      ["samantha",70],["aaron",66],["daniel",64],["ava",62],
-      ["allison",58],["tom",56],["susan",54],
-      ["natural",50],["neural",50],["premium",46],["enhanced",44],
-      ["siri",42],["microsoft",28],["google",20]
-    ];
-    for(const [key,value] of preferred){
-      if(name.includes(key)) s+=value;
-    }
-
-    const avoid=[
-      "compact","novelty","whisper","bells","bad news","good news",
-      "cellos","zarvox","trinoids","boing","organ","bubbles","robot",
-      "eddy","flo","grandma","grandpa"
-    ];
-    for(const key of avoid){
-      if(name.includes(key)) s-=100;
-    }
-
-    return s;
-  }
-
-  function chooseVoice() {
-    if (!("speechSynthesis" in window)) return;
-    const voices=speechSynthesis.getVoices();
-    if (!voices.length) return;
-
-    selectedVoice=[...voices].sort((a,b)=>voiceScore(b)-voiceScore(a))[0]||voices[0];
-  }
-
-  chooseVoice();
-  if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged=chooseVoice;
-
-  const HUMAN_VOICE_FILES_AVAILABLE=false;
+  // ------------------------------------------------------------
+  // Crazy Office reaction audio.
+  // No text-to-speech and no spoken words. Real scream clips can be added later.
+  // ------------------------------------------------------------
+  const HUMAN_VOICE_FILES_AVAILABLE=false; // set true after recorded scream files are added
 
   const NPC_VOICE_CLIPS={
+    chase:["voice/chase1.mp3","voice/chase2.mp3"],
     hurt:["voice/hurt1.mp3","voice/hurt2.mp3","voice/hurt3.mp3"],
     angry:["voice/angry1.mp3","voice/angry2.mp3"],
     furious:["voice/furious1.mp3","voice/furious2.mp3"],
@@ -3129,149 +5797,110 @@
     }
   }
 
-  const VOICE_LINES={
-    chase:[
-      "Hey, where are you going?",
-      "Come back here.",
-      "You really want to do this?",
-      "Okay. Come on then.",
-      "Hey. I'm talking to you.",
-      "Don't just walk away."
-    ],
-    angry:[
-      "Ow! Stop doing that!",
-      "Seriously? Cut it out!",
-      "Okay, now you're making me angry.",
-      "That's enough.",
-      "What is wrong with you?",
-      "Stop swinging that thing at me!"
-    ],
-    furious:[
-      "Alright, that's it!",
-      "I'm done messing around!",
-      "You asked for this!",
-      "Come here!",
-      "Okay. Now I'm mad."
-    ],
-    hurt:[
-      "Ow!",
-      "Ah, that hurt!",
-      "Damn, easy!",
-      "Ow, seriously?",
-      "Ah! Stop!",
-      "What was that for?"
-    ],
-    scared:[
-      "Okay, okay, stop!",
-      "Wait. Just stop for a second!",
-      "This is getting bad.",
-      "Hey, calm down!",
-      "Alright, enough!"
-    ],
-    attack:[
-      "Come on!",
-      "Got you!",
-      "Take this!",
-      "Here!",
-      "Try dodging this!"
-    ],
-    block:[
-      "What?",
-      "You blocked it?",
-      "Come on!",
-      "Seriously?"
-    ],
-    death:[
-      "Oh—!",
-      "Wait—!",
-      "No—!"
-    ]
-  };
-  function speakNpc(kind,force=false) {
-    if (!npc || npc.dead || !("speechSynthesis" in window)) return;
-
-    // NPC should NOT constantly talk.
-    // Even when code asks for a line, most ordinary reactions stay silent.
-    if(!force){
-      const chance={
-        chase:.012,
-        angry:.030,
-        furious:.050,
-        hurt:.040,
-        scared:.035,
-        attack:.020,
-        block:.030,
-        death:1
-      }[kind] ?? .025;
-
-      if(Math.random()>chance) return;
-      if(npc.speechCooldown>0) return;
-    }else{
-      // Forced reactions still get throttled unless it is the death line.
-      if(kind!=="death" && npc.speechCooldown>1.1 && Math.random()<.72) return;
-    }
-
-    const lines=VOICE_LINES[kind]||VOICE_LINES.chase;
-    const line=lines[Math.floor(Math.random()*lines.length)];
-
-    const playedHumanClip=tryPlayHumanVoice(kind);
-
-    // Long quiet gaps between lines.
-    npc.speechCooldown=
-      kind==="death" ? 0 :
-      12+Math.random()*7;
-
-    npc.bubbleTimer=1.65;
-    npc.speech.text.text=line;
-    npc.speech.plane.setEnabled(true);
-
-    if(playedHumanClip) return;
-
-    try {
-      const u=new SpeechSynthesisUtterance(line);
-      if(selectedVoice) u.voice=selectedVoice;
-
-      // Keep volume and pitch in a restrained human range.
-      u.volume=1.0;
-      u.rate=Math.max(.88,Math.min(1.02,u.rate||.94));
-      u.lang=selectedVoice?.lang || "en-US";
-
-      if(kind==="furious"){
-        u.rate=.93+Math.random()*.012;
-        u.pitch=.98+Math.random()*.010;
-      }else if(kind==="angry"){
-        u.rate=.92+Math.random()*.012;
-        u.pitch=.99+Math.random()*.010;
-      }else if(kind==="scared"){
-        u.rate=.94+Math.random()*.012;
-        u.pitch=1.00+Math.random()*.010;
-      }else if(kind==="hurt"){
-        u.rate=.91+Math.random()*.015;
-        u.pitch=1.00+Math.random()*.010;
-      }else if(kind==="attack"){
-        u.rate=.94+Math.random()*.012;
-        u.pitch=.99+Math.random()*.010;
-      }else{
-        u.rate=.92+Math.random()*.012;
-        u.pitch=1.00+Math.random()*.008;
-      }
-
-      // Avoid overlapping dialogue.
-      if(speechSynthesis.speaking){
-        if(kind==="death"){
-          speechSynthesis.cancel();
-        }else{
-          return;
-        }
-      }
-
-      currentNpcUtterance=u;
-      u.onend=()=>{ if(currentNpcUtterance===u) currentNpcUtterance=null; };
-      u.onerror=()=>{ if(currentNpcUtterance===u) currentNpcUtterance=null; };
-
-      speechSynthesis.speak(u);
-    } catch(_) {}
+  function npcButtWorldCenter(){
+    if(!npc?.root)return null;
+    return npcLocalToWorld(new BABYLON.Vector3(0,.72,-.19));
   }
+
+  function slapNpc(zone="butt",side="right",strength=.9){
+    if(!npc||npc.dead)return;
+    playImpactSound("slap",Math.max(.5,Math.min(1.2,strength)));
+    npc.buttJiggle=Math.max(npc.buttJiggle||0,.22+strength*.22);
+    npc.slapReactTimer=.7;
+    npc.slapReactSide=side==="left"?-1:1;
+    npc.emotion=zone==="butt"?"shocked":"hurt";
+    npc.emotionBurst=Math.max(npc.emotionBurst||0,1.05);
+    npc.stun=Math.max(npc.stun,zone==="butt"?.18:.10);
+    if(zone==="butt"){
+      npc.slapPrintTimer=15;
+      npc.slapFloatTimer=1;
+      npc.npcSlapPrint?.setEnabled?.(true);
+      npc.npcFloatHand?.setEnabled?.(true);
+    }
+  }
+
+  function trySlapNpc(side,pos,speed,applyNow=true){
+    if(gameMode!=="map"||!npc||npc.dead||speed<1.05)return false;
+    const butt=npcButtWorldCenter();
+    if(butt&&BABYLON.Vector3.Distance(pos,butt)<.23){
+      if(applyNow)slapNpc("butt",side,Math.min(1.15,.45+speed*.12));
+      return "butt";
+    }
+    const body=npcLocalToWorld(new BABYLON.Vector3(0,1.05,0));
+    if(BABYLON.Vector3.Distance(pos,body)<.30){
+      if(applyNow)slapNpc("body",side,Math.min(1.0,.40+speed*.10));
+      return "body";
+    }
+    return false;
+  }
+
+  function updateNpcSlap(dt){
+    if(!npc)return;
+    npc.buttJiggle=(npc.buttJiggle||0)*Math.pow(.08,dt);
+    npc.slapReactTimer=Math.max(0,(npc.slapReactTimer||0)-dt);
+    if(npc.slapReactTimer>0){
+      npc.visual.rotation.z=Math.sin((.7-npc.slapReactTimer)*15)*.055*(npc.slapReactSide||1);
+    }else{
+      npc.visual.rotation.z*=Math.pow(.02,dt);
+    }
+    npc.slapPrintTimer=Math.max(0,(npc.slapPrintTimer||0)-dt);
+    npc.slapFloatTimer=Math.max(0,(npc.slapFloatTimer||0)-dt);
+    const j=npc.buttJiggle||0;
+    if(npc.npcButtL&&npc.npcButtR){
+      npc.npcButtL.scaling.set(1,1+.10*j,1.18+.16*j);
+      npc.npcButtR.scaling.set(1,1+.10*j,1.18+.16*j);
+    }
+    if(npc.npcSlapPrint)npc.npcSlapPrint.setEnabled(npc.slapPrintTimer>0&&!npc.dead);
+    if(npc.npcFloatHand){
+      npc.npcFloatHand.setEnabled(npc.slapFloatTimer>0&&!npc.dead);
+      if(npc.slapFloatTimer>0){
+        const k=1-npc.slapFloatTimer;
+        npc.npcFloatHand.position.y=.88+k*.32;
+      }else npc.npcFloatHand.position.y=.88;
+    }
+  }
+
+  function reactNpc(kind,intensity=1){
+    if(!npc||npc.dead)return;
+    const lowHp=npc.hpValue<npc.maxHp*.25;
+    if(kind==="near"){
+      npc.emotion=Math.random()<.5?"shocked":"scared";
+      npc.emotionBurst=.55+.35*intensity;
+    }else if(kind==="block"){
+      npc.emotion=Math.random()<.55?"shocked":"angry";
+      npc.emotionBurst=.55+.25*intensity;
+    }else if(kind==="weaponBreak"){
+      npc.emotion="scared";npc.emotionBurst=1.4;
+    }else if(kind==="heavyHit"){
+      npc.emotion=lowHp?"scared":"hurt";npc.emotionBurst=.8+.4*intensity;
+    }else if(kind==="lowHp"||lowHp){
+      npc.emotion="scared";npc.emotionBurst=Math.max(npc.emotionBurst||0,1.0);
+    }
+  }
+
+  function speakNpc(kind,force=false) {
+    if(!npc || npc.dead)return;
+
+    // Crazy Office NPCs do not speak words.
+    // These calls only drive facial emotion and are ready for real scream clips later.
+    const emotionByKind={
+      hurt:"hurt", angry:"angry", furious:"angry", scared:"scared",
+      attack:"angry", block:"shocked", death:"scared", chase:"shocked"
+    };
+    npc.emotion=emotionByKind[kind]||npc.archetype?.preferredEmotion||"normal";
+    npc.emotionBurst=kind==="death"?2.0:kind==="scared"?1.35:kind==="hurt"?.72:1.0;
+    npc.screamKind=kind;
+
+    const chance=force?1:{
+      chase:.10,angry:.18,furious:.26,hurt:.38,scared:.28,attack:.12,block:.20,death:1
+    }[kind]||.12;
+
+    if(Math.random()<=chance){
+      tryPlayHumanVoice(kind); // silent until recorded files are added later
+    }
+    npc.reactionCooldown=kind==="death"?0:2.2+Math.random()*2.8;
+  }
+
   // ------------------------------------------------------------
   // NPC
   // ------------------------------------------------------------
@@ -3281,19 +5910,10 @@
   const NPC_GRAVITY=-6.4;
 
   function speechBubble(root) {
-    const p=BABYLON.MeshBuilder.CreatePlane("npcSpeech",{width:1.65,height:.44},scene);
+    const p=new BABYLON.TransformNode("npcSilentReaction",scene);
     p.parent=root;
-    p.position.y=2.46;
-    p.billboardMode=BABYLON.Mesh.BILLBOARDMODE_ALL;
-    const t=BABYLON.GUI.AdvancedDynamicTexture.CreateForMesh(p,800,230);
-    const r=new BABYLON.GUI.Rectangle();
-    r.background="#111827E8";r.color="white";r.thickness=4;r.cornerRadius=35;
-    t.addControl(r);
-    const tx=new BABYLON.GUI.TextBlock();
-    tx.color="white";tx.fontSize=52;tx.fontWeight="700";tx.textWrapping=true;
-    r.addControl(tx);
     p.setEnabled(false);
-    return {plane:p,text:tx};
+    return {plane:p,text:{text:""}};
   }
 
   function hpLabel(root) {
@@ -3471,11 +6091,19 @@
       brush.parent=root;brush.position.z=.90;brush.material=wm;
     }
 
+    const base=new BABYLON.TransformNode("npcWeaponBase",scene);
+    base.parent=root;
+    base.position.z=.055;
+
+    const mid=new BABYLON.TransformNode("npcWeaponMid",scene);
+    mid.parent=root;
+    mid.position.z=cfg.reach*.50;
+
     const tip=new BABYLON.TransformNode("npcWeaponTip",scene);
     tip.parent=root;
     tip.position.z=cfg.reach;
 
-    return {root,tip,cfg};
+    return {root,base,mid,tip,cfg};
   }
 
 
@@ -3869,8 +6497,9 @@
       const progress=1-(npc.attackAnim/npc.attackDuration);
       const shoulder=rd.points.rShoulder.base.clone();
 
-      const spheres=playerHitSpheres();
-      const targetWorld=(spheres[1]?.center || playerWorldPos()).clone();
+      const combatTarget=npcCombatTarget();
+      const spheres=combatTargetSpheres(combatTarget);
+      const targetWorld=(spheres[1]?.center || spheres[0]?.center || playerWorldPos()).clone();
       const target=npcWorldToLocalPoint(targetWorld);
 
       let reach=target.subtract(shoulder);
@@ -4004,36 +6633,82 @@
   }
 
   function updateNpcFace(dt){
-    if(!npc || npc.dead) return;
+    if(!npc) return;
+    if(npc.dead && npc.deathPhase!=="stagger" && npc.deathPhase!=="collapse")return;
+
+    npc.emotionBurst=Math.max(0,(npc.emotionBurst||0)-dt);
+    if(npc.emotionBurst<=0 && npc.hpValue>0 && !(net.connected&&!net.isHost)){
+      if(npc.hpValue<npc.maxHp*.22)reactNpc("lowHp",1);else npc.emotion=npc.archetype?.preferredEmotion||"normal";
+    }
 
     npc.faceBlink-=dt;
     if(npc.faceBlink<=0){
-      npc.faceBlink=1.7+Math.random()*3;
+      npc.faceBlink=1.8+Math.random()*3.2;
       npc.faceBlinkAmount=1;
     }
-    npc.faceBlinkAmount=Math.max(0,npc.faceBlinkAmount-dt*11);
-    const blink=npc.faceBlinkAmount>0?.18:1;
-    npc.leftEyeWhite.scaling.y=.58*blink;
-    npc.rightEyeWhite.scaling.y=.58*blink;
+    npc.faceBlinkAmount=Math.max(0,npc.faceBlinkAmount-dt*12);
 
-    const target=playerWorldPos();
+    const faceTarget=npcFaceTarget();
+    const target=(faceTarget?.pos||(net.connected&&!net.isHost?npc.root.position.add(new BABYLON.Vector3(0,1.55,1)):playerWorldPos())).clone();
     const headWorld=npcLocalToWorld(npc.ragdoll.points.head.pos);
     const local=worldVectorToNpcLocal(target.subtract(headWorld));
-    const px=BABYLON.Scalar.Clamp(local.x*.025,-.018,.018);
-    const py=BABYLON.Scalar.Clamp(local.y*.012,-.012,.012);
-    npc.leftPupil.position.x=-.068+px;npc.rightPupil.position.x=.068+px;
-    npc.leftPupil.position.y=.060+py;npc.rightPupil.position.y=.060+py;
+    const px=BABYLON.Scalar.Clamp(local.x*.030,-.025,.025);
+    const py=BABYLON.Scalar.Clamp(local.y*.016,-.017,.017);
+    npc.leftPupil.position.y=.070+py;npc.rightPupil.position.y=.070+py;
+
+    const style=npc.faceStyle||0;
+    const eyeSpread=[1,.92,1.10,1.04][style]||1;
+    const eyeBase=.085*eyeSpread;
+    npc.leftEyeWhite.position.x=-eyeBase;
+    npc.rightEyeWhite.position.x=eyeBase;
+    npc.leftEye.position.x=-eyeBase;
+    npc.rightEye.position.x=eyeBase;
+    npc.leftPupil.position.x=-eyeBase+px;
+    npc.rightPupil.position.x=eyeBase+px;
+    if(npc.hair){
+      const hs=[1,.90,1.08,.96][npc.outfitStyle||0]||1;
+      npc.hair.scaling.x=hs;
+      npc.hair.rotation.z=[0,.08,-.08,.14][npc.outfitStyle||0]||0;
+    }
+
+    const blinking=npc.faceBlinkAmount>0;
+    let eyeY=blinking?.12:1.02;
+    let eyeX=1.03;
+    let mouthX=1,mouthY=1;
+    let browL=-.08,browR=.08;
 
     if(npc.emotion==="angry"){
-      npc.eyebrowL.rotation.z=-.28;npc.eyebrowR.rotation.z=.28;
-      npc.mouth.scaling.x=1.05;npc.mouth.scaling.y=.75;
+      eyeY=blinking?.12:.82;eyeX=1.08;
+      browL=-.42;browR=.42;
+      mouthX=1.22;mouthY=1.65;
     }else if(npc.emotion==="scared"){
-      npc.eyebrowL.rotation.z=.12;npc.eyebrowR.rotation.z=-.12;
-      npc.mouth.scaling.x=.72;npc.mouth.scaling.y=2.2;
-    }else{
-      npc.eyebrowL.rotation.z=-.08;npc.eyebrowR.rotation.z=.08;
-      npc.mouth.scaling.x=1;npc.mouth.scaling.y=1;
+      eyeY=blinking?.12:1.24;eyeX=1.14;
+      browL=.22;browR=-.22;
+      mouthX=.82;mouthY=3.65;
+    }else if(npc.emotion==="shocked"){
+      eyeY=blinking?.12:1.32;eyeX=1.18;
+      browL=.10;browR=-.10;
+      mouthX=.92;mouthY=3.95;
+    }else if(npc.emotion==="hurt"){
+      eyeY=blinking?.10:.58;eyeX=.95;
+      browL=-.18;browR=.30;
+      mouthX=1.10;mouthY=2.25;
     }
+
+    npc.leftEyeWhite.scaling.x=eyeX;
+    npc.rightEyeWhite.scaling.x=eyeX;
+    npc.leftEyeWhite.scaling.y=eyeY;
+    npc.rightEyeWhite.scaling.y=eyeY;
+    npc.leftEye.scaling.y=blinking?.15:1;
+    npc.rightEye.scaling.y=blinking?.15:1;
+    npc.leftPupil.scaling.y=blinking?.12:1;
+    npc.rightPupil.scaling.y=blinking?.12:1;
+
+    npc.eyebrowL.rotation.z=browL;
+    npc.eyebrowR.rotation.z=browR;
+    npc.mouth.scaling.x=mouthX;
+    npc.mouth.scaling.y=mouthY;
+    npc.teeth.setEnabled(npc.emotion==="scared"||npc.emotion==="shocked"||npc.emotion==="angry");
   }
 
   function tubeRadiusFunction(radii){
@@ -4209,10 +6884,11 @@
     visual.parent=root;
 
     const npcPalettes=[
-      {skin:"#d39a74",skinDark:"#b77959",shirt:"#577da3",shirtDark:"#3d5c7b"},
-      {skin:"#deb18d",skinDark:"#bb8465",shirt:"#71805b",shirtDark:"#4b5a3c"},
-      {skin:"#b98261",skinDark:"#936047",shirt:"#8b5c67",shirtDark:"#62404a"},
-      {skin:"#e6ba96",skinDark:"#c78f6d",shirt:"#5b718f",shirtDark:"#3e5068"}
+      {skin:"#e1a77e",skinDark:"#bb7658",shirt:"#3f86d8",shirtDark:"#285a94"},
+      {skin:"#f0bb91",skinDark:"#ca8464",shirt:"#8b61d4",shirtDark:"#5d3f96"},
+      {skin:"#c98a69",skinDark:"#9b5e48",shirt:"#4fae78",shirtDark:"#32704e"},
+      {skin:"#efc39f",skinDark:"#c88b68",shirt:"#e27c43",shirtDark:"#a44d25"},
+      {skin:"#d9a37f",skinDark:"#ad7054",shirt:"#d65587",shirtDark:"#91375c"}
     ];
     const look=npcPalettes[Math.floor(Math.random()*npcPalettes.length)];
     const archetype=NPC_ARCHETYPES[Math.floor(Math.random()*NPC_ARCHETYPES.length)];
@@ -4228,10 +6904,8 @@
     const eyeWhiteMat=mkMat("npcEyeWhite"+Math.random(),"#f5f6f4");
     const eyeMat=mkMat("npcEyes"+Math.random(),"#2a211b");
     const pupilMat=mkMat("npcPupil"+Math.random(),"#090909");
-    const hairBase=
-      archetype.name==="Runner" ? "#3a2a20" :
-      archetype.name==="Tank" ? "#201812" :
-      archetype.name==="Bruiser" ? "#38261d" : "#30231c";
+    const hairColors=["#2e7fd6","#da4d97","#eb773c","#36a88a","#6e4ec4","#3b2b22","#f0c93d","#65c9ff","#ff5f63"];
+    const hairBase=hairColors[Math.floor(Math.random()*hairColors.length)];
     const hairMat=mkMat("npcHair"+Math.random(),hairBase);
     const beardMat=mkMat("npcBeard"+Math.random(),"#4b3429");
     beardMat.alpha=.48;
@@ -4402,6 +7076,15 @@
     const pelvis=jointSphere("npcPelvis",.44,pantsMat);
     pelvis.scaling.set(1.10,.52,.84);
 
+    ensureAvatarSlapMats();
+    const npcButtL=BABYLON.MeshBuilder.CreateSphere("npcButtL"+Math.random(),{diameter:.34,segments:10},scene);
+    npcButtL.parent=visual;npcButtL.position.set(-.12,.70,-.19);npcButtL.scaling.set(1,1,1.18);npcButtL.material=pantsMat;
+    const npcButtR=npcButtL.clone("npcButtR"+Math.random());npcButtR.parent=visual;npcButtR.position.x=.12;
+    const npcSlapPrint=BABYLON.MeshBuilder.CreatePlane("npcSlapPrint"+Math.random(),{width:.24,height:.24},scene);
+    npcSlapPrint.parent=visual;npcSlapPrint.position.set(0,.72,-.39);npcSlapPrint.rotation.y=Math.PI;npcSlapPrint.material=avatarHandprintMat;npcSlapPrint.setEnabled(false);
+    const npcFloatHand=BABYLON.MeshBuilder.CreatePlane("npcFloatHand"+Math.random(),{width:.30,height:.30},scene);
+    npcFloatHand.parent=visual;npcFloatHand.position.set(0,.88,-.30);npcFloatHand.billboardMode=BABYLON.Mesh.BILLBOARDMODE_ALL;npcFloatHand.material=avatarFloatHandMat;npcFloatHand.setEnabled(false);
+
     const spineJoint=jointSphere("npcSpineJoint",.31,shirtDarkMat);
     spineJoint.scaling.set(1,.72,.80);
 
@@ -4418,13 +7101,13 @@
     // Head + all face detail parented to the head so it tilts with the neck.
     // One continuous oval head: no separate chin/jaw ball.
     const head=BABYLON.MeshBuilder.CreateCapsule("npcHead",{
-      height:.405,
-      radius:.178,
-      tessellation:22
+      height:.445,
+      radius:.205,
+      tessellation:18
     },scene);
     head.parent=visual;
     head.material=skinMat;
-    head.scaling.set(.93,1,.86);
+    head.scaling.set(.98,1,.92);
     head.rotationQuaternion=BABYLON.Quaternion.Identity();
 
     function faceSphere(name,diam,pos,mat,scale=[1,1,1]){
@@ -4440,36 +7123,36 @@
     const leftEar=faceSphere("npcLeftEar",.090,[-.205,.005,0],skinMat,[.46,1,.42]);
     const rightEar=faceSphere("npcRightEar",.090,[.205,.005,0],skinMat,[.46,1,.42]);
 
-    const leftEyeWhite=faceSphere("npcLeftEyeWhite",.052,[-.068,.060,.192],eyeWhiteMat,[1.12,.58,.28]);
-    const rightEyeWhite=faceSphere("npcRightEyeWhite",.052,[.068,.060,.192],eyeWhiteMat,[1.12,.58,.28]);
-    const leftEye=faceSphere("npcLeftEye",.023,[-.068,.060,.205],eyeMat,[1,1,.28]);
-    const rightEye=faceSphere("npcRightEye",.023,[.068,.060,.205],eyeMat,[1,1,.28]);
-    const leftPupil=faceSphere("npcLeftPupil",.011,[-.068,.060,.214],pupilMat,[1,1,.25]);
-    const rightPupil=faceSphere("npcRightPupil",.011,[.068,.060,.214],pupilMat,[1,1,.25]);
+    const leftEyeWhite=faceSphere("npcLeftEyeWhite",.092,[-.085,.070,.212],eyeWhiteMat,[1.03,1.02,.28]);
+    const rightEyeWhite=faceSphere("npcRightEyeWhite",.092,[.085,.070,.212],eyeWhiteMat,[1.03,1.02,.28]);
+    const leftEye=faceSphere("npcLeftEye",.043,[-.085,.070,.231],eyeMat,[1,1,.26]);
+    const rightEye=faceSphere("npcRightEye",.043,[.085,.070,.231],eyeMat,[1,1,.26]);
+    const leftPupil=faceSphere("npcLeftPupil",.023,[-.085,.070,.244],pupilMat,[1,1,.24]);
+    const rightPupil=faceSphere("npcRightPupil",.023,[.085,.070,.244],pupilMat,[1,1,.24]);
 
     const mouth=BABYLON.MeshBuilder.CreateBox("npcMouth",{
-      width:.105,height:.022,depth:.010
+      width:.155,height:.034,depth:.012
     },scene);
     mouth.parent=head;
-    mouth.position.set(0,-.102,.188);
+    mouth.position.set(0,-.112,.205);
     mouth.material=pupilMat;
 
     const upperLip=BABYLON.MeshBuilder.CreateCapsule("npcUpperLip",{
-      height:.105,radius:.009,tessellation:10
+      height:.145,radius:.010,tessellation:10
     },scene);
     upperLip.parent=head;upperLip.rotation.z=Math.PI/2;
-    upperLip.position.set(0,-.095,.194);upperLip.material=skinDarkMat;
+    upperLip.position.set(0,-.104,.214);upperLip.material=skinDarkMat;
 
     const lowerLip=BABYLON.MeshBuilder.CreateCapsule("npcLowerLip",{
-      height:.096,radius:.010,tessellation:10
+      height:.140,radius:.011,tessellation:10
     },scene);
     lowerLip.parent=head;lowerLip.rotation.z=Math.PI/2;
-    lowerLip.position.set(0,-.114,.194);lowerLip.material=skinDarkMat;
+    lowerLip.position.set(0,-.132,.214);lowerLip.material=skinDarkMat;
 
     const teeth=BABYLON.MeshBuilder.CreateBox("npcTeeth",{
-      width:.070,height:.010,depth:.006
+      width:.105,height:.016,depth:.007
     },scene);
-    teeth.parent=head;teeth.position.set(0,-.102,.196);teeth.material=teethMat;
+    teeth.parent=head;teeth.position.set(0,-.112,.220);teeth.material=teethMat;
 
     // No separate chin sphere: the jaw mesh above forms the chin naturally.
     // Thin lower-face beard/stubble patch: visual texture only, not another chin ball.
@@ -4490,9 +7173,9 @@
     cheekR.position.x=.090;
 
     const eyebrowL=BABYLON.MeshBuilder.CreateBox("npcEyebrowL",{
-      width:.10,height:.018,depth:.012
+      width:.135,height:.022,depth:.014
     },scene);
-    eyebrowL.parent=head;eyebrowL.position.set(-.085,.145,.236);eyebrowL.rotation.z=-.08;eyebrowL.material=hairMat;
+    eyebrowL.parent=head;eyebrowL.position.set(-.088,.165,.242);eyebrowL.rotation.z=-.08;eyebrowL.material=hairMat;
     const eyebrowR=eyebrowL.clone("npcEyebrowR");eyebrowR.parent=head;eyebrowR.position.x=.085;eyebrowR.rotation.z=.08;
 
     const hairStyle=Math.floor(Math.random()*5);
@@ -4696,7 +7379,7 @@
       root,visual,
       bodyShell,shoulderBridge,neckShell,leftSleeveShell,rightSleeveShell,
       leftArmShell,rightArmShell,leftLegShell,rightLegShell,
-      abdomen,torso,neck,chestPlate,pelvis,spineJoint,neckJoint,
+      abdomen,torso,neck,chestPlate,pelvis,spineJoint,neckJoint,npcButtL,npcButtR,npcSlapPrint,npcFloatHand,
       head,nose,leftEar,rightEar,leftEyeWhite,rightEyeWhite,leftEye,rightEye,leftPupil,rightPupil,
       mouth,upperLip,lowerLip,teeth,beard,cheekL,cheekR,eyebrowL,eyebrowR,hair,
       leftUpperArm,leftLowerArm,leftShoulderJoint,leftElbowJoint,leftWristJoint,leftHand,leftSleeve,
@@ -4746,7 +7429,8 @@
       skinMat,skinDarkMat,shirtMat,shirtDarkMat,pantsMat,pantsDarkMat,shoeMat,
       eyeMat,eyeWhiteMat,pupilMat,hairMat,beardMat,
       speech,hp,
-      weaponRoot:weapon.root,weaponTip:weapon.tip,weaponCfg:weapon.cfg,
+      weaponRoot:weapon.root,weaponBase:weapon.base,weaponMid:weapon.mid,weaponTip:weapon.tip,weaponCfg:weapon.cfg,
+      weaponDurability:7,weaponBroken:false,pickupCooldown:0,improvisedType:null,
 
       typeName:archetype.name,
       archetype,
@@ -4763,6 +7447,7 @@
       recoverTimer:0,
       recoverStableTimer:0,
       attackAnim:0,
+      weaponPrevBase:null,
       attackDuration:.48,
       attackHasHit:false,
       attackBlocked:false,
@@ -4770,9 +7455,15 @@
       stun:0,
       walkPhase:0,
       walkingNow:false,
-      speechCooldown:0,
-      bubbleTimer:0,
+      reactionCooldown:0,
+      proximityReactCooldown:0,
+      slapPrintTimer:0,slapFloatTimer:0,buttJiggle:0,slapReactTimer:0,slapReactSide:1,
+      reactionTimer:0,
       emotion:archetype.preferredEmotion||"normal",
+      emotionBurst:0,
+      screamKind:null,
+      faceStyle:Math.floor(Math.random()*4),
+      outfitStyle:Math.floor(Math.random()*4),
       anger:0,
       injuries:{head:0,torso:0,leftArm:0,rightArm:0,leftLeg:0,rightLeg:0},
       faceBlink:1.2+Math.random()*2.2,
@@ -4788,6 +7479,7 @@
       deathDir:new BABYLON.Vector3(0,1,0),
       deathHitPos:new BABYLON.Vector3(),
       deathSpeed:0,
+      netTargetId:null,
       ragdoll:null
     };
 
@@ -4801,6 +7493,53 @@
   }
   // IMPORTANT: spawn the first NPC immediately when the scene loads.
   createNpc();
+  let waveModifier="NONE";
+
+  function configureNpcForCurrentLevel(){
+    if(!npc)return;
+    npc.weaponRoot.scaling.set(1,1,1);
+    npc.weaponBroken=false;
+    npc.improvisedType=null;
+    npc.attackAnim=0;
+    npc.attackHasHit=false;
+    npc.attackBlocked=false;
+    npc.weaponPrevBase=null;
+    npc.weaponPrevTip=null;
+    const p=currentMapProgress(),boss=p.level>=10;if(gameMode==="map")setMusicMode(boss?"boss":"normal");
+    npc.variant="NORMAL";npc.bossArmor=0;npc.bossArmorMax=0;npc.bossPhase=1;npc.isMiniBoss=false;
+    if(!boss){
+      const eliteMul=waveModifier==="DOUBLE ELITE CHANCE"?2:1;
+      if((p.level===5||p.level===7)&&Math.random()<Math.min(.90,.55*eliteMul)){npc.variant="MINI-BOSS";npc.isMiniBoss=true;gameState.collectionStats.miniBosses++;}
+      else{
+        const r=Math.random();
+        if(r<.035*eliteMul){npc.variant="GOLDEN";gameState.collectionStats.rareEnemies++;}
+        else if(r<.085*eliteMul){npc.variant="ARMORED";gameState.collectionStats.rareEnemies++;}
+        else if(r<.135*eliteMul){npc.variant="BERSERK";gameState.collectionStats.rareEnemies++;}
+        else if(r<.185*eliteMul){npc.variant="TRICKSTER";gameState.collectionStats.rareEnemies++;}
+      }
+    }
+    const modeMul=gameState.mode==="SURVIVAL"?1.18:gameState.mode==="ENDLESS"?1.28:gameState.mode==="HARDCORE"?1.42:1;
+    const speedMul=gameState.mode==="SURVIVAL"?1.06:gameState.mode==="ENDLESS"?1.10:gameState.mode==="HARDCORE"?1.16:1;
+    if(boss){
+      npc.typeName="BOSS";
+      npc.maxHp=Math.round(520*modeMul);npc.hpValue=npc.maxHp;
+      npc.archetype={...(npc.archetype||{}),speed:1.28*speedMul,attackMul:1.42*modeMul,knockbackMul:1.35};
+      npc.root.scaling.set(1.16,1.16,1.16);npc.anger=80;npc.weaponDurability=Math.round(18*modeMul);
+      npc.bossArmorMax=Math.round(150*modeMul);npc.bossArmor=npc.bossArmorMax;npc.bossPhase=1;
+    } else {
+      const scale=(1+(p.level-1)*.045)*modeMul;
+      npc.maxHp=Math.round(npc.maxHp*scale);npc.hpValue=npc.maxHp;
+      npc.archetype={...(npc.archetype||{}),speed:(npc.archetype?.speed||1.2)*speedMul,attackMul:(npc.archetype?.attackMul||1)*modeMul};
+      npc.root.scaling.set(1,1,1);npc.weaponDurability=Math.max(7,Math.round(7*modeMul));
+      if(npc.variant==="MINI-BOSS"){npc.maxHp=Math.round(npc.maxHp*2.2);npc.hpValue=npc.maxHp;npc.root.scaling.set(1.08,1.08,1.08);npc.weaponDurability+=6;}
+      else if(npc.variant==="GOLDEN"){npc.maxHp=Math.round(npc.maxHp*1.35);npc.hpValue=npc.maxHp;npc.archetype.speed*=1.08;}
+      else if(npc.variant==="ARMORED"){npc.maxHp=Math.round(npc.maxHp*1.55);npc.hpValue=npc.maxHp;npc.weaponDurability+=4;}
+      else if(npc.variant==="BERSERK"){npc.maxHp=Math.round(npc.maxHp*1.18);npc.hpValue=npc.maxHp;npc.archetype.speed*=1.24;npc.archetype.attackMul*=1.22;}
+      else if(npc.variant==="TRICKSTER"){npc.archetype.speed*=1.15;npc.archetype.throwRate=(npc.archetype.throwRate||1)*1.8;}
+    }
+    npc.baseSpeed=npc.archetype?.speed||1.3;npc.baseAttackMul=npc.archetype?.attackMul||1;const dm=npcDifficultyMul();npc.baseSpeed*=dm.speed;npc.baseAttackMul*=dm.attack;npc.anger*=dm.anger;updateNpcLabel();
+  }
+  configureNpcForCurrentLevel();
 
   function updateNpcLabel() {
     if(!npc?.hp) return;
@@ -4809,7 +7548,7 @@
     const max=Math.max(1,npc.maxHp||160);
     const pct=BABYLON.Scalar.Clamp(hp/max,0,1);
 
-    npc.hp.text.text=`${npc.typeName||"NPC"} • ${hp} / ${max} HP`;
+    npc.hp.text.text=`${npc.variant&&npc.variant!=="NORMAL"?npc.variant+" ":""}${npc.typeName||"NPC"} • ${hp}/${max}${npc.bossArmor>0?` • ARMOR ${Math.ceil(npc.bossArmor)}`:""}`;
     npc.hp.bar.width=`${Math.max(0.01,pct)*100}%`;
 
     // Every successful hit makes the HP bar flash red.
@@ -5037,7 +7776,7 @@
         .12+Math.random()*.35,
         (Math.random()-.5)*.65
       ));
-      spawnBloodExplosion(origin,localDir,.20+(i%3)*.03);
+      // No blood effect.
     });
   }
 
@@ -5226,31 +7965,59 @@
     capsulePiece("deathRFoot","rAnkle","rFoot",.10,npc.shoeMat);
   }
   function coolDeathBurst(origin) {
-    const sparkMat=mkMat("deathSpark"+Math.random(),"#ffd166");
-    for(let i=0;i<16;i++){
-      const s=BABYLON.MeshBuilder.CreateSphere("deathSpark",{
-        diameter:.035+Math.random()*.025,segments:6
+    // Stable stylized KO burst: no detached body parts, no blood.
+    const flashMat=mkMat("koFlash"+Math.random(),"#ffe08a");
+    flashMat.emissiveColor=new BABYLON.Color3(.85,.58,.14);
+    flashMat.alpha=.82;
+
+    const ring=BABYLON.MeshBuilder.CreateTorus("koRing",{
+      diameter:.38,thickness:.035,tessellation:20
+    },scene);
+    ring.position.copyFrom(origin);
+    ring.rotation.x=Math.PI/2;
+    ring.material=flashMat;
+
+    let ringLife=.34;
+    const ringObs=scene.onBeforeRenderObservable.add(()=>{
+      const dt=Math.min(.033,engine.getDeltaTime()/1000);
+      ringLife-=dt;
+      ring.scaling.addInPlace(new BABYLON.Vector3(dt*4.2,dt*4.2,dt*4.2));
+      flashMat.alpha=Math.max(0,ringLife/.34)*.82;
+      if(ringLife<=0){
+        scene.onBeforeRenderObservable.remove(ringObs);
+        ring.dispose();
+        flashMat.dispose();
+      }
+    });
+
+    const sparkMat=mkMat("koSpark"+Math.random(),"#ffd166");
+    sparkMat.emissiveColor=new BABYLON.Color3(.70,.42,.08);
+
+    // Small bounded burst: looks cool without becoming a physics mess.
+    for(let i=0;i<8;i++){
+      const s=BABYLON.MeshBuilder.CreateSphere("koSpark",{
+        diameter:.030+Math.random()*.018,segments:5
       },scene);
       s.position=origin.add(new BABYLON.Vector3(
-        (Math.random()-.5)*.25,
-        .9+Math.random()*.65,
-        (Math.random()-.5)*.25
+        (Math.random()-.5)*.18,
+        .25+Math.random()*.34,
+        (Math.random()-.5)*.18
       ));
       s.material=sparkMat;
 
       const v=new BABYLON.Vector3(
-        (Math.random()-.5)*4.2,
-        1.5+Math.random()*3.5,
-        (Math.random()-.5)*4.2
+        (Math.random()-.5)*2.2,
+        .9+Math.random()*1.8,
+        (Math.random()-.5)*2.2
       );
-      let life=.55+Math.random()*.30;
+      let life=.38+Math.random()*.18;
 
       const obs=scene.onBeforeRenderObservable.add(()=>{
         const dt=Math.min(.033,engine.getDeltaTime()/1000);
         life-=dt;
-        v.y-=5.5*dt;
+        v.y-=5.2*dt;
         s.position.addInPlace(v.scale(dt));
-        s.scaling.scaleInPlace(.965);
+        s.scaling.scaleInPlace(.94);
         if(life<=0){
           scene.onBeforeRenderObservable.remove(obs);
           s.dispose();
@@ -5263,6 +8030,7 @@
     if (!npc || npc.dead) return;
 
     speakNpc("death",true);
+    updateNpcFace(0);
 
     let dir=swingVel.clone();
     if(dir.lengthSquared()<.001) dir=npc.root.position.subtract(hitPos);
@@ -5300,7 +8068,9 @@
       .88
     );
 
-    pulse(hands.right,1,145);
+    coolDeathBurst(hitPos);
+    pulse(batHand(),1,145);
+    pulse(supportHand(),.38,65);
     playImpactSound("body",1.1);
   }
   function classifyNpcHit(hitWorld){
@@ -5426,15 +8196,282 @@
     return Math.round(Math.max(1,Math.min(24,raw)));
   }
 
+
+
+  // ------------------------------------------------------------
+  // Run statistics, wave modifiers and map events
+  // ------------------------------------------------------------
+  let runStats={kills:0,blocks:0,damage:0,hardestHit:0,startTime:0,coinsStart:0,gemsStart:0,destroyedStart:0};
+  let mapEventTimer=12;
+  let mapEventText="";
+  let mapEventTextTimer=0;
+
+  const WAVE_MODIFIERS=["NONE","FAST ENEMIES","HEAVY WEAPONS","ANGRY ENEMIES","DOUBLE ELITE CHANCE"];
+
+  function resetRunStats(forcedModifier=null){
+    runStats={kills:0,blocks:0,damage:0,hardestHit:0,startTime:performance.now(),coinsStart:gameState.coins,gemsStart:gameState.gems,destroyedStart:gameState.destroyed};
+    waveModifier=(typeof forcedModifier==="string"&&WAVE_MODIFIERS.includes(forcedModifier))
+      ? forcedModifier
+      : WAVE_MODIFIERS[Math.floor(Math.random()*WAVE_MODIFIERS.length)];
+    mapEventTimer=9+Math.random()*8;
+    mapEventText="";
+    mapEventTextTimer=0;
+  }
+
+  function mapEventName(){
+    const id=gameState.selectedMap;
+    return {
+      office:"LIGHTS FLICKER",school:"BELL RUSH",house:"POWER CUT",
+      supermarket:"AISLE PANIC",gym:"HEAVY FLOOR",hotel:"FIRE ALARM",
+      bank:"SECURITY LOCK",metro:"TRAIN GUST",factory:"CONVEYOR SURGE",
+      cinema:"LIGHTS OUT",arcade:"NEON OVERLOAD",city:"TRAFFIC RUSH",
+      forest:"WIND GUST",beach:"BIG WAVE",construction:"CRANE SWING",
+      mall:"ALARM",police:"LOCKDOWN",hospital:"POWER SURGE",
+      lab:"EXPERIMENT PULSE",stadium:"CROWD ROAR",castle:"GATE SLAM",
+      farm:"TRACTOR RUMBLE",pirate:"SHIP TILT",amusement:"RIDE SURGE",
+      volcano:"LAVA PULSE",space:"AIRLOCK BLAST",alien:"ALIEN PULSE"
+    }[id]||"MAP EVENT";
+  }
+
+  function applyLocalMapEvent(mapId,label=null){
+    if(gameMode!=="map")return;
+    mapEventText=label||mapEventName();
+    mapEventTextTimer=3.2;
+    cameraImpactShake=Math.max(cameraImpactShake,.35);
+
+    if(mapId==="space"){
+      bodyVelocity.y+=1.35;
+    }else if(mapId==="volcano"){
+      if(!playerDead&&!playerDowned)hurtPlayer(4,npc?.root?.position||new BABYLON.Vector3());
+    }else if(["factory","metro","pirate","construction"].includes(mapId)){
+      bodyVelocity.x+=(Math.random()<.5?-1:1)*1.2;
+    }
+    playImpactSound("whoosh",.7);
+  }
+
+  function triggerMapEvent(){
+    if(gameMode!=="map")return;
+    const mapId=gameState.selectedMap;
+    const label=mapEventName();
+    applyLocalMapEvent(mapId,label);
+
+    if(mapId==="space"){
+      if(npc&&!npc.dead)npc.velocity.y+=1.0;
+    }else if(mapId==="volcano"){
+      if(npc&&!npc.dead)npc.hpValue=Math.max(1,npc.hpValue-4);
+    }else if(["factory","metro","pirate","construction"].includes(mapId)){
+      if(npc&&!npc.dead)npc.velocity.x+=(Math.random()<.5?-1:1)*.9;
+    }else if(["lab","alien","arcade"].includes(mapId)){
+      if(npc&&!npc.dead)npc.stun=Math.max(npc.stun,.28);
+    }
+
+    if(net.isHost&&net.connected)broadcastMatch({t:"mapEvent",map:mapId,label});
+  }
+
+  function updateMapSystems(dt){
+    if(gameMode!=="map")return;
+    if(net.connected&&!net.isHost){mapEventTextTimer=Math.max(0,mapEventTextTimer-dt);return;}
+    mapEventTimer-=dt;
+    mapEventTextTimer=Math.max(0,mapEventTextTimer-dt);
+    if(mapEventTimer<=0){
+      triggerMapEvent();
+      mapEventTimer=12+Math.random()*10;
+    }
+    if(npc&&!npc.dead){
+      updateBossPhases();
+      npc.archetype.speed=npc.baseSpeed||npc.archetype.speed||1.3;
+      npc.archetype.attackMul=npc.baseAttackMul||npc.archetype.attackMul||1;
+      if(waveModifier==="FAST ENEMIES")npc.archetype.speed=Math.max(npc.archetype.speed,1.55);
+      else if(waveModifier==="HEAVY WEAPONS")npc.archetype.attackMul=Math.max(npc.archetype.attackMul||1,1.18);
+      else if(waveModifier==="ANGRY ENEMIES")npc.anger=Math.max(npc.anger,72);
+    }
+  }
+
+  function endRunSummary(bossWin=false){
+    const seconds=Math.max(1,Math.round((performance.now()-runStats.startTime)/1000));
+    const c=gameState.coins-runStats.coinsStart,g=gameState.gems-runStats.gemsStart;
+    return `${bossWin?"BOSS CLEARED!":"RUN"} • ${seconds}s • KOs ${runStats.kills} • Blocks ${runStats.blocks} • Hardest ${runStats.hardestHit.toFixed(1)} m/s • +${c} coins • +${g} gems`;
+  }
+
+  // ------------------------------------------------------------
+  // Advanced bat combat
+  // ------------------------------------------------------------
+  let chargeTime=0,chargedHitMultiplier=1,twoHandedBonus=1;
+  let combatInputPrev={trigger:false,grip:false};
+  let batThrown=false,batRecalling=false,batThrowVel=new BABYLON.Vector3();
+  let lastBatWorldVel=new BABYLON.Vector3();
+  let abilityCooldown=0;
+
+  const abilityRingMat=mkMat("abilityRingMat","#4fdcff");
+  abilityRingMat.emissiveColor=new BABYLON.Color3(.1,.65,.9);
+  const abilityRing=BABYLON.MeshBuilder.CreateTorus("abilityRing",{diameter:.102,thickness:.012,tessellation:16},scene);
+  abilityRing.parent=batRoot;abilityRing.rotation.x=Math.PI/2;abilityRing.position.z=-.035;abilityRing.material=abilityRingMat;
+
+  function holsterBat(){
+    if(!gameState.settings.holsterEnabled||batThrown||batHolstered||holsterCooldown>0)return false;
+    batHolstered=true;holsterCooldown=.28;
+    batRoot.parent=chestRoot;
+    const side=batHandSide()==="left"?-1:1;
+    batRoot.position.set(.36*side,-.10,-.31);
+    batRoot.rotationQuaternion=BABYLON.Quaternion.RotationYawPitchRoll(side>0?-.35:.35,.15,Math.PI/2.7);
+    batRoot.setEnabled(true);batTipLast=null;batBaseLast=null;
+    return true;
+  }
+
+  function drawBatFromHolster(){
+    if(!batHolstered)return attachBatToSelectedHand();
+    batHolstered=false;holsterCooldown=.28;
+    return attachBatToSelectedHand();
+  }
+
+  function toggleBatHolster(){
+    if(!gameState.settings.holsterEnabled)return false;
+    if(!batHolstered&&!batRoot.isEnabled())return false;
+    return batHolstered?drawBatFromHolster():holsterBat();
+  }
+
+function attachBatToRightHand(){return attachBatToSelectedHand();}
+
+  function throwBat(){
+    if(batThrown||batHolstered||!batRoot.isEnabled())return;
+    const world=batRoot.getAbsolutePosition().clone();
+    const rot=batRoot.absoluteRotationQuaternion?.clone()||BABYLON.Quaternion.Identity();
+    batRoot.parent=null;
+    batRoot.position.copyFrom(world);
+    batRoot.rotationQuaternion=rot;
+    batThrown=true;batRecalling=false;batTipLast=null;
+    let v=lastBatWorldVel.clone();
+    if(v.length()<2){
+      const f=xrCamera?.getForwardRay(1).direction.clone()||new BABYLON.Vector3(0,.1,1);
+      v=f.scale(5.5);
+    }
+    batThrowVel.copyFrom(v.scale(.82));
+    playImpactSound("whoosh",.7);
+  }
+
+  function recallBat(){
+    if(!batThrown)return;
+    batRecalling=true;
+  }
+
+  function updateThrownBat(dt){
+    if(!batThrown)return;
+
+    const bh=batHand();
+    const target=bh?.node
+      ? (bh.node.getAbsolutePosition?.()||bh.node.position)
+      : (xrCamera?xrCamera.position.add(xrCamera.getForwardRay(1).direction.scale(.35)):null);
+
+    if(!target)return;
+    if(batRecalling){
+      const to=target.subtract(batRoot.position);
+      const d=to.length();
+      if(d<.18){attachBatToRightHand();return;}
+      if(d>.001){to.normalize();batRoot.position.addInPlace(to.scale(Math.min(d,9.5*dt)));}
+      return;
+    }
+
+    batThrowVel.y-=5.0*dt;
+    if(batThrowVel.length()>12)batThrowVel.normalize().scaleInPlace(12);
+    batRoot.position.addInPlace(batThrowVel.scale(dt));
+    batRoot.rotation.x+=dt*7.5;
+    batRoot.rotation.z+=dt*4.4;
+    if(batRoot.position.y<.16){
+      batRoot.position.y=.16;
+      if(batThrowVel.y<0)batThrowVel.y*=-.22;
+      batThrowVel.x*=.68;batThrowVel.z*=.68;
+      if(Math.abs(batThrowVel.y)<.18&&Math.hypot(batThrowVel.x,batThrowVel.z)<.20)batThrowVel.set(0,0,0);
+    }
+  }
+
+  function updateAdvancedCombatInput(dt){
+    abilityCooldown=Math.max(0,abilityCooldown-dt);
+    holsterCooldown=Math.max(0,holsterCooldown-dt);
+    const ready=abilityCooldown<=0;
+    abilityRingMat.emissiveColor=ready?new BABYLON.Color3(.1,.65,.9):new BABYLON.Color3(.05,.12,.15);
+
+    const bh=batHand(),sh=supportHand();
+    const trig=btn(bh,0);
+    const throwBtn=btn(bh,3);
+
+    if(!quickMenuOpen&&!batThrown){
+      if(trig)chargeTime=Math.min(1.5,chargeTime+dt);
+      if(!trig&&combatInputPrev.trigger&&chargeTime>.30){
+        chargedHitMultiplier=1+Math.min(.70,chargeTime*.42);
+        chargeTime=0;
+      }else if(!trig&&!combatInputPrev.trigger)chargeTime=Math.max(0,chargeTime-dt*2);
+    }
+
+    if(throwBtn&&!combatInputPrev.grip&&!quickMenuOpen){
+      const bhPos=bh?.node?(bh.node.getAbsolutePosition?.()||bh.node.position):null;
+      const bodyPos=chestRoot?.getAbsolutePosition?.()||chestRoot?.position;
+      const nearHolster=!!(bhPos&&bodyPos&&BABYLON.Vector3.Distance(bhPos,bodyPos)<.72);
+      if(gameState.settings.holsterEnabled&&(batHolstered||nearHolster))toggleBatHolster();
+      else if(batThrown)recallBat();
+      else throwBat();
+    }
+
+    twoHandedBonus=1;
+    if(!batThrown&&btn(sh,1)&&sh?.node){
+      const lp=sh.node.getAbsolutePosition?.()||sh.node.position;
+      if(BABYLON.Vector3.Distance(lp,batBase())<.32)twoHandedBonus=1.25;
+    }
+
+    combatInputPrev.trigger=trig;
+    combatInputPrev.grip=throwBtn;
+  }
+
+  function applyDirectNpcDamage(amount){
+    if(!npc||npc.dead||amount<=0)return 0;
+    let dmg=Math.max(0,amount);
+    if(npc.bossArmor>0){
+      const absorb=Math.min(npc.bossArmor,dmg);
+      npc.bossArmor=Math.max(0,npc.bossArmor-absorb);
+      dmg-=absorb;
+      if(npc.bossArmor<=0)npc.stun=Math.max(npc.stun,.65);
+    }
+    if(dmg>0)npc.hpValue-=dmg;
+    updateNpcLabel();
+    return dmg;
+  }
+
+  function applySelectedBatAbility(hitPos,dir,speed,damage){
+    if(!npc||npc.dead||abilityCooldown>0)return;const b=selectedBatData(),lv=selectedBatState().level;
+    abilityCooldown=Math.max(.38,1.15-lv*.012);
+    npc.statusBurn=npc.statusBurn||0;npc.statusPoison=npc.statusPoison||0;npc.statusSlow=npc.statusSlow||0;npc.statusTick=npc.statusTick||0;
+    if(b.id==="lava")npc.statusBurn=Math.max(npc.statusBurn,2.5+lv*.055);
+    else if(b.id==="shock"||b.id==="ruler"){npc.stun=Math.max(npc.stun,.14+lv*.006);applyDirectNpcDamage(Math.max(1,Math.round(1+lv*.07)));}
+    else if(b.id==="ice")npc.statusSlow=Math.max(npc.statusSlow,1.5+lv*.045);
+    else if(b.id==="wind"||b.id==="captain")npc.velocity.addInPlace(dir.scale(.35+lv*.025));
+    else if(b.id==="heavy"||b.id==="ceo"||b.id==="industrial")npc.stun=Math.max(npc.stun,.14+lv*.008);
+    else if(b.id==="magnet"){let p=playerWorldPos().subtract(npc.root.position);p.y=.08;if(p.lengthSquared()>.001){p.normalize();npc.velocity.addInPlace(p.scale(.28+lv*.018));}}
+    else if(b.id==="poison")npc.statusPoison=Math.max(npc.statusPoison,3+lv*.06);
+    else if(b.id==="ghost"){npc.hitCooldown=Math.min(npc.hitCooldown,.08);applyDirectNpcDamage(Math.max(1,Math.round(lv*.055)));}
+    else if(b.id==="gravity")npc.velocity.y+=.3+lv*.025;
+    else if(b.id==="alien"){npc.velocity.y+=.18+lv*.015;npc.stun=Math.max(npc.stun,.12+lv*.004);}
+  }
+
   function damageNpc(hitPos,swingVel,speed) {
+    if(netGuestHit(hitPos,swingVel,speed))return;
     if (!npc || npc.dead || npc.hitCooldown>0) return;
 
     const hit=classifyNpcHit(hitPos);
     const baseDamage=swingDamage(speed);
     if(baseDamage<=0) return;
-    const damage=Math.max(1,Math.round(baseDamage*hit.mult));
+    const damage=Math.max(1,Math.round(baseDamage*hit.mult*chargedHitMultiplier*twoHandedBonus));
+    if(chargedHitMultiplier>1.05){cameraImpactShake=Math.max(cameraImpactShake,.65);chargedHitMultiplier=1;}
 
-    npc.hpValue-=damage;
+    let finalDamage=damage;
+    if(npc.bossArmor>0){
+      const weak=hit.zone==="head";
+      const armorDamage=Math.min(npc.bossArmor,Math.round(damage*(weak?1.45:.85)));
+      npc.bossArmor=Math.max(0,npc.bossArmor-armorDamage);
+      finalDamage=weak?Math.max(1,Math.round(damage*.40)):Math.max(1,Math.round(damage*.12));
+      if(npc.bossArmor<=0){npc.stun=Math.max(npc.stun,.75);playImpactSound("metal",1.15);}
+    }
+    npc.hpValue-=finalDamage;
+    runStats.damage+=finalDamage;runStats.hardestHit=Math.max(runStats.hardestHit,speed);
+    if(speed>5.2)reactNpc("heavyHit",BABYLON.Scalar.Clamp(speed/10,.5,1.4));
     npc.hitCooldown=.18;
     npc.recentlyHit=.24;
     npc.hpFlashTimer=.20;
@@ -5451,6 +8488,9 @@
     let dir=swingVel.clone();
     if(dir.lengthSquared()<.001) dir=npc.root.position.subtract(hitPos);
     dir.normalize();
+    applySelectedBatAbility(hitPos,dir,speed,damage);
+    addBatXP(Math.max(1,Math.round(damage*.18)));
+    if(npc.hpValue<=0){finishNpc(hitPos,swingVel,speed);return;}
 
     const force=Math.min(4.4,.32+speed*.27);
     npc.velocity.addInPlace(dir.scale(force*.62));
@@ -5475,11 +8515,561 @@
       npc.emotion="angry";speakNpc(speed>3?"angry":"hurt",false);
     }
 
-    pulse(hands.right,Math.min(1,.12+speed*.12),28+Math.min(105,speed*8));
+    pulse(batHand(),Math.min(1,.12+speed*.12),28+Math.min(105,speed*8));
   }
+
+
+  function mapEnemyRole(){
+    return {
+      office:"OFFICE WORKER",school:"HALL MONITOR",house:"INTRUDER",supermarket:"SECURITY",
+      gym:"GYM ENFORCER",hotel:"HOTEL SECURITY",bank:"VAULT GUARD",metro:"TRANSIT GUARD",
+      factory:"FOREMAN",cinema:"USHER",arcade:"ARCADE GUARD",city:"STREET BRAWLER",
+      forest:"RANGER",beach:"BEACH BRAWLER",construction:"SITE FOREMAN",mall:"MALL SECURITY",
+      police:"OFFICER",hospital:"ORDERLY",lab:"LAB SECURITY",stadium:"STADIUM GUARD",
+      castle:"KNIGHT",farm:"FARMHAND",pirate:"PIRATE",amusement:"PARK SECURITY",
+      volcano:"LAVA GUARD",space:"SPACE GUARD",alien:"ALIEN WARRIOR"
+    }[gameState.selectedMap]||"NPC";
+  }
+
+  function updateAdaptiveNpc(){
+    if(!npc||npc.dead||npc.typeName==="BOSS")return;
+    if(npc.variant==="NORMAL")npc.typeName=mapEnemyRole();
+    // Simple combat memory: if the player destroys lots of props, NPC throws more.
+    const runDestroyed=Math.max(0,gameState.destroyed-(runStats.destroyedStart||0));
+    if(runDestroyed>8)npc.archetype.throwRate=Math.max(npc.archetype.throwRate||1,1.45);
+    // Many blocks in THIS run -> slightly more feints/slower approach.
+    if(runStats.blocks>12)npc.archetype.speed=Math.max(.95,(npc.archetype.speed||1.3)*.94);
+  }
+
+  function updateBossPhases(){
+    if(!npc||npc.dead||npc.typeName!=="BOSS")return;
+    const pct=npc.hpValue/Math.max(1,npc.maxHp);
+    const phase=pct>.62?1:pct>.28?2:3;
+    if(phase!==npc.bossPhase){
+      npc.bossPhase=phase;
+      npc.stun=Math.max(npc.stun,.35);
+      npc.anger=100;
+      cameraImpactShake=.9;
+      playImpactSound("metal",1.2);
+    }
+    const phaseMul=phase===1?1:phase===2?1.16:1.34;
+    npc.attackDuration=Math.max(.28,(npc.weaponCfg?.duration||.62)/phaseMul);
+  }
+
+  function breakNpcWeapon(){if(!npc||npc.weaponBroken)return;npc.weaponBroken=true;npc.weaponDurability=0;npc.attackAnim=0;npc.attackHasHit=true;npc.weaponRoot.setEnabled(false);npc.pickupCooldown=.9;npc.stun=Math.max(npc.stun,.42);reactNpc("weaponBreak",1);speakNpc("scared",true);playImpactSound("metal",1);}
+  function npcPickupMapWeapon(){
+    if(!npc||!npc.weaponBroken||npc.pickupCooldown>0)return false;
+    let type="mapObject";
+
+    if(gameState.selectedMap==="office"){
+      const allowed=["chair","keyboard","mug","monitor","bin","plant","phone"];
+      const c=officeProps.filter(p=>
+        !p.broken &&
+        allowed.includes(p.type) &&
+        BABYLON.Vector3.Distance(
+          p.root.getAbsolutePosition?.()||p.root.position,
+          npc.root.position
+        )<7.5
+      );
+
+      // No fake replacement: stay disarmed until a real object is available.
+      if(!c.length){
+        npc.pickupCooldown=.35;
+        return false;
+      }
+
+      c.sort((a,b)=>
+        BABYLON.Vector3.Distance(a.root.getAbsolutePosition?.()||a.root.position,npc.root.position)-
+        BABYLON.Vector3.Distance(b.root.getAbsolutePosition?.()||b.root.position,npc.root.position)
+      );
+
+      const p=c[0];
+      type=p.type;
+      p.broken=true;
+      p.respawnTimer=30;
+      p.loose=false;
+      p.destructionRewarded=true;
+      p.hitMeshes.forEach(m=>{
+        if(m){
+          removeCollision(m);
+          m.setEnabled?.(false);
+        }
+      });
+      p.root.setEnabled(false);
+    }
+
+    npc.improvisedType=type;
+    npc.emotion="angry";
+    npc.emotionBurst=.65;
+    npc.weaponDurability={
+      mug:2,keyboard:3,phone:3,plant:3,monitor:4,chair:6,bin:5,mapObject:4
+    }[type]||4;
+
+    npc.weaponBroken=false;
+    npc.weaponRoot.setEnabled(true);
+    const s=type==="chair"?1.25:type==="mug"?.72:.95;
+    npc.weaponRoot.scaling.set(s,s,s);
+    npc.pickupCooldown=.45;
+    return true;
+  }
+
+
+  // ------------------------------------------------------------
+  // In-game quick menu (left menu / three-lines button)
+  // ------------------------------------------------------------
+  let quickMenuOpen=false;let quickMenuDebounce=0;
+  let quickMenuIndex=0;
+  let quickMenuPage="MAIN";
+  const QUICK_MENU_ITEMS=["RESUME","LOBBY","CAMERA SETTINGS","MUSIC","CHAT","SOUND EFFECTS","GAME SETTINGS"];
+  function quickMenuCount(){
+    if(quickMenuPage==="CAMERA")return 10;
+    if(quickMenuPage==="GAME")return 7;
+    return QUICK_MENU_ITEMS.length;
+  }
+
+  const quickMenuRoot=new BABYLON.TransformNode("quickMenuRoot",scene);
+  quickMenuRoot.setEnabled(false);
+
+  const quickMenuPlane=BABYLON.MeshBuilder.CreatePlane("quickMenuPlane",{width:1.16,height:1.38},scene);
+  quickMenuPlane.parent=quickMenuRoot;
+  quickMenuPlane.isPickable=false;
+
+  const quickMenuGui=BABYLON.GUI.AdvancedDynamicTexture.CreateForMesh(quickMenuPlane,900,1020);
+  const quickBg=new BABYLON.GUI.Rectangle();
+  quickBg.background="#07111FF2";
+  quickBg.color="#67D6FF";
+  quickBg.thickness=6;
+  quickBg.cornerRadius=34;
+  quickMenuGui.addControl(quickBg);
+
+  const quickText=new BABYLON.GUI.TextBlock();
+  quickText.color="white";
+  quickText.fontSize=48;
+  quickText.fontWeight="700";
+  quickText.textHorizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
+  quickText.textVerticalAlignment=BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
+  quickText.paddingLeft="45px";
+  quickText.paddingRight="35px";
+  quickText.paddingTop="40px";
+  quickText.textWrapping=true;
+  quickBg.addControl(quickText);
+
+  function quickMenuText(){
+    const boss=currentMapProgress().level>=10&&gameMode==="map";
+    let vals,title=boss?"⚠ BOSS FIGHT ⚠":"QUICK MENU";
+
+    if(quickMenuPage==="CAMERA"){
+      title="CAMERA SETTINGS";
+      vals=[
+        `MODE: ${gameState.settings.cameraMode}`,
+        `DISTANCE: ${(gameState.settings.cameraDistance||1.8).toFixed(1)}m`,
+        `HEIGHT: ${(gameState.settings.cameraHeight??.35).toFixed(2)}m`,
+        `SMOOTH: ${gameState.settings.cameraSmooth}`,
+        `FOV: ${gameState.settings.cameraFov}°`,
+        `FORMAT: ${gameState.settings.cameraAspect}`,
+        `HUD IN CAMERA: ${gameState.settings.cameraHud?"ON":"OFF"}`,
+        `CAMERA SHAKE: ${gameState.settings.cameraShake?"ON":"OFF"}`,
+        `CAMERA PROP: ${cameraHeld?"ON":"OFF"}`,
+        "BACK"
+      ];
+    }else if(quickMenuPage==="GAME"){
+      title="GAME SETTINGS";
+      vals=[
+        `HAPTICS: ${Math.round((gameState.settings.hapticStrength??.85)*100)}%`,
+        `DOMINANT HAND: ${dominantHandSide().toUpperCase()}`,
+        `PERFORMANCE: ${gameState.settings.performanceMode}`,
+        "COMFORT VIGNETTE: NOT ACTIVE",
+        "TURNING: PHYSICAL",
+        `HUD: ${hudPlane.isEnabled()?"ON":"OFF"}`,
+        "BACK"
+      ];
+    }else{
+      vals=[
+        "RESUME",
+        "LOBBY",
+        "CAMERA SETTINGS",
+        `MUSIC: ${volumePct(gameState.settings.musicVolume)}`,
+        `CHAT: ${volumePct(gameState.settings.chatVolume)}`,
+        `SFX: ${volumePct(gameState.settings.sfxVolume)}`,
+        "GAME SETTINGS"
+      ];
+    }
+
+    return `${title}\n\n${vals.map((x,i)=>(i===quickMenuIndex?"▶ ":"   ")+x).join("\n")}\n\n${dominantHandSide().toUpperCase()} STICK = choose\n${dominantHandSide().toUpperCase()} TRIGGER = select\n${menuHandSide().toUpperCase()} MENU = close`;
+  }
+
+  function refreshQuickMenu(){
+    quickText.text=quickMenuText();
+  }
+
+  function placeQuickMenu(){
+    if(!quickMenuOpen)return;
+
+    // Controller-attached VR menu: floats above the LEFT controller.
+    const mh=menuHand();
+    if(mh?.grip){
+      const wm=mh.grip.getWorldMatrix();
+      const p=BABYLON.Vector3.TransformCoordinates(
+        new BABYLON.Vector3(.03,.34,-.18),
+        wm
+      );
+      quickMenuRoot.position.copyFrom(p);
+
+      // Keep panel readable by facing the player's head.
+      if(xrCamera){
+        const target=xrCamera.position.clone();
+        target.y=p.y;
+        quickMenuRoot.lookAt(target);
+        quickMenuRoot.rotation.y+=Math.PI;
+      }
+      return;
+    }
+
+    // Tracking fallback.
+    if(xrCamera){
+      const f=xrCamera.getForwardRay(1).direction.clone();
+      f.y=0;
+      if(f.lengthSquared()<.001)f.set(0,0,1);
+      f.normalize();
+      const p=xrCamera.position.add(f.scale(1.1));
+      p.y=xrCamera.position.y-.10;
+      quickMenuRoot.position.copyFrom(p);
+      quickMenuRoot.lookAt(new BABYLON.Vector3(xrCamera.position.x,p.y,xrCamera.position.z));
+      quickMenuRoot.rotation.y+=Math.PI;
+    }
+  }
+
+  function openQuickMenu(){
+    quickMenuOpen=true;
+    quickMenuPage="MAIN";
+    quickMenuIndex=0;
+    quickMenuRoot.setEnabled(true);
+    refreshQuickMenu();
+    placeQuickMenu();
+    bodyVelocity.set(0,0,0);
+  }
+
+  function closeQuickMenu(){
+    quickMenuOpen=false;
+    quickMenuRoot.setEnabled(false);
+  }
+
+  function toggleQuickMenu(){
+    if(quickMenuDebounce>0)return;
+    quickMenuDebounce=.28;
+    if(quickMenuOpen)closeQuickMenu();
+    else openQuickMenu();
+  }
+
+  function activateQuickMenu(){
+    if(!quickMenuOpen)return;
+
+    if(quickMenuPage==="CAMERA"){
+      if(quickMenuIndex===0)cycleListSetting("cameraMode",CAMERA_MODES);
+      else if(quickMenuIndex===1)cycleListSetting("cameraDistance",CAMERA_DISTANCES);
+      else if(quickMenuIndex===2)cycleListSetting("cameraHeight",CAMERA_HEIGHTS);
+      else if(quickMenuIndex===3)cycleListSetting("cameraSmooth",CAMERA_SMOOTH);
+      else if(quickMenuIndex===4)cycleListSetting("cameraFov",CAMERA_FOV);
+      else if(quickMenuIndex===5)cycleListSetting("cameraAspect",CAMERA_ASPECT);
+      else if(quickMenuIndex===6){gameState.settings.cameraHud=!gameState.settings.cameraHud;saveGame();}
+      else if(quickMenuIndex===7){gameState.settings.cameraShake=!gameState.settings.cameraShake;saveGame();}
+      else if(quickMenuIndex===8)toggleCameraHeld();
+      else {quickMenuPage="MAIN";quickMenuIndex=2;}
+      refreshQuickMenu();return;
+    }
+
+    if(quickMenuPage==="GAME"){
+      if(quickMenuIndex===0){
+        const vals=[0,.25,.5,.75,1],cur=gameState.settings.hapticStrength??.85;
+        let i=vals.reduce((b,v,j)=>Math.abs(v-cur)<Math.abs(vals[b]-cur)?j:b,0);
+        gameState.settings.hapticStrength=vals[(i+1)%vals.length];saveGame();
+      }else if(quickMenuIndex===1){saveControlChoice("dominantHand",oppositeHand(dominantHandSide()));}
+      else if(quickMenuIndex===2){gameState.settings.performanceMode=gameState.settings.performanceMode==="PERFORMANCE"?"QUALITY":"PERFORMANCE";applyPerformanceMode();saveGame();}
+      else if(quickMenuIndex===3){lastLobbyMessage="Comfort vignette is not active in this WebXR build.";}
+      else if(quickMenuIndex===4){lastLobbyMessage="Turning uses your real body/head movement in this build.";}
+      else if(quickMenuIndex===5){hudPlane.setEnabled(!hudPlane.isEnabled());}
+      else {quickMenuPage="MAIN";quickMenuIndex=6;}
+      refreshQuickMenu();return;
+    }
+
+    if(quickMenuIndex===0)closeQuickMenu();
+    else if(quickMenuIndex===1){closeQuickMenu();goLobby();}
+    else if(quickMenuIndex===2){quickMenuPage="CAMERA";quickMenuIndex=0;refreshQuickMenu();}
+    else if(quickMenuIndex===3){cycleAudioSetting("musicVolume");refreshQuickMenu();}
+    else if(quickMenuIndex===4){cycleAudioSetting("chatVolume");refreshQuickMenu();}
+    else if(quickMenuIndex===5){cycleAudioSetting("sfxVolume");refreshQuickMenu();}
+    else if(quickMenuIndex===6){quickMenuPage="GAME";quickMenuIndex=0;refreshQuickMenu();}
+  }
+
+
+  // ------------------------------------------------------------
+  // Advanced content camera
+  // ------------------------------------------------------------
+  const CAMERA_MODES=["1ST","2ND","3RD","FOLLOW","SELFIE","BOSS","FREE"];
+  const CAMERA_DISTANCES=[.8,1.3,1.8,2.6,3.6];
+  const CAMERA_HEIGHTS=[-.2,0,.35,.7,1.1];
+  const CAMERA_SMOOTH=[.04,.10,.18,.32,.55];
+  const CAMERA_FOV=[55,70,85,100];
+  const CAMERA_ASPECT=["16:9","9:16","1:1"];
+
+  const contentCamera=new BABYLON.FreeCamera("contentCamera",new BABYLON.Vector3(0,1.6,-2),scene);
+  contentCamera.minZ=.05;
+  contentCamera.fov=(gameState.settings.cameraFov||72)*Math.PI/180;
+  let contentCameraReady=false;
+  let freeCamSavedPos=null;
+  let cameraImpactShake=0;
+
+  function cycleListSetting(key,list){
+    const cur=gameState.settings[key];
+    let i=list.indexOf(cur);
+    if(i<0){
+      let best=0,bd=Infinity;
+      for(let j=0;j<list.length;j++){
+        const d=typeof cur==="number"?Math.abs(list[j]-cur):(list[j]===cur?0:999);
+        if(d<bd){bd=d;best=j;}
+      }
+      i=best;
+    }
+    gameState.settings[key]=list[(i+1)%list.length];if(key==="cameraMode"&&gameState.settings[key]==="FREE"){
+      freeCamSavedPos=contentCameraReady
+        ? contentCamera.position.clone()
+        : cameraPlayerTarget().add(new BABYLON.Vector3(0,.6,-1.6));
+    }saveGame();
+  }
+
+  function cameraPlayerTarget(){
+    return playerWorldPos().add(new BABYLON.Vector3(0,-.15,0));
+  }
+
+  function updateContentCamera(dt){
+    if(!xrCamera)return;
+    const mode=gameState.settings.cameraMode||"FOLLOW";if(mode!=="FREE")freeCamSavedPos=null;
+    const target=cameraPlayerTarget();
+    let desired=contentCamera.position.clone();
+    const forward=xrCamera.getForwardRay(1).direction.clone();
+    forward.y=0;
+    if(forward.lengthSquared()<.001)forward.set(0,0,1);
+    forward.normalize();
+    const right=new BABYLON.Vector3(forward.z,0,-forward.x);
+    const dist=gameState.settings.cameraDistance||1.8;
+    const h=gameState.settings.cameraHeight??.35;
+
+    if(mode==="1ST"){
+      desired=xrCamera.position.clone();
+      desired.y+=.02;
+      contentCamera.position.copyFrom(desired);
+      contentCamera.rotationQuaternion=xrCamera.rotationQuaternion?.clone()||BABYLON.Quaternion.Identity();
+      contentCameraReady=true;
+      return;
+    }else if(mode==="2ND"){
+      desired=target.subtract(forward.scale(dist*.75)).add(right.scale(dist*.55)).add(new BABYLON.Vector3(0,h,0));
+    }else if(mode==="3RD"||mode==="FOLLOW"){
+      desired=target.subtract(forward.scale(dist)).add(new BABYLON.Vector3(0,h,0));
+    }else if(mode==="SELFIE"){
+      desired=target.add(forward.scale(dist*.85)).add(new BABYLON.Vector3(0,h,0));
+    }else if(mode==="BOSS" && npc && !npc.dead && npc.root?.isEnabled()){
+      const bossPos=npc.root.position.add(new BABYLON.Vector3(0,1.1,0));
+      const mid=target.add(bossPos).scale(.5);
+      let away=target.subtract(bossPos);away.y=0;
+      if(away.lengthSquared()<.001)away.set(1,0,0);
+      away.normalize();
+      const side=new BABYLON.Vector3(away.z,0,-away.x);
+      desired=mid.add(side.scale(dist*1.25)).add(new BABYLON.Vector3(0,h+.45,0));
+    }else if(mode==="FREE"){
+      if(!freeCamSavedPos)freeCamSavedPos=contentCamera.position.clone();
+      desired=freeCamSavedPos.clone();
+    }else if(mode==="BOSS"){
+      desired=target.subtract(forward.scale(dist)).add(new BABYLON.Vector3(0,h,0));
+    }
+
+    const smooth=mode==="FOLLOW"?(gameState.settings.cameraSmooth||.18):Math.min(.10,gameState.settings.cameraSmooth||.18);
+    const blend=1-Math.exp(-dt/Math.max(.02,smooth));
+    contentCamera.position=BABYLON.Vector3.Lerp(contentCamera.position,desired,blend);
+
+    const lookTarget=(mode==="BOSS"&&npc&&!npc.dead&&npc.root?.isEnabled())
+      ? target.add(npc.root.position.add(new BABYLON.Vector3(0,1.0,0))).scale(.5)
+      : target;
+
+    if(mode!=="FREE")contentCamera.setTarget(lookTarget);
+    contentCamera.fov=(gameState.settings.cameraFov||72)*Math.PI/180;
+
+    if(gameState.settings.cameraShake&&cameraImpactShake>0){
+      cameraImpactShake=Math.max(0,cameraImpactShake-dt*3.2);
+      contentCamera.position.x+=(Math.random()-.5)*cameraImpactShake*.025;
+      contentCamera.position.y+=(Math.random()-.5)*cameraImpactShake*.018;
+    }
+
+    contentCameraReady=true;
+  }
+
+  function captureWithContentCamera(){
+    const aspect=gameState.settings.cameraAspect||"16:9";
+    const size=aspect==="9:16"?{width:720,height:1280}:aspect==="1:1"?{width:900,height:900}:{width:1280,height:720};
+    const hudWasEnabled=hudPlane?.isEnabled?.()??true;
+    let hudRestored=false;
+    const restoreHud=()=>{
+      if(hudRestored)return;
+      hudRestored=true;
+      if(!gameState.settings.cameraHud)hudPlane?.setEnabled?.(hudWasEnabled);
+    };
+    if(!gameState.settings.cameraHud)hudPlane?.setEnabled?.(false);
+    let safetyTimer=null;
+    try{
+      if(BABYLON.Tools?.CreateScreenshotUsingRenderTarget&&contentCameraReady){
+        safetyTimer=setTimeout(restoreHud,1800);
+        BABYLON.Tools.CreateScreenshotUsingRenderTarget(
+          engine,contentCamera,size,
+          data=>{
+            if(safetyTimer)clearTimeout(safetyTimer);
+            try{
+              const a=document.createElement("a");
+              a.href=data;a.download=`crazy-office-${gameState.settings.cameraMode}-${Date.now()}.png`;
+              document.body.appendChild(a);a.click();a.remove();
+              lastLobbyMessage="Photo captured.";
+            }catch(_){lastLobbyMessage="Browser blocked photo saving.";}
+            restoreHud();
+          },
+          "image/png"
+        );
+        return true;
+      }
+    }catch(_){
+      if(safetyTimer)clearTimeout(safetyTimer);
+    }
+    restoreHud();
+    return false;
+  }
+
+  // ------------------------------------------------------------
+  // Handheld VR camera
+  // ------------------------------------------------------------
+  let cameraHeld=false,cameraCooldown=0;
+  const vrCameraRoot=new BABYLON.TransformNode("vrCameraRoot",scene);
+  const vrCameraBody=BABYLON.MeshBuilder.CreateBox("vrCameraBody",{width:.19,height:.12,depth:.08},scene);
+  vrCameraBody.parent=vrCameraRoot;vrCameraBody.material=darkTrimMat;
+  const vrCameraLens=BABYLON.MeshBuilder.CreateCylinder("vrCameraLens",{diameter:.065,height:.05,tessellation:16},scene);
+  vrCameraLens.parent=vrCameraRoot;vrCameraLens.rotation.x=Math.PI/2;vrCameraLens.position.z=-.06;vrCameraLens.material=lobbyAccent;
+  const vrCameraScreen=BABYLON.MeshBuilder.CreatePlane("vrCameraScreen",{width:.12,height:.065},scene);
+  vrCameraScreen.parent=vrCameraRoot;vrCameraScreen.position.z=.041;vrCameraScreen.rotation.y=Math.PI;
+  const vrCamGui=BABYLON.GUI.AdvancedDynamicTexture.CreateForMesh(vrCameraScreen,320,180);
+  const vrCamText=new BABYLON.GUI.TextBlock();vrCamText.text="CAM";vrCamText.color="white";vrCamText.fontSize=62;vrCamGui.addControl(vrCamText);
+  vrCameraRoot.setEnabled(false);
+
+  function toggleCameraHeld(){
+    cameraHeld=!cameraHeld;vrCameraRoot.setEnabled(cameraHeld);
+    lastLobbyMessage=cameraHeld?"Camera ON — use right secondary button for photo.":"Camera OFF";if(quickMenuOpen)refreshQuickMenu();
+  }
+  function updateVrCamera(dt){
+    cameraCooldown=Math.max(0,cameraCooldown-dt);
+    const camHand=hands[oppositeHand(dominantHandSide())];
+    if(!cameraHeld||!camHand?.grip)return;
+    const wm=camHand.grip.getWorldMatrix();
+    vrCameraRoot.position.copyFrom(BABYLON.Vector3.TransformCoordinates(new BABYLON.Vector3(.08,.055,-.11),wm));
+    vrCameraRoot.rotationQuaternion=camHand.grip.rotationQuaternion?.clone()||BABYLON.Quaternion.Identity();
+  }
+  function takeGamePhoto(){
+    if(!cameraHeld||cameraCooldown>0)return;
+    cameraCooldown=.8;playImpactSound("metal",.35);
+    let ok=false;
+    try{ok=captureWithContentCamera();}catch(_){}
+    if(!ok){
+      try{
+        const canvas=engine.getRenderingCanvas(),data=canvas.toDataURL("image/png");
+        const a=document.createElement("a");a.href=data;a.download=`potato-brawl-${Date.now()}.png`;
+        document.body.appendChild(a);a.click();a.remove();
+      }catch(_){}
+    }
+    lastLobbyMessage=`Photo • ${gameState.settings.cameraMode} • ${gameState.settings.cameraAspect}`;
+    if(gameMode==="lobby")refreshLobby();
+  }
+
+
+  // ------------------------------------------------------------
+  // Multiplayer-ready local state
+  // Actual remote sync is intentionally backend-dependent.
+  // ------------------------------------------------------------
+  let playerDowned=false,downedTimer=0,lastPing=null,lastEmote=null;
+
+  function enterDownedState(){
+    if(gameState.partySize<=1)return false;
+    playerDowned=true;downedTimer=18;playerDead=false;playerHP=1;playerInvuln=.6;
+    bodyVelocity.set(0,0,0);
+    return true;
+  }
+  function reviveLocalPlayer(){
+    playerDowned=false;downedTimer=0;playerHP=Math.round(PLAYER_MAX_HP*.45);playerInvuln=1.2;updatePlayerHud();
+  }
+  function updateDownedCrawling(dt){
+    if(!playerDowned)return;
+    downedTimer-=dt;
+    updatePlayerHud();
+    // Existing hand locomotion remains available but vertical momentum is heavily limited.
+    bodyVelocity.y=Math.min(bodyVelocity.y,.05);
+    bodyVelocity.x*=Math.pow(.65,dt);
+    bodyVelocity.z*=Math.pow(.65,dt);
+    if(downedTimer<=0){
+      playerDowned=false;playerHP=0;playerDead=true;deathTimer=3;
+      if(isInXR()){
+        deathPlane.setEnabled(true);
+        hudPlane.setEnabled(false);
+      }
+      chestRoot.setEnabled(false);
+    }
+  }
+  function pingWorld(pos){lastPing={pos:pos.clone(),time:performance.now()};}
+  function playEmote(name){lastEmote={name,time:performance.now()};}
+
   // ------------------------------------------------------------
   // XR
   // ------------------------------------------------------------
+  const lobbyPrev={trigger:false,grip:false,menu:false,camera:false,stick:false};
+  const btn=(h,i)=>!!h?.controller?.inputSource?.gamepad?.buttons?.[i]?.pressed;
+  function updateLobbyControls(){
+    if(!xrCamera)return;
+    const dom=hands[dominantHandSide()];
+    const mh=menuHand();
+    const trigger=btn(dom,0);
+    const grip=btn(dom,1);
+    const menu=btn(mh,5);
+    const cameraBtn=btn(dom,5);
+    const gp=dom?.controller?.inputSource?.gamepad;
+    const sy=gp?.axes?.length?gp.axes[gp.axes.length-1]||0:0;
+
+    if(Math.abs(sy)>.62&&!lobbyPrev.stick){
+      lobbyPrev.stick=true;
+      const d=sy>0?1:-1;
+      if(quickMenuOpen)quickMenuIndex=wrap(quickMenuIndex+d,quickMenuCount());
+      else if(gameState.pendingDuplicate)lobbyIndex=wrap(lobbyIndex+d,3);
+      else if(lobbySub==="main")lobbySelection=wrap(lobbySelection+d,lobbyMenu.length);
+      else if(lobbySub==="maps")lobbyIndex=wrap(lobbyIndex+d,Math.max(1,ownedMapIds().length));
+      else if(lobbySub==="bats")lobbyIndex=wrap(lobbyIndex+d,Math.max(1,ownedBatIds().length));
+      else if(lobbySub==="skins")lobbyIndex=wrap(lobbyIndex+d,Math.max(1,ownedSkinIds().length));
+      else if(lobbySub==="cosmetics")lobbyIndex=wrap(lobbyIndex+d,COSMETIC_CATALOG.length);
+      else if(lobbySub==="owner")lobbyIndex=wrap(lobbyIndex+d,OWNER_COSMETIC_IDS.length);
+      else if(lobbySub==="colors")lobbyIndex=wrap(lobbyIndex+d,3);
+      else if(lobbySub==="bundles")lobbyIndex=wrap(lobbyIndex+d,BUNDLES.length);
+      else if(lobbySub==="gemshop")lobbyIndex=wrap(lobbyIndex+d,GEM_PACKS.length);
+      else if(lobbySub==="settings")lobbyIndex=wrap(lobbyIndex+d,5);
+      else if(lobbySub==="controls")lobbyIndex=wrap(lobbyIndex+d,3);
+      else if(lobbySub==="prematch")lobbyIndex=wrap(lobbyIndex+d,4);
+      else if(lobbySub==="avatar"||lobbySub==="inspect"||lobbySub==="practice"||lobbySub==="difficulty"||lobbySub==="calibration"||lobbySub==="holster"||lobbySub==="testmode")lobbyIndex=0;
+      else if(lobbySub==="multi")lobbyIndex=wrap(lobbyIndex+d,networkLobbyItemCount());
+      refreshLobby();
+    }else if(Math.abs(sy)<.3)lobbyPrev.stick=false;
+
+    if(menu&&!lobbyPrev.menu)toggleQuickMenu();
+    if(cameraBtn&&!lobbyPrev.camera&&cameraHeld&&!quickMenuOpen)takeGamePhoto();
+
+    if(quickMenuOpen){
+      if(trigger&&!lobbyPrev.trigger)activateQuickMenu();
+    }else if(gameMode==="lobby"){
+      if(trigger&&!lobbyPrev.trigger)activateLobby();
+      if(grip&&!lobbyPrev.grip)backLobby();
+    }
+
+    lobbyPrev.trigger=trigger;lobbyPrev.grip=grip;lobbyPrev.menu=menu;lobbyPrev.camera=cameraBtn;
+  }
+
   async function setupXR() {
     if (!navigator.xr) return;
     try {
@@ -5506,14 +9096,23 @@
 
         const hook=()=>{
           h.node=controllerNode(c);
-          if (side==="right" && h.node) {
-            batRoot.parent=h.node;
-            batRoot.position.set(0,0,0);
-            batRoot.rotationQuaternion=BABYLON.Quaternion.Identity();
-            batRoot.setEnabled(true);
+          if (side===batHandSide() && h.node) {
+            attachBatToSelectedHand();
           }
         };
-        c.onMotionControllerInitObservable.add(hook);
+        c.onMotionControllerInitObservable.add(mc=>{
+          hook();
+          if(side===menuHandSide()){
+            for(const id of ["menu-button","xr-standard-menu","menu","system","y-button"]){
+              try{
+                const comp=mc.getComponent?.(id);
+                if(comp?.onButtonStateChangedObservable)comp.onButtonStateChangedObservable.add(()=>{
+                  if(comp.changes?.pressed&&comp.pressed)toggleQuickMenu();
+                });
+              }catch(_){}
+            }
+          }
+        });
         hook();
       });
 
@@ -5524,7 +9123,7 @@
         h.controller=null;h.node=null;h.trackLast=null;
         h.contact=false;h.anchor=null;h.normal=null;h.plantTrack=null;h.waitClear=false;
         h.mesh.setEnabled(false);
-        if(side==="right") batRoot.setEnabled(false);
+        if(side===batHandSide()) batRoot.setEnabled(false);
       });
 
       xr.baseExperience.onStateChangedObservable.add(state=>{
@@ -5534,6 +9133,8 @@
           attachHud();
           updatePlayerHud();
           chestRoot.setEnabled(true);
+          startBackgroundMusic();
+          goLobby(true);
           bodyVelocity.set(0,0,0);
           batTipLast=null;
           batBaseLast=null;
@@ -5542,7 +9143,6 @@
             hands[side].contact=false;
             hands[side].waitClear=false;
           }
-          chooseVoice();
         }else if(state===BABYLON.WebXRState.NOT_IN_XR){
           const tp=document.getElementById("testPanel");if(tp) tp.style.display="flex";
           const gs=document.getElementById("gameStats");if(gs) gs.style.display="block";
@@ -5559,6 +9159,10 @@
   // ------------------------------------------------------------
   scene.onBeforeRenderObservable.add(()=>{
     const dt=Math.min(.033,engine.getDeltaTime()/1000);
+    groundSlamCooldown=Math.max(0,groundSlamCooldown-dt);
+    updateLocalVoiceFace(dt);
+    updateOwnerGift(dt);
+    
     batHitCooldown=Math.max(0,batHitCooldown-dt);
     playerInvuln=Math.max(0,playerInvuln-dt);
 
@@ -5574,23 +9178,44 @@
 
     if (playerDead) {
       deathTimer-=dt;
-      if (deathTimer<=0) respawnPlayer();
+      if (deathTimer<=0) {
+        if(gameState.mode==="HARDCORE") {
+          respawnPlayer();
+          goLobby();
+          lastLobbyMessage="HARDCORE RUN ENDED";
+          refreshLobby();
+        } else {
+          respawnPlayer();
+        }
+      }
     }
 
     // NPC
-    if (npc) {
+    if (npc && !(net.connected&&!net.isHost)) {
       npc.hitCooldown=Math.max(0,npc.hitCooldown-dt);
       npc.hpFlashTimer=Math.max(0,npc.hpFlashTimer-dt);
       updateNpcLabel();
       npc.attackCooldown=Math.max(0,npc.attackCooldown-dt);
+      npc.pickupCooldown=Math.max(0,(npc.pickupCooldown||0)-dt);
+      if(
+        npc.weaponBroken &&
+        gameMode==="map" &&
+        !npc.dead &&
+        !npc.recovering
+      ) npcPickupMapWeapon();
       npc.throwCooldown=Math.max(0,npc.throwCooldown-dt);
       npc.attackAnim=Math.max(0,npc.attackAnim-dt);
       npc.recentlyHit=Math.max(0,npc.recentlyHit-dt);
-      npc.speechCooldown=Math.max(0,npc.speechCooldown-dt);
-      npc.bubbleTimer=Math.max(0,npc.bubbleTimer-dt);
-      if (npc.bubbleTimer<=0) npc.speech.plane.setEnabled(false);
+      npc.reactionCooldown=Math.max(0,npc.reactionCooldown-dt);
+      npc.reactionTimer=Math.max(0,npc.reactionTimer-dt);
+      if (npc.reactionTimer<=0) npc.speech.plane.setEnabled(false);
 
       if (!npc.dead) {
+        npc.statusBurn=Math.max(0,(npc.statusBurn||0)-dt);
+        npc.statusPoison=Math.max(0,(npc.statusPoison||0)-dt);
+        npc.statusSlow=Math.max(0,(npc.statusSlow||0)-dt);
+        npc.statusTick=(npc.statusTick||0)-dt;
+        if(npc.statusTick<=0&&(npc.statusBurn>0||npc.statusPoison>0)){npc.statusTick=.55;applyDirectNpcDamage((npc.statusBurn>0?2:0)+(npc.statusPoison>0?1:0));if(npc.hpValue<=0){finishNpc(npcLocalToWorld(npc.ragdoll.points.chest.pos),new BABYLON.Vector3(0,.2,1.8),2.2);}}
         setNpcMaterial();
         updateNpcFace(dt);
         npc.stun=Math.max(0,npc.stun-dt);
@@ -5647,9 +9272,17 @@
         npc.velocity.x*=Math.pow(.10,dt);
         npc.velocity.z*=Math.pow(.10,dt);
 
-        if (!npc.recovering && isInXR() && !playerDead) {
-          const playerPos=playerWorldPos();
+        if (!npc.recovering && isInXR() && !playerDead && gameMode==="map") {
+          const combatTarget=npcCombatTarget()||{
+            id:"none",local:false,
+            pos:npc.root.position.add(new BABYLON.Vector3(0,0,99)),
+            head:npc.root.position.add(new BABYLON.Vector3(0,1.6,99)),
+            chest:npc.root.position.add(new BABYLON.Vector3(0,1.2,99))
+          };
+          const playerPos=combatTarget.pos.clone();
+          npc.proximityReactCooldown=Math.max(0,(npc.proximityReactCooldown||0)-dt);
           const toPlayer=playerPos.subtract(npc.root.position);
+          if(toPlayer.length()<1.35&&npc.proximityReactCooldown<=0){reactNpc("near",1);npc.proximityReactCooldown=2.2+Math.random()*1.8;}
           toPlayer.y=0;
           const d=toPlayer.length();
           let walking=false;
@@ -5680,7 +9313,7 @@
 
             moveNpc(dir.scale(speed*dt));
 
-            if (npc.speechCooldown<=0 && Math.random()<.014) {
+            if (npc.reactionCooldown<=0 && Math.random()<.014) {
               speakNpc(
                 npc.emotion==="angry"
                   ? (npc.anger>=55 ? "furious" : "angry")
@@ -5713,13 +9346,16 @@
             npcIsFullyUpright() &&
             npc.stun<=0 &&
             npc.attackAnim<=0 &&
-            npc.attackCooldown<=0
+            npc.attackCooldown<=0 &&
+            !npc.weaponBroken &&
+            npc.weaponRoot.isEnabled()
           ) {
             const armPenalty=BABYLON.Scalar.Clamp(npc.injuries.rightArm/100,0,.7);
             npc.attackCooldown=(npc.archetype?.attackRate ?? .38)+armPenalty*.42;
             npc.attackAnim=npc.attackDuration*(1+armPenalty*.34);
             npc.attackHasHit=false;
             npc.attackBlocked=false;
+            npc.weaponPrevBase=npc.weaponBase.getAbsolutePosition().clone();
             npc.weaponPrevTip=npc.weaponTip.getAbsolutePosition().clone();
             speakNpc(npc.anger>=60 && Math.random()<.45 ? "furious" : "attack",false);
             playImpactSound("whoosh",.55);
@@ -5732,7 +9368,8 @@
             npc.attackAnim=Math.max(0,npc.attackAnim-dt);
 
             // Turn toward the player during the entire swing.
-            const liveTarget=playerWorldPos().subtract(npc.root.position);
+            const liveCombatTarget=npcCombatTarget()||combatTarget;
+            const liveTarget=liveCombatTarget.pos.subtract(npc.root.position);
             liveTarget.y=0;
 
             if(liveTarget.lengthSquared()>.001){
@@ -5741,13 +9378,13 @@
 
               let deltaYaw=desiredYaw-npc.root.rotation.y;
               deltaYaw=Math.atan2(Math.sin(deltaYaw),Math.cos(deltaYaw));
-              npc.root.rotation.y+=deltaYaw*Math.min(1,dt*22);
+              npc.root.rotation.y+=deltaYaw*Math.min(1,dt*30);
             }
 
             // Aim weapon height toward current chest/head height.
-            const playerSpheres=playerHitSpheres();
+            const playerSpheres=combatTargetSpheres(liveCombatTarget);
             const targetSphere=playerSpheres[1] || playerSpheres[0];
-            const targetWorld=(targetSphere?.center || playerWorldPos()).clone();
+            const targetWorld=(targetSphere?.center || liveCombatTarget.pos).clone();
             const weaponWorld=npc.weaponRoot.getAbsolutePosition();
             const aim=targetWorld.subtract(weaponWorld);
 
@@ -5758,9 +9395,11 @@
             // live pitch toward the player's body.
             let swingOffset;
             if(progress<.25){
-              swingOffset=BABYLON.Scalar.Lerp(-1.18,-1.70,progress/.25);
+              swingOffset=BABYLON.Scalar.Lerp(-1.12,-1.62,progress/.25);
+            } else if(progress<.72){
+              swingOffset=BABYLON.Scalar.Lerp(-1.62,.18,(progress-.25)/.47);
             } else {
-              swingOffset=BABYLON.Scalar.Lerp(-1.70,.78,(progress-.25)/.75);
+              swingOffset=BABYLON.Scalar.Lerp(.18,.62,(progress-.72)/.28);
             }
 
             npc.weaponRoot.rotation.x=pitchToPlayer+swingOffset;
@@ -5771,41 +9410,64 @@
               liveTarget.z*Math.sin(npc.root.rotation.y),
               -1,1
             );
-            npc.weaponRoot.rotation.y=localSide*.58;
+            npc.weaponRoot.rotation.y=localSide*.78;
 
+            const base=npc.weaponBase.getAbsolutePosition().clone();
+            const mid=npc.weaponMid.getAbsolutePosition().clone();
             const tip=npc.weaponTip.getAbsolutePosition().clone();
+
+            const prevBase=npc.weaponPrevBase||base;
             const prev=npc.weaponPrevTip||tip;
+
+            npc.weaponPrevBase=base.clone();
             npc.weaponPrevTip=tip.clone();
 
-            // Reliable bat block:
-            // compare the NPC weapon's swept path against the entire player bat.
-            if (!npc.attackBlocked && batRoot.isEnabled()) {
+            // Multiplayer guest block attempt. Host validates the fresh guest bat pose.
+            if(net.connected&&!net.isHost&&!batHolstered&&batRoot.isEnabled()&&npc.netTargetId===net.playerId&&!npc.attackBlocked&&!npc.attackHasHit){
+              const bb=batBase(),bt=batTip();
+              const remoteBlockDist=segmentSegmentDistance(base,tip,bb,bt);
+              if(remoteBlockDist<.23&&progress>.16&&progress<.95&&(net.blockCooldown||0)<=0){
+                net.blockCooldown=.18;
+                sendHost({t:"block"});
+              }
+            }
+
+            // Full-weapon blocking:
+            // handle/base, middle, shaft and tip can ALL be blocked.
+            if (!npc.attackBlocked && liveCombatTarget.local && batRoot.isEnabled() && !batHolstered) {
               const bb=batBase();
               const bt=batTip();
 
               const prevBb=batBaseLast || bb;
               const prevBt=batTipLast || bt;
 
-              const dNow=segmentSegmentDistance(prev,tip,bb,bt);
-              const dPrevBat=segmentSegmentDistance(prev,tip,prevBb,prevBt);
+              const dShaftNow=segmentSegmentDistance(base,tip,bb,bt);
+              const dShaftPrev=segmentSegmentDistance(prevBase,prev,prevBb,prevBt);
 
-              // Also check weapon tip against current/previous bat for edge cases.
-              const dTipNow=Math.min(
-                pointSegmentDistance(tip,bb,bt),
-                pointSegmentDistance(prev,bb,bt),
-                pointSegmentDistance(tip,prevBb,prevBt)
+              const dBaseSweep=segmentSegmentDistance(prevBase,base,bb,bt);
+              const dTipSweep=segmentSegmentDistance(prev,tip,bb,bt);
+
+              const dHandle=Math.min(
+                pointSegmentDistance(base,bb,bt),
+                pointSegmentDistance(prevBase,bb,bt),
+                pointSegmentDistance(mid,bb,bt)
               );
 
-              const blockDist=Math.min(dNow,dPrevBat,dTipNow);
+              const blockDist=Math.min(
+                dShaftNow,dShaftPrev,dBaseSweep,dTipSweep,dHandle
+              );
 
-              // Larger and earlier block window than v0.14.
-              if(blockDist<.185 && progress>.23 && progress<.93){
+              // Earlier and slightly more forgiving full-shaft block window.
+              if(blockDist<.205 && progress>.16 && progress<.95){
                 npc.attackBlocked=true;
                 npc.attackHasHit=true;
                 npc.attackAnim=0;
                 npc.stun=.62;
+                const blockBatSpeed=(prevBt&&bt)?BABYLON.Vector3.Distance(prevBt,bt)/Math.max(dt,.008):2.5;
+                npc.weaponDurability=Math.max(0,(npc.weaponDurability||1)-(blockBatSpeed>5.2?3:blockBatSpeed>3?2:1));
+                if(npc.weaponDurability<=0)breakNpcWeapon();
 
-                let push=npc.root.position.subtract(playerWorldPos());
+                let push=npc.root.position.subtract(liveCombatTarget.pos);
                 push.y=0;
                 if(push.lengthSquared()<.001) push.set(0,0,1);
                 push.normalize();
@@ -5813,36 +9475,41 @@
                 npc.velocity.addInPlace(push.scale(1.45));
 
                 // Strong feedback so the player knows it was a successful block.
-                pulse(hands.right,1,135);
-                pulse(hands.left,.35,55);
+                pulse(batHand(),1,135);
+                pulse(supportHand(),.35,55);
                 playImpactSound("block",1);
                 recordBlock();
 
                 npc.anger=Math.min(100,npc.anger+14);
-                speakNpc("block",false);
+                reactNpc("block",1);speakNpc("block",false);
               }
             }
 
-            // Real swept hitbox against head/chest/hips.
-            if (!npc.attackBlocked && !npc.attackHasHit && progress>.38) {
-              const hit=playerHitSpheres().some(s=>
-                segmentSphereHit(prev,tip,s.center,s.radius+.12)
-              );
+            // Real full-weapon hitbox against head/chest.
+            if (!npc.attackBlocked && !npc.attackHasHit && progress>.34) {
+              const hit=combatTargetSpheres(liveCombatTarget).some(s=>{
+                const tipSweep=segmentSphereHit(prev,tip,s.center,s.radius+.12);
+                const shaftNow=pointSegmentDistance(s.center,base,tip)<=s.radius+.105;
+                const shaftPrev=pointSegmentDistance(s.center,prevBase,prev)<=s.radius+.105;
+                return tipSweep || shaftNow || shaftPrev;
+              });
 
               if(hit){
                 npc.attackHasHit=true;
                 const armWeak=BABYLON.Scalar.Clamp(1-npc.injuries.rightArm*.004,.62,1);
-                hurtPlayer(Math.max(2,Math.round(npc.weaponCfg.damage*(npc.archetype?.attackMul||1)*armWeak*1.08)),npc.root.position);
+                const dm=npcDifficultyMul();const attackDamage=Math.max(1,Math.round(npc.weaponCfg.damage*(npc.archetype?.attackMul||1)*armWeak*1.08*dm.damage));
+                damageCombatTarget(liveCombatTarget,attackDamage,npc.root.position);
 
-                let away=playerWorldPos().subtract(npc.root.position);
-                away.y=0;
-                if(away.lengthSquared()<.001) away.set(0,0,-1);
-                away.normalize();
-
-                bodyVelocity.addInPlace(
-                  away.scale(npc.weaponCfg.knockback*(npc.archetype?.knockbackMul||1)*.62)
-                    .add(new BABYLON.Vector3(0,.38,0))
-                );
+                if(liveCombatTarget.local){
+                  let away=liveCombatTarget.pos.subtract(npc.root.position);
+                  away.y=0;
+                  if(away.lengthSquared()<.001) away.set(0,0,-1);
+                  away.normalize();
+                  bodyVelocity.addInPlace(
+                    away.scale(npc.weaponCfg.knockback*(npc.archetype?.knockbackMul||1)*.62)
+                      .add(new BABYLON.Vector3(0,.38,0))
+                  );
+                }
               }
             }
 
@@ -5922,20 +9589,22 @@
 
           if(npc.deathTimer<=0){
             npc.deathPhase="collapse";
-            npc.deathTimer=.85;
+            npc.deathTimer=1.05;
             npc.ragdoll.dead=true;
             npc.hp.plane.setEnabled(false);
-            npc.weaponRoot.setEnabled(false);
+            // Weapon stays visible through the first part of the collapse.
+            npc.weaponRoot.setEnabled(true);
           }
         }else if(npc.deathPhase==="collapse"){
           npc.deathTimer-=dt;
 
-          // One connected ragdoll only. This is much more stable on Quest.
+          // One connected ragdoll only, with a longer readable KO collapse.
           if(npc.deathTimer>0){
             updateNpcRagdoll(dt,false);
           }else{
             npc.deathPhase="settled";
             npc.deathExploded=true;
+            npc.weaponRoot.setEnabled(false);
             npc.velocity.set(0,0,0);
             npc.angular.set(0,0,0);
 
@@ -5952,12 +9621,9 @@
 
         if (npc.respawnTimer<=0) {
           npc.root.dispose();
-          createNpc();
-          npc.root.position=new BABYLON.Vector3(
-            (Math.random()-.5)*2.4,
-            0,
-            .4+Math.random()*1.6
-          );
+          createNpc();configureNpcForCurrentLevel();
+          npc.root.position.copyFrom(getNpcSpawnPosition());
+          if(gameMode==="lobby")npc.root.setEnabled(false);
         }
 
       }
@@ -6004,6 +9670,9 @@
     }
 
 
+    if(npc && net.connected && !net.isHost)updateNpcFace(dt);
+    updateNpcSlap(dt);
+    updatePack2(dt);quickMenuDebounce=Math.max(0,quickMenuDebounce-dt);updateRemoteAvatars(dt);updateNetworking();updateLobbyControls();updateVrCamera(dt);updateContentCamera(dt);updateAdvancedCombatInput(dt);updateThrownBat(dt);updateMapSystems(dt);updateDownedCrawling(dt);updateAdaptiveNpc();if(quickMenuOpen)placeQuickMenu();
     updateExtraNpcs(dt);
     updateOfficePhysics(dt);
 
@@ -6013,18 +9682,19 @@
         for (const side of ["left","right"]) {
           const h=hands[side];
           if (!h.node) continue;
-          const wp=handWorld(h),tp=handTrack(h);
+          const wp=calibratedHandWorld(h),tp=handTrack(h);
           if (!wp||!tp) continue;
 
           updateHandLocomotion(h,wp,tp,dt);
           h.mesh.rotationQuaternion=h.node.absoluteRotationQuaternion?.clone()||BABYLON.Quaternion.Identity();
         }
 
+        updateMultiplayerSlaps(dt);
         const planted=hands.left.contact||hands.right.contact;
 
-        // Lower gravity and much longer air momentum.
+        // Normal gravity with retained air momentum.
         if (!planted) bodyVelocity.y+=PLAYER_GRAVITY*dt;
-        else if (bodyVelocity.y<-.12) bodyVelocity.y=-.12;
+        else if (bodyVelocity.y<0) bodyVelocity.y=0;
 
         // Knockback/momentum always applies, including while hands are raised.
         xrCamera.position.addInPlace(bodyVelocity.scale(dt));
@@ -6039,22 +9709,33 @@
 
         keepRigAboveFloor();
         resolvePlayerWorldCollision();
-        xrCamera.position.x=Math.max(-10.85,Math.min(10.85,xrCamera.position.x));
-        xrCamera.position.z=Math.max(-19.05,Math.min(3.65,xrCamera.position.z));
+        if(gameState.selectedMap==="office"){
+          xrCamera.position.x=Math.max(-10.85,Math.min(10.85,xrCamera.position.x));
+          xrCamera.position.z=Math.max(-19.05,Math.min(3.65,xrCamera.position.z));
+        }else{
+          xrCamera.position.x=Math.max(RUNTIME_CENTER.x-8.65,Math.min(RUNTIME_CENTER.x+8.65,xrCamera.position.x));
+          xrCamera.position.z=Math.max(RUNTIME_CENTER.z-8.65,Math.min(RUNTIME_CENTER.z+8.65,xrCamera.position.z));
+        }
         xrCamera.position.y=Math.min(4.2,xrCamera.position.y);
 
         updateBodyVisual(dt);
 
-        if (batRoot.isEnabled()) {
+        if(batHolstered){batTipLast=null;batBaseLast=null;}
+        if (batRoot.isEnabled() && !batHolstered) {
           const tip=batTip();
           if (batTipLast) {
             const vel=tip.subtract(batTipLast).scale(1/Math.max(dt,.008));
+            lastBatWorldVel.copyFrom(vel);
             const speed=vel.length();
 
             // Office objects and windows use the entire swept bat path.
             handleBatOfficeHit(batTipLast,tip,vel,speed);
 
             if(speed>.28 && batHitCooldown<=0){
+              if(gameMode==="lobby"&&lobbySub==="practice"){
+                if(hitPracticeDummySweep(batTipLast,tip,batBase(),speed))batHitCooldown=.12;
+              }
+
               const npcHit=npcBatSweepHit(
                 batTipLast,
                 tip,
@@ -6065,7 +9746,7 @@
               if(npcHit){
                 batHitCooldown=.12;
                 damageNpc(npcHit.point,vel,speed);
-              }else{
+              }else if(!(net.connected&&!net.isHost)){
                 const extraHit=hitExtraNpcSweep(
                   batTipLast,
                   tip,
@@ -6082,7 +9763,7 @@
             const wc=surfaceContact(tip,.11);
             if (wc && speed>1.7 && batHitCooldown<=0) {
               batHitCooldown=.12;
-              pulse(hands.right,Math.min(.85,.18+speed*.055),25+Math.min(50,speed*3));
+              pulse(batHand(),Math.min(.85,.18+speed*.055),25+Math.min(50,speed*3));
               simpleHitSound(false);
             }
           }
@@ -6206,6 +9887,27 @@
   }
 
   // v0.24.1 stability: extra NPC spawns disabled to avoid low-quality/glitchy NPCs.
+  makeExtraNpc(0);makeExtraNpc(1);
+  extraNpcs.forEach(e=>e.root.setEnabled(false));
+
+  function configureExtraSquad(){
+    const p=currentMapProgress();
+    const multiplayerActive=net.isHost||net.connected||gameState.partySize>1;
+    const count=multiplayerActive?0:(p.level>=7?2:p.level>=4?1:0);
+    const center=gameState.selectedMap==="office"?new BABYLON.Vector3(0,0,-6):RUNTIME_CENTER;
+    extraNpcs.forEach((e,i)=>{
+      const on=i<count && p.level<10;
+      e.root.setEnabled(on);
+      if(on){
+        e.dead=false;e.hpValue=e.maxHp;e.velocity.set(0,0,0);
+        e.root.position.set(center.x+(i===0?-3.5:3.5),0,center.z-2.6-i*.9);
+        e.root.scaling.set(1,1,1);
+        e.hp.plane.setEnabled(true);e.body.setEnabled(true);e.head.setEnabled(true);e.hair.setEnabled(true);
+        if(e.weapon)e.weapon.setEnabled(true);
+      }
+    });
+  }
+
 
   function updateExtraNpcLabel(e){
     const hp=Math.max(0,Math.ceil(e.hpValue));
@@ -6261,7 +9963,7 @@
     );
 
     playImpactSound("body",Math.min(1,.3+speed*.06));
-    pulse(hands.right,Math.min(1,.10+speed*.10),25+Math.min(90,speed*7));
+    pulse(batHand(),Math.min(1,.10+speed*.10),25+Math.min(90,speed*7));
 
     if(e.hpValue<=0){
       e.dead=true;
@@ -6269,13 +9971,7 @@
       e.hp.plane.setEnabled(false);
       e.respawn=5.5;
 
-      // Lightweight bloody death for secondary NPC.
-      spawnBloodExplosion(
-        e.root.position.add(new BABYLON.Vector3(0,1.1,0)),
-        dir,
-        1.25
-      );
-
+      // Clean knockout: no blood effects.
       e.body.setEnabled(false);
       e.head.setEnabled(false);
       e.hair.setEnabled(false);
@@ -6285,7 +9981,8 @@
   }
 
   function updateExtraNpcs(dt){
-    const activeAI=isInXR() && !playerDead;
+    if(gameMode!=="map"||(net.connected&&!net.isHost))return;
+    const activeAI=isInXR() && !playerDead && gameMode==="map";
     const pp=playerWorldPos();
 
     for(let i=0;i<extraNpcs.length;i++){
@@ -6300,7 +9997,8 @@
           e.body.setEnabled(true);
           e.head.setEnabled(true);
           e.hair.setEnabled(true);
-          e.root.position.set(i===0?-4.5:4.5,0,-7.5-i*2.5);
+          {const c=gameState.selectedMap==="office"?new BABYLON.Vector3(0,0,-6):RUNTIME_CENTER;
+          e.root.position.set(c.x+(i===0?-3.5:3.5),0,c.z-2.6-i*.9);}
           e.velocity.set(0,0,0);
           updateExtraNpcLabel(e);
         }
@@ -6357,7 +10055,7 @@
 
   function resetNpcNow(){
     if(npc?.root) npc.root.dispose();
-    createNpc();npc.root.position=new BABYLON.Vector3(0,0,1);
+    createNpc();configureNpcForCurrentLevel();npc.root.position=new BABYLON.Vector3(0,0,1);
     playerHP=PLAYER_MAX_HP;playerDead=false;playerInvuln=0;
     updatePlayerHud();
   }
@@ -6406,7 +10104,7 @@
     });
   }
 
-  bindTestControls();
+  // VR-only: desktop combat controls intentionally disabled.
   updatePlayerHud();
 
   // Startup integrity test for combat.
@@ -6417,6 +10115,11 @@
     typeof npcBatSweepHit!=="function"
   ){
     throw new Error("Combat helpers failed to initialize");
+  }
+
+  // Lobby-only mirror; restricted render list protects Quest performance.
+  if(mirrorTex && mirror){
+    mirrorTex.renderList = scene.meshes.filter(m=>m!==mirror&&(m.name?.startsWith("playerPotato")||m.name?.includes("Potato")||m.name?.startsWith("left")||m.name?.startsWith("right")||m.name?.startsWith("lobby")));
   }
 
   engine.runRenderLoop(()=>scene.render());

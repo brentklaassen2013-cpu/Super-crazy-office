@@ -4,10 +4,108 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#07111f">
-  <title>VR Bat Brawl — v0.24.7</title>
+  <title>Crazy Office — v0.35.6</title>
   <style>
     html, body { width:100%; height:100%; margin:0; overflow:hidden; background:#07111f; font-family:system-ui,-apple-system,sans-serif; }
     #renderCanvas { width:100%; height:100%; display:block; touch-action:none; }
+    #loadingScreen{
+      position:fixed; inset:0; z-index:9999;
+      display:flex; align-items:center; justify-content:center;
+      overflow:hidden;
+      background:
+        radial-gradient(circle at 50% 36%, rgba(80,75,180,.30), transparent 36%),
+        linear-gradient(160deg,#070a15 0%,#11162a 50%,#090b14 100%);
+      color:white;
+      transition:opacity .55s ease, visibility .55s ease;
+    }
+    #loadingScreen.hidden{opacity:0;visibility:hidden;pointer-events:none}
+    #loadingScreen::before{
+      content:""; position:absolute; inset:-20%;
+      background:
+        repeating-linear-gradient(115deg,transparent 0 70px,rgba(255,255,255,.025) 71px 73px),
+        repeating-linear-gradient(20deg,transparent 0 110px,rgba(77,208,255,.018) 111px 114px);
+      animation:loadingDrift 12s linear infinite;
+    }
+    .office-chaos{
+      position:absolute; inset:0; pointer-events:none; overflow:hidden;
+      opacity:.52;
+    }
+    .office-chaos span{
+      position:absolute; display:block; border:3px solid rgba(255,255,255,.15);
+      background:rgba(255,255,255,.035); border-radius:8px;
+      transform:rotate(var(--r));
+      animation:floatOffice var(--d) ease-in-out infinite alternate;
+    }
+    .office-chaos .desk{width:150px;height:54px;left:8%;bottom:15%;--r:-8deg;--d:3.4s}
+    .office-chaos .monitor{width:90px;height:60px;left:16%;bottom:27%;--r:7deg;--d:4.1s}
+    .office-chaos .paper{width:62px;height:82px;right:12%;top:18%;--r:18deg;--d:2.9s}
+    .office-chaos .chair{width:100px;height:105px;right:8%;bottom:13%;--r:11deg;--d:4.6s}
+    .office-chaos .mug{width:54px;height:54px;left:11%;top:19%;border-radius:50% 50% 10px 10px;--r:-17deg;--d:3.2s}
+    .loading-card{
+      position:relative; width:min(760px,88vw); text-align:center;
+      padding:42px 28px 34px;
+    }
+    .loading-kicker{
+      font-weight:900; letter-spacing:.38em; font-size:12px; opacity:.65;
+      margin-bottom:10px;
+    }
+    .crazy-logo{
+      margin:0;
+      font-size:clamp(56px,12vw,128px);
+      line-height:.78;
+      font-weight:1000;
+      letter-spacing:-.055em;
+      text-transform:uppercase;
+      transform:skew(-5deg) rotate(-1deg);
+      text-shadow:
+        0 5px 0 #27305f,
+        0 10px 0 #161b36,
+        0 20px 35px rgba(0,0,0,.55),
+        0 0 28px rgba(77,208,255,.18);
+      animation:logoPulse 1.7s ease-in-out infinite alternate;
+    }
+    .crazy-logo .officeWord{
+      display:block; margin-top:.22em;
+      font-size:.76em;
+      letter-spacing:.02em;
+      color:#73ddff;
+      text-shadow:0 5px 0 #174b70,0 10px 0 #0c2539,0 0 30px rgba(79,213,255,.40);
+    }
+    .loading-sub{
+      margin:25px 0 20px; font-weight:800; letter-spacing:.14em;
+      font-size:12px; opacity:.75;
+    }
+    .loading-track{
+      width:min(520px,78vw); height:14px; margin:0 auto;
+      background:rgba(255,255,255,.10);
+      border:2px solid rgba(255,255,255,.18);
+      border-radius:999px; overflow:hidden;
+      box-shadow:inset 0 0 15px rgba(0,0,0,.35);
+    }
+    #loadingBar{
+      width:0%; height:100%;
+      background:linear-gradient(90deg,#54d7ff,#9f7cff,#ff6da8);
+      box-shadow:0 0 18px rgba(84,215,255,.65);
+      transition:width .16s linear;
+    }
+    #loadingPercent{
+      margin-top:9px; font-size:12px; font-weight:900; letter-spacing:.16em; opacity:.75;
+    }
+    #startCrazy{
+      margin-top:20px; padding:13px 24px;
+      border:1px solid rgba(255,255,255,.34);
+      border-radius:999px;
+      background:rgba(12,18,35,.76);
+      color:white; font-weight:950; letter-spacing:.12em;
+      cursor:pointer; touch-action:manipulation;
+      box-shadow:0 10px 30px rgba(0,0,0,.28);
+    }
+    #startCrazy:active{transform:scale(.97)}
+    #startCrazy.loading{opacity:.35;pointer-events:none}
+    @keyframes loadingDrift{to{transform:translate3d(7%,4%,0) rotate(2deg)}}
+    @keyframes floatOffice{from{translate:0 -8px}to{translate:0 10px}}
+    @keyframes logoPulse{from{scale:.985}to{scale:1.015}}
+
     #info {
       position:fixed; left:12px; right:12px; top:12px; max-width:560px;
       color:white; background:rgba(0,0,0,.58); border-radius:14px;
@@ -45,17 +143,119 @@
   </style>
 </head>
 <body>
+<div id="loadingScreen">
+  <div class="office-chaos" aria-hidden="true">
+    <span class="desk"></span><span class="monitor"></span><span class="paper"></span>
+    <span class="chair"></span><span class="mug"></span>
+  </div>
+  <div class="loading-card">
+    <div class="loading-kicker">WELCOME TO</div>
+    <h1 class="crazy-logo">CRAZY<span class="officeWord">OFFICE</span></h1>
+    <div class="loading-sub">CHAOS IS CLOCKING IN</div>
+    <div class="loading-track"><div id="loadingBar"></div></div>
+    <div id="loadingPercent">0%</div>
+    <button id="startCrazy">START CRAZY OFFICE</button>
+  </div>
+</div>
 <canvas id="renderCanvas"></canvas>
-<div id="info"><b>VR BAT BRAWL v0.24.7</b><br>Full Combat + Multi NPC build.</div>
+<div id="info"><b>CRAZY OFFICE v0.35.6</b><br>VR chaos • combat • multiplayer.</div>
 <div id="gameStats">Loading...</div>
 <script>
 (function(){
+  var loadAudio=null,loadTimer=null,loadStep=0;
+  function playLoadingMusic(){
+    var screen=document.getElementById("loadingScreen");
+    if(!screen||screen.classList.contains("hidden"))return;
+    try{
+      var AC=window.AudioContext||window.webkitAudioContext;
+      if(!AC)return;
+      loadAudio=loadAudio||new AC();
+      if(loadAudio.state==="suspended")loadAudio.resume();
+      var seq=[110,146.83,174.61,220,174.61,146.83,130.81,164.81];
+      function tick(){
+        if(!loadAudio)return;
+        var now=loadAudio.currentTime;
+        var f=seq[loadStep%seq.length];
+        var o=loadAudio.createOscillator(),g=loadAudio.createGain();
+        o.type=loadStep%4===0?"triangle":"sine";
+        o.frequency.setValueAtTime(f,now);
+        g.gain.setValueAtTime(.0001,now);
+        g.gain.exponentialRampToValueAtTime(.045,now+.025);
+        g.gain.exponentialRampToValueAtTime(.0001,now+.27);
+        o.connect(g);g.connect(loadAudio.destination);o.start(now);o.stop(now+.30);
+        if(loadStep%4===0){
+          var bass=loadAudio.createOscillator(),bg=loadAudio.createGain();
+          bass.type="sine";bass.frequency.value=f/2;
+          bg.gain.setValueAtTime(.018,now);bg.gain.exponentialRampToValueAtTime(.0001,now+.35);
+          bass.connect(bg);bg.connect(loadAudio.destination);bass.start(now);bass.stop(now+.36);
+        }
+        loadStep++;
+        loadTimer=setTimeout(tick,320);
+      }
+      tick();
+    }catch(_){}
+  }
+  function stopLoadingMusic(){
+    if(loadTimer){clearTimeout(loadTimer);loadTimer=null;}
+    try{loadAudio&&loadAudio.close&&loadAudio.close();}catch(_){}
+    loadAudio=null;
+  }
+  document.addEventListener("visibilitychange",function(){
+    if(!loadingStarted)return;
+    var screen=document.getElementById("loadingScreen");
+    if(document.hidden)stopLoadingMusic();
+    else if(screen&&!screen.classList.contains("hidden"))playLoadingMusic();
+  });
+  var loadingStarted=false;
+  function runLoading(){
+    if(loadingStarted)return;
+    loadingStarted=true;
+    var screen=document.getElementById("loadingScreen");
+    var bar=document.getElementById("loadingBar");
+    var pct=document.getElementById("loadingPercent");
+    var btn=document.getElementById("startCrazy");
+    if(!screen||!bar||!pct||!btn)return;
+    btn.classList.add("loading");
+    btn.textContent="LOADING...";
+    playLoadingMusic();
+    var p=0;
+    var iv=setInterval(function(){
+      p=Math.min(100,p+(p<70?4:p<92?2:1));
+      bar.style.width=p+"%";
+      pct.textContent=p+"%";
+      if(p>=100){
+        clearInterval(iv);
+        setTimeout(function(){
+          stopLoadingMusic();
+          screen.classList.add("hidden");
+          setTimeout(function(){screen.remove();},650);
+          try{window.dispatchEvent(new Event("crazy-office-ready"));}catch(_){}
+        },420);
+      }
+    },70);
+  }
+  window.addEventListener("DOMContentLoaded",function(){
+    var btn=document.getElementById("startCrazy");
+    if(btn)btn.addEventListener("click",function(){
+      try{window.dispatchEvent(new Event("crazy-office-start-click"));}catch(_){}
+      runLoading();
+    },{once:true});
+  });
+
   function showError(msg){
+    var safe=String(msg).replace(/</g,"&lt;");
     var el=document.getElementById("gameStats");
     if(el){
       el.style.display="block";
       el.style.background="rgba(90,0,0,.88)";
-      el.innerHTML="<b>GAME ERROR</b><br>"+String(msg).replace(/</g,"&lt;");
+      el.innerHTML="<b>GAME ERROR</b><br>"+safe;
+    }
+    var screen=document.getElementById("loadingScreen");
+    var pct=document.getElementById("loadingPercent");
+    var btn=document.getElementById("startCrazy");
+    if(screen){
+      if(pct)pct.innerHTML="LOAD ERROR";
+      if(btn){btn.classList.remove("loading");btn.textContent="RELOAD CRAZY OFFICE";btn.onclick=function(){location.reload();};}
     }
   }
   window.addEventListener("error",function(e){
@@ -69,6 +269,7 @@
 </script>
 <script src="https://cdn.babylonjs.com/babylon.js"></script>
 <script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
+<script src="https://unpkg.com/peerjs@1.4.6/dist/peerjs.min.js"></script>
 <script src="./game.js"></script>
 </body>
 </html>
