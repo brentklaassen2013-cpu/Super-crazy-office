@@ -1,32 +1,29 @@
 <!doctype html>
 <html>
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no"/>
-  <meta name="theme-color" content="#05070c"/>
-  <title>Crazy Office - Movement Alpha</title>
-  <style>
-    html,body,#renderCanvas{width:100%;height:100%;margin:0;overflow:hidden;background:#05070c;touch-action:none}
-    #ui{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;font-family:Arial,sans-serif;color:white}
-    #panel{pointer-events:auto;background:#08111ee8;border:1px solid #2dd4ff;border-radius:18px;padding:22px;max-width:390px;text-align:center;box-shadow:0 0 40px #0009}
-    button{border:0;border-radius:12px;padding:14px 18px;font-size:18px;font-weight:800;background:#22d3ee;color:#041018}
-    .small{font-size:13px;opacity:.78;line-height:1.35;margin-top:12px}
-    #status{margin:10px 0 16px;font-weight:700;color:#8be9ff}
-  </style>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no"/>
+<title>Crazy Office Movement Alpha 0.3</title>
+<style>
+html,body,#renderCanvas{margin:0;width:100%;height:100%;overflow:hidden;background:#071019;touch-action:none}
+#ui{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;font-family:Arial,sans-serif;color:white;pointer-events:none}
+#panel{pointer-events:auto;background:#07111fe8;border:2px solid #22d3ee;border-radius:18px;padding:22px;text-align:center;max-width:390px}
+button{padding:14px 20px;border:0;border-radius:12px;font-size:18px;font-weight:900;background:#22d3ee;color:#041017}
+#status{margin:10px 0 16px;color:#9beeff;font-weight:800}
+.small{font-size:13px;opacity:.8;line-height:1.4;margin-top:12px}
+</style>
 </head>
 <body>
-  <canvas id="renderCanvas"></canvas>
-  <div id="ui">
-    <div id="panel">
-      <h2 style="margin:0 0 8px">CRAZY OFFICE</h2>
-      <div style="font-size:18px;font-weight:900">MOVEMENT ALPHA 0.2</div>
-      <div id="status">Alleen apen movement</div>
-      <button id="startBtn">START</button>
-      <div class="small">Dit is expres een lege test. Test alleen lopen, duwen, springen, muren en landen.</div>
-    </div>
-  </div>
-  <script src="https://cdn.babylonjs.com/babylon.js"></script>
-  <script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
-  <script src="./game.js?v=movement-alpha-0.2"></script>
+<canvas id="renderCanvas"></canvas>
+<div id="ui"><div id="panel">
+<h2 style="margin:0">CRAZY OFFICE</h2>
+<div style="font-size:19px;font-weight:900;margin-top:5px">MOVEMENT ALPHA 0.3</div>
+<div id="status">XR LADEN...</div>
+<button id="startBtn" disabled>XR LADEN...</button>
+<div class="small">Alleen movement-test. Deze versie is expres makkelijker om snelheid en hoogte te krijgen.</div>
+</div></div>
+<script src="https://cdn.babylonjs.com/babylon.js"></script>
+<script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
+<script src="./game.js?v=movement-alpha-0.3"></script>
 </body>
 </html>
