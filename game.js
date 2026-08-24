@@ -1,5 +1,5 @@
 (() => {
-  const BUILD_VERSION="0.36.4";
+  const BUILD_VERSION="0.36.5";
   const canvas = document.getElementById("renderCanvas");
   const engine = new BABYLON.Engine(canvas, true, { stencil:true });
   const scene = new BABYLON.Scene(engine);
@@ -418,8 +418,22 @@
     MAT.wall,
     true
   );
-  windowSafety.visibility=0;
+  windowSafety.visibility=.22;
+  windowSafety.material=glassMat;
   windowSafety.isPickable=false;
+
+  // Extra collision skin removes edge/corner escape gaps in the office.
+  const officeSafetySkin=[];
+  const safetyMat=mkMat("officeSafetySkinMat","#111827");safetyMat.alpha=0;
+  const safetyBox=(name,pos,size)=>{
+    const m=box(name,pos,size,safetyMat,true);
+    m.visibility=0;m.isPickable=false;officeSafetySkin.push(m);return m;
+  };
+  safetyBox("officeSafetyLeft",new BABYLON.Vector3(-11.42,2.45,-7.75),new BABYLON.Vector3(.32,5.1,23.5));
+  safetyBox("officeSafetyRight",new BABYLON.Vector3(11.42,2.45,-7.75),new BABYLON.Vector3(.32,5.1,23.5));
+  safetyBox("officeSafetyRear",new BABYLON.Vector3(0,2.45,-19.68),new BABYLON.Vector3(23.2,5.1,.32));
+  safetyBox("officeSafetyFront",new BABYLON.Vector3(0,2.45,4.18),new BABYLON.Vector3(23.2,5.1,.32));
+  safetyBox("officeSafetyRoof",new BABYLON.Vector3(0,4.98,-7.75),new BABYLON.Vector3(23.2,.32,23.5));
 
   // Ceiling lights.
   const lightPanelMat=mkMat("lightPanel","#eaf6ff");
@@ -1557,9 +1571,9 @@
 
     for(let i=0;i<count;i++){
       const sh=BABYLON.MeshBuilder.CreateBox("glassShard",{
-        width:.035+Math.random()*.065,
-        height:.035+Math.random()*.10,
-        depth:.008+Math.random()*.012
+        width:.065+Math.random()*.090,
+        height:.070+Math.random()*.145,
+        depth:.012+Math.random()*.018
       },scene);
       sh.position=pos.add(new BABYLON.Vector3(
         (Math.random()-.5)*.35,
@@ -1593,7 +1607,7 @@
     if(!mesh?.metadata?.breakableWindow || mesh.metadata.broken) return false;
 
     mesh.metadata.broken=true;
-    mesh.metadata.respawnTimer=30;
+    mesh.metadata.respawnTimer=8;
     removeCollision(mesh);
     mesh.setEnabled(false);
 
@@ -1645,11 +1659,12 @@
   }
 
   function spawnDebrisBox(pos,size,material,vel,life=2.8){
-    const m=BABYLON.MeshBuilder.CreateBox("debris",{width:size.x,height:size.y,depth:size.z},scene);
+    const chunkSize=size.scale(1.55);
+    const m=BABYLON.MeshBuilder.CreateBox("debris",{width:chunkSize.x,height:chunkSize.y,depth:chunkSize.z},scene);
     m.position.copyFrom(pos);m.material=material;
     fxBodies.push({
       mesh:m,kind:"debris",
-      radius:Math.max(size.x,size.y,size.z)*.35,
+      radius:Math.max(chunkSize.x,chunkSize.y,chunkSize.z)*.35,
       vel:vel.clone(),
       spin:new BABYLON.Vector3((Math.random()-.5)*9,(Math.random()-.5)*9,(Math.random()-.5)*9),
       life
@@ -1734,7 +1749,7 @@
     if(d.lengthSquared()<.001) d.set(0,1,0);
     d.normalize();
 
-    prop.broken=true;prop.loose=false;prop.respawnTimer=30;
+    prop.broken=true;prop.loose=false;prop.respawnTimer=8;
     prop.hitMeshes.forEach(m=>{
       if(m){
         removeCollision(m);
@@ -1959,7 +1974,7 @@
 
     for(const w of breakableWindows){
       if(!w.metadata?.broken) continue;
-      w.metadata.respawnTimer=(w.metadata.respawnTimer??30)-dt;
+      w.metadata.respawnTimer=(w.metadata.respawnTimer??8)-dt;
       if(w.metadata.respawnTimer<=0){
         w.metadata.broken=false;w.metadata.respawnTimer=0;w.setEnabled(true);addCollision(w);
       }
@@ -4652,8 +4667,8 @@ Grip = back`;
   function refreshLobby(){if(lobbySub!=="main")lobbyText.fontSize=28;if(lobbySub!=="avatar")showAvatarPreview(false);if(lobbySub!=="inspect")showBatPreview(false);if(lobbySub!=="practice")showPracticeDummy(false);if(gameState.pendingDuplicate)lobbyText.text=lobbyDup();else if(lobbySub==="maps")lobbyText.text=lobbyMaps();else if(lobbySub==="bats")lobbyText.text=lobbyBats();else if(lobbySub==="skins")lobbyText.text=lobbySkins();else if(lobbySub==="cosmetics")lobbyText.text=lobbyCosmetics();else if(lobbySub==="colors")lobbyText.text=lobbyPotatoColors();else if(lobbySub==="bundles")lobbyText.text=lobbyBundles();else if(lobbySub==="gemshop")lobbyText.text=lobbyGemShop();else if(lobbySub==="settings")lobbyText.text=lobbySettings();else if(lobbySub==="controls")lobbyText.text=lobbyControls();else if(lobbySub==="prematch")lobbyText.text=lobbyPrematch();else if(lobbySub==="avatar")lobbyText.text=lobbyAvatarPreview();else if(lobbySub==="inspect")lobbyText.text=lobbyBatInspect();else if(lobbySub==="practice")lobbyText.text=lobbyPractice();else if(lobbySub==="difficulty")lobbyText.text=lobbyDifficulty();else if(lobbySub==="calibration")lobbyText.text=lobbyHandCalibration();else if(lobbySub==="holster")lobbyText.text=lobbyHolster();else if(lobbySub==="testmode")lobbyText.text=lobbyTestMode();else if(lobbySub==="owner")lobbyText.text=lobbyOwnerVault();else if(lobbySub==="trading")lobbyText.text=lobbyOnline("TRADING");else if(lobbySub==="multi")lobbyText.text=lobbyMultiplayer();else lobbyText.text=lobbyMain();}
   function clearRuntimeMap(){runtimeColliders.forEach(removeCollision);runtimeColliders=[];if(runtimeMapRoot){runtimeMapRoot.dispose(false,true);runtimeMapRoot=null;}}
   function mapTheme(id){return {school:["#9aa5b1","#e6dfc7","#4d6985"],house:["#8d7761","#e9dfd0","#6b8a63"],supermarket:["#7a8794","#e6e8eb","#dc4d41"],gym:["#343c48","#c9ced5","#e87235"],hotel:["#7a695d","#e5ded6","#a77a48"],bank:["#5a6773","#dde2e6","#92773f"],metro:["#39434f","#9ba4ad","#d6a627"],factory:["#333b43","#727b82","#d56d28"],cinema:["#231f2e","#5f596c","#b83a4c"],arcade:["#242038","#493d67","#ff4fb7"],city:["#414b55","#8f9ba5","#3d8dc4"],forest:["#53664b","#31452e","#77945d"],beach:["#d2b87c","#8ed0dd","#f4d35e"],construction:["#655c50","#8f8a82","#f0a52b"],mall:["#89949f","#e4e7e9","#6fa7c7"],police:["#3d4d63","#d9dde3","#315fa8"],hospital:["#a9b8bd","#e9eeee","#49a6a6"],lab:["#7f8992","#d9e1e6","#67c6d5"],stadium:["#4f6751","#9aa0a6","#5d9f61"],castle:["#66635c","#8b877e","#8b2635"],farm:["#7a684d","#71845a","#d4aa58"],pirate:["#5d4936","#7a6b5b","#a73c2e"],amusement:["#6c76a2","#d4d6e1","#e85d75"],volcano:["#352a2a","#5b3c36","#e65325"],space:["#242c38","#586477","#62a5d8"],alien:["#2d2940","#4b3c66","#7ad36f"]}[id]||["#555f68","#c8cdd2","#4c91c4"];}
-  function buildRuntimeMap(id){clearRuntimeMap();if(id==="office")return;runtimeMapRoot=new BABYLON.TransformNode("runtime_"+id,scene);runtimeMapRoot.position.copyFrom(RUNTIME_CENTER);const [fh,wh,ah]=mapTheme(id),fm=mkMat("floor_"+id,fh),wm=mkMat("wall_"+id,wh),am=mkMat("accent_"+id,ah);const add=(n,world,s,mat,c=true)=>{const m=BABYLON.MeshBuilder.CreateBox(n,{width:s.x,height:s.y,depth:s.z},scene);m.parent=runtimeMapRoot;m.position.copyFrom(world.subtract(RUNTIME_CENTER));m.material=mat;if(c){addCollision(m);runtimeColliders.push(m);}return m;};add("arenaFloor",new BABYLON.Vector3(66,-.12,-6),new BABYLON.Vector3(18,.24,18),fm);add("arenaBack",new BABYLON.Vector3(66,2.5,-15),new BABYLON.Vector3(18,5,.2),wm);add("arenaLeft",new BABYLON.Vector3(57,2.5,-6),new BABYLON.Vector3(.2,5,18),wm);add("arenaRight",new BABYLON.Vector3(75,2.5,-6),new BABYLON.Vector3(.2,5,18),wm);add("arenaFront",new BABYLON.Vector3(66,2.5,3),new BABYLON.Vector3(18,5,.2),wm);add("arenaCeiling",new BABYLON.Vector3(66,5.0,-6),new BABYLON.Vector3(18,.2,18),wm);for(let i=0;i<10;i++){const a=i/10*Math.PI*2,r=3.8+(i%3)*.9;add("mapProp"+i,new BABYLON.Vector3(66+Math.cos(a)*r,.55,-6+Math.sin(a)*r),new BABYLON.Vector3(.7+(i%2)*.35,1.1,.7),i%2?am:wm);}add("bossPlatform",new BABYLON.Vector3(66,.08,-12.5),new BABYLON.Vector3(4.5,.16,2.5),am);}
-  const getMapSpawn=()=>gameState.selectedMap==="office"?new BABYLON.Vector3(0,0,-1.5):new BABYLON.Vector3(66,0,-3);
+  function buildRuntimeMap(id){clearRuntimeMap();if(id==="office")return;runtimeMapRoot=new BABYLON.TransformNode("runtime_"+id,scene);runtimeMapRoot.position.copyFrom(RUNTIME_CENTER);const [fh,wh,ah]=mapTheme(id),fm=mkMat("floor_"+id,fh),wm=mkMat("wall_"+id,wh),am=mkMat("accent_"+id,ah);const add=(n,world,s,mat,c=true)=>{const m=BABYLON.MeshBuilder.CreateBox(n,{width:s.x,height:s.y,depth:s.z},scene);m.parent=runtimeMapRoot;m.position.copyFrom(world.subtract(RUNTIME_CENTER));m.material=mat;if(c){addCollision(m);runtimeColliders.push(m);}return m;};add("arenaFloor",new BABYLON.Vector3(66,-.12,-6),new BABYLON.Vector3(18,.24,18),fm);add("arenaBack",new BABYLON.Vector3(66,2.6,-15),new BABYLON.Vector3(18.6,5.4,.45),wm);add("arenaLeft",new BABYLON.Vector3(57,2.6,-6),new BABYLON.Vector3(.45,5.4,18.6),wm);add("arenaRight",new BABYLON.Vector3(75,2.6,-6),new BABYLON.Vector3(.45,5.4,18.6),wm);add("arenaFront",new BABYLON.Vector3(66,2.6,3),new BABYLON.Vector3(18.6,5.4,.45),wm);add("arenaCeiling",new BABYLON.Vector3(66,5.25,-6),new BABYLON.Vector3(18.6,.45,18.6),wm);for(let i=0;i<10;i++){const a=i/10*Math.PI*2,r=3.8+(i%3)*.9;add("mapProp"+i,new BABYLON.Vector3(66+Math.cos(a)*r,.55,-6+Math.sin(a)*r),new BABYLON.Vector3(.7+(i%2)*.35,1.1,.7),i%2?am:wm);}add("bossPlatform",new BABYLON.Vector3(66,.08,-12.5),new BABYLON.Vector3(4.5,.16,2.5),am);}
+  const getMapSpawn=()=>gameState.selectedMap==="office"?new BABYLON.Vector3(0,.62,-1.5):new BABYLON.Vector3(66,.62,-3);
   function getNpcSpawnPosition(){const c=gameState.selectedMap==="office"?new BABYLON.Vector3(0,0,-6):RUNTIME_CENTER;return new BABYLON.Vector3(c.x+(Math.random()-.5)*3.2,0,c.z-3.7+Math.random()*1.2);}
   function goLobby(fromNetwork=false){for(const [,p] of net.players){p.inMatch=false;p.reportedInMatch=false;}const wasHolstered=batHolstered;batHolstered=false;if(wasHolstered&&!attachBatToSelectedHand()){batRoot.parent=null;batRoot.setEnabled(false);}
     mapEventText="";mapEventTextTimer=0;
@@ -4668,7 +4683,7 @@ Grip = back`;
     }
     net.matchMembers.clear();
     if(npc)npc.netTargetId=null;quickMenuDebounce=0;groundSlamCooldown=0;combatInputPrev.trigger=false;combatInputPrev.grip=false;chargeTime=0;batTipLast=null;batBaseLast=null;playerDowned=false;downedTimer=0;if(batThrown&&!attachBatToRightHand()){batRoot.parent=null;batRoot.setEnabled(false);}closeQuickMenu();gameMode="lobby";setMusicMode("normal");clearRuntimeMap();lobbySub="main";lobbyIndex=0;lastLobbyMessage="";mirror.setEnabled(true);mirrorFrame.setEnabled(true);lobbyScreen.setEnabled(true);if(xrCamera){xrCamera.position.set(30,.08,-5);bodyVelocity.set(0,0,0);keepRigAboveFloor();}if(npc?.root)npc.root.setEnabled(false);extraNpcs.forEach(e=>e.root.setEnabled(false));syncOwnerGiftVisual();refreshLobby();ensurePublicLobby();}
-  function startMap(forcedModifier=null){hidePack2();const wasHolstered=batHolstered;batHolstered=false;if(wasHolstered&&!attachBatToSelectedHand()){batRoot.parent=null;batRoot.setEnabled(false);}mapEventText="";mapEventTextTimer=0;quickMenuDebounce=0;groundSlamCooldown=0;combatInputPrev.trigger=false;combatInputPrev.grip=false;chargeTime=0;batTipLast=null;batBaseLast=null;if(batThrown&&!attachBatToRightHand()){batRoot.parent=null;batRoot.setEnabled(false);}gameMode="map";syncOwnerGiftVisual();playerDowned=false;downedTimer=0;resetRunStats(forcedModifier);playerHP=PLAYER_MAX_HP;playerDead=false;playerInvuln=1.0;deathTimer=0;deathPlane?.setEnabled?.(false);hudPlane?.setEnabled?.(true);setMusicMode(currentMapProgress().level>=10?"boss":"normal");gameMode="map";buildRuntimeMap(gameState.selectedMap);mirror.setEnabled(false);mirrorFrame.setEnabled(false);lobbyScreen.setEnabled(false);if(xrCamera){const p=getMapSpawn();xrCamera.position.set(p.x,.08,p.z);bodyVelocity.set(0,0,0);keepRigAboveFloor();}if(npc?.root)npc.root.dispose();createNpc();configureNpcForCurrentLevel();npc.root.setEnabled(true);npc.root.position.copyFrom(getNpcSpawnPosition());configureExtraSquad();applyBatLook();applySkinLook();}
+  function startMap(forcedModifier=null){hidePack2();const wasHolstered=batHolstered;batHolstered=false;if(wasHolstered&&!attachBatToSelectedHand()){batRoot.parent=null;batRoot.setEnabled(false);}mapEventText="";mapEventTextTimer=0;quickMenuDebounce=0;groundSlamCooldown=0;combatInputPrev.trigger=false;combatInputPrev.grip=false;chargeTime=0;batTipLast=null;batBaseLast=null;if(batThrown&&!attachBatToRightHand()){batRoot.parent=null;batRoot.setEnabled(false);}gameMode="map";syncOwnerGiftVisual();playerDowned=false;downedTimer=0;resetRunStats(forcedModifier);playerHP=PLAYER_MAX_HP;playerDead=false;playerInvuln=1.0;deathTimer=0;deathPlane?.setEnabled?.(false);hudPlane?.setEnabled?.(true);setMusicMode(currentMapProgress().level>=10?"boss":"normal");gameMode="map";buildRuntimeMap(gameState.selectedMap);mirror.setEnabled(false);mirrorFrame.setEnabled(false);lobbyScreen.setEnabled(false);if(xrCamera){const p=getMapSpawn();xrCamera.position.set(p.x,p.y,p.z);bodyVelocity.set(0,0,0);keepRigAboveFloor();}if(npc?.root)npc.root.dispose();createNpc();configureNpcForCurrentLevel();npc.root.setEnabled(true);npc.root.position.copyFrom(getNpcSpawnPosition());configureExtraSquad();applyBatLook();applySkinLook();}
   function applyBatLook(){const b=selectedBatData(),c=BABYLON.Color3.FromHexString(b.color);batWood.diffuseColor=c;batWood.emissiveColor=c.scale(b.rarity==="Mythic"?.14:b.rarity==="Legendary"?.08:.02);}
 
   let chestRoot=null;
@@ -5180,9 +5195,10 @@ Grip = back`;
   }
   function keepRigAboveFloor() {
     if (!xrCamera) return;
-    if (xrCamera.position.y<0) xrCamera.position.y=0;
-    if (xrCamera.position.y<=.001 && bodyVelocity.y<0) {
-      xrCamera.position.y=0;
+    const floorY=gameMode==="map"?.10:0;
+    if (xrCamera.position.y<floorY) xrCamera.position.y=floorY;
+    if (xrCamera.position.y<=floorY+.001 && bodyVelocity.y<0) {
+      xrCamera.position.y=floorY;
       bodyVelocity.y=0;
     }
   }
@@ -5415,8 +5431,8 @@ Grip = back`;
 
   const HAND_RADIUS=.105;
   let groundSlamCooldown=0;
-  const GROUND_SLAM_MIN_SPEED=2.55;
-  const GROUND_SLAM_MAX_BOOST=4.15;
+  const GROUND_SLAM_MIN_SPEED=5.20;
+  const GROUND_SLAM_MAX_BOOST=3.85;
   function closestPointAabb(p,mesh) {
     const bb=mesh.getBoundingInfo().boundingBox;
     const min=bb.minimumWorld,max=bb.maximumWorld;
@@ -5512,7 +5528,7 @@ Grip = back`;
 
       if(isFloorLike && slamSpeed>=GROUND_SLAM_MIN_SPEED && groundSlamCooldown<=0){
         const t=BABYLON.Scalar.Clamp((slamSpeed-GROUND_SLAM_MIN_SPEED)/4.5,0,1);
-        const upBoost=BABYLON.Scalar.Lerp(1.55,GROUND_SLAM_MAX_BOOST,t);
+        const upBoost=BABYLON.Scalar.Lerp(1.30,GROUND_SLAM_MAX_BOOST,t);
 
         const hv=h.trackLast.subtract(trackPos).scale(1/Math.max(dt,.008));
         hv.y=0;
@@ -5588,6 +5604,8 @@ Grip = back`;
 
           const impulse=rigDelta.scale(1/Math.max(dt,.008));
           bodyVelocity=BABYLON.Vector3.Lerp(bodyVelocity,impulse,.18);
+          // Normal hand contact must not act like a spring.
+          if(n.y>.60 && bodyVelocity.y>0 && bodyVelocity.y<2.35)bodyVelocity.y=0;
           if (bodyVelocity.length()>MAX_PLAYER_SPEED) {
             bodyVelocity=bodyVelocity.normalize().scale(MAX_PLAYER_SPEED);
           }
@@ -8866,7 +8884,7 @@ function attachBatToRightHand(){return attachBatToSelectedHand();}
       const p=c[0];
       type=p.type;
       p.broken=true;
-      p.respawnTimer=30;
+      p.respawnTimer=8;
       p.loose=false;
       p.destructionRewarded=true;
       p.hitMeshes.forEach(m=>{
@@ -8912,7 +8930,7 @@ function attachBatToRightHand(){return attachBatToSelectedHand();}
 
   const quickMenuPlane=BABYLON.MeshBuilder.CreatePlane("quickMenuPlane",{width:1.16,height:1.38},scene);
   quickMenuPlane.parent=quickMenuRoot;
-  quickMenuPlane.isPickable=false;
+  quickMenuPlane.isPickable=true;
 
   const quickMenuGui=BABYLON.GUI.AdvancedDynamicTexture.CreateForMesh(quickMenuPlane,900,1020);
   const quickBg=new BABYLON.GUI.Rectangle();
@@ -8981,7 +8999,57 @@ function attachBatToRightHand(){return attachBatToSelectedHand();}
       ];
     }
 
-    return `${title}\n\n${vals.map((x,i)=>(i===quickMenuIndex?"▶ ":"   ")+x).join("\n")}\n\n${dominantHandSide().toUpperCase()} STICK = choose\n${dominantHandSide().toUpperCase()} TRIGGER = select\n${menuHandSide().toUpperCase()} MENU = close`;
+    return `${title}\n\n${vals.map((x,i)=>(i===quickMenuIndex?"▶ ":"   ")+x).join("\n")}\n\nPOINT WITH BAT = choose\n${dominantHandSide().toUpperCase()} TRIGGER = select\n${menuHandSide().toUpperCase()} MENU = close`;
+  }
+
+
+  let quickMenuBatHover=-1;
+  let quickMenuBatDot=null;
+
+  function ensureQuickMenuBatDot(){
+    if(quickMenuBatDot)return quickMenuBatDot;
+    const mat=mkMat("quickMenuBatDotMat","#55e7ff");
+    mat.emissiveColor=BABYLON.Color3.FromHexString("#55e7ff").scale(.9);
+    quickMenuBatDot=BABYLON.MeshBuilder.CreateSphere("quickMenuBatDot",{diameter:.035,segments:8},scene);
+    quickMenuBatDot.material=mat;
+    quickMenuBatDot.isPickable=false;
+    quickMenuBatDot.setEnabled(false);
+    return quickMenuBatDot;
+  }
+
+  function updateQuickMenuBatPointer(){
+    const dot=ensureQuickMenuBatDot();
+    if(!quickMenuOpen || !isInXR() || !batRoot?.isEnabled?.()){
+      quickMenuBatHover=-1;
+      dot.setEnabled(false);
+      return;
+    }
+    const a=batBase(), b=batTip();
+    if(!a||!b){dot.setEnabled(false);return;}
+    const dir=b.subtract(a);
+    if(dir.lengthSquared()<.0001){dot.setEnabled(false);return;}
+    dir.normalize();
+
+    const pick=scene.pickWithRay(new BABYLON.Ray(a,dir,3.6),m=>m===quickMenuPlane,false);
+    if(!pick?.hit || !pick.pickedPoint){
+      quickMenuBatHover=-1;dot.setEnabled(false);return;
+    }
+
+    dot.position.copyFrom(pick.pickedPoint.add(dir.scale(-.012)));
+    dot.setEnabled(true);
+
+    const inv=quickMenuRoot.getWorldMatrix().clone();inv.invert();
+    const local=BABYLON.Vector3.TransformCoordinates(pick.pickedPoint,inv);
+    const count=quickMenuCount();
+    const firstY=.31, lastY=count>=10?-.30:-.13;
+    const step=count>1?(firstY-lastY)/(count-1):1;
+    const idx=Math.round((firstY-local.y)/step);
+
+    if(idx>=0&&idx<count){
+      if(quickMenuBatHover!==idx){
+        quickMenuBatHover=idx;quickMenuIndex=idx;refreshQuickMenu();
+      }
+    }else quickMenuBatHover=-1;
   }
 
   function refreshQuickMenu(){
@@ -9038,6 +9106,8 @@ function attachBatToRightHand(){return attachBatToSelectedHand();}
   function closeQuickMenu(){
     quickMenuOpen=false;
     quickMenuRoot.setEnabled(false);
+    quickMenuBatHover=-1;
+    if(quickMenuBatDot)quickMenuBatDot.setEnabled(false);
   }
 
   function toggleQuickMenu(){
@@ -9444,6 +9514,31 @@ function attachBatToRightHand(){return attachBatToSelectedHand();}
   }
   setupXR();
 
+
+  let primaryNpcWatchTimer=0;
+  function ensurePrimaryNpcPresent(dt){
+    if(gameMode!=="map")return;
+    if(net.connected&&!net.isHost)return;
+    primaryNpcWatchTimer-=dt;
+    if(primaryNpcWatchTimer>0)return;
+    primaryNpcWatchTimer=.75;
+
+    const missing=!npc||!npc.root||npc.root.isDisposed?.();
+    if(missing){
+      try{
+        createNpc();
+        configureNpcForCurrentLevel();
+        npc.root.position.copyFrom(getNpcSpawnPosition());
+        npc.root.setEnabled(true);
+      }catch(e){console.error("NPC RECOVERY ERROR",e);}
+      return;
+    }
+    if(!npc.dead&&!npc.root.isEnabled()){
+      npc.root.setEnabled(true);
+      npc.root.position.copyFrom(getNpcSpawnPosition());
+    }
+  }
+
   // ------------------------------------------------------------
   // Main loop
   // ------------------------------------------------------------
@@ -9452,6 +9547,7 @@ function attachBatToRightHand(){return attachBatToSelectedHand();}
     groundSlamCooldown=Math.max(0,groundSlamCooldown-dt);
     updateLocalVoiceFace(dt);
     updateOwnerGift(dt);
+    ensurePrimaryNpcPresent(dt);
     
     batHitCooldown=Math.max(0,batHitCooldown-dt);
     playerInvuln=Math.max(0,playerInvuln-dt);
@@ -9966,7 +10062,7 @@ function attachBatToRightHand(){return attachBatToSelectedHand();}
 
     if(npc && net.connected && !net.isHost)updateNpcFace(dt);
     updateNpcSlap(dt);
-    updatePack2(dt);quickMenuDebounce=Math.max(0,quickMenuDebounce-dt);updateRemoteAvatars(dt);updateNetworking();updateLobbyControls();updateVrCamera(dt);updateContentCamera(dt);updateAdvancedCombatInput(dt);updateThrownBat(dt);updateMapSystems(dt);updateDownedCrawling(dt);updateAdaptiveNpc();if(quickMenuOpen)placeQuickMenu();
+    updatePack2(dt);quickMenuDebounce=Math.max(0,quickMenuDebounce-dt);updateRemoteAvatars(dt);updateNetworking();updateQuickMenuBatPointer();updateLobbyControls();updateVrCamera(dt);updateContentCamera(dt);updateAdvancedCombatInput(dt);updateThrownBat(dt);updateMapSystems(dt);updateDownedCrawling(dt);updateAdaptiveNpc();if(quickMenuOpen)placeQuickMenu();
     updateExtraNpcs(dt);
     updateOfficePhysics(dt);
 
@@ -9988,7 +10084,10 @@ function attachBatToRightHand(){return attachBatToSelectedHand();}
 
         // Normal gravity with retained air momentum.
         if (!planted) bodyVelocity.y+=PLAYER_GRAVITY*dt;
-        else if (bodyVelocity.y<0) bodyVelocity.y=0;
+        else {
+          if(bodyVelocity.y<0)bodyVelocity.y=0;
+          if(groundSlamCooldown<=0 && bodyVelocity.y>0 && bodyVelocity.y<2.35)bodyVelocity.y=0;
+        }
 
         // Knockback/momentum always applies, including while hands are raised.
         xrCamera.position.addInPlace(bodyVelocity.scale(dt));
