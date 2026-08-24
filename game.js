@@ -1,7 +1,7 @@
 (()=>{
 "use strict";
 
-const BUILD="MOVEMENT ALPHA 0.4";
+const BUILD="MOVEMENT ALPHA 0.4.1";
 const canvas=document.getElementById("renderCanvas");
 const statusEl=document.getElementById("status");
 const startBtn=document.getElementById("startBtn");
@@ -79,12 +79,43 @@ const hands={
 };
 
 function makeHand(side){
-  const m=BABYLON.MeshBuilder.CreateSphere("hand_"+side,{diameter:.17,segments:12},scene);
+  const m=BABYLON.MeshBuilder.CreateSphere("hand_"+side,{diameter:.145,segments:14},scene);
   m.scaling.set(1.15,.72,1.12);
   m.material=handMat; m.isPickable=false; m.setEnabled(false);
   return m;
 }
 hands.left.mesh=makeHand("left"); hands.right.mesh=makeHand("right");
+
+
+function hideNativeControllerVisuals(c){
+  try{
+    // Keep tracking transforms alive; hide only rendered controller meshes.
+    const mc=c?.motionController;
+    if(mc?.rootMesh){
+      mc.rootMesh.getChildMeshes?.().forEach(m=>{
+        m.isVisible=false;
+        m.visibility=0;
+        m.isPickable=false;
+      });
+      mc.rootMesh.isVisible=false;
+      mc.rootMesh.visibility=0;
+    }
+
+    // Hide any rendered children hanging off pointer/grip transforms.
+    for(const n of [c?.pointer,c?.grip]){
+      n?.getChildMeshes?.().forEach(m=>{
+        // Never hide our own custom hand mesh (it is not parented here anyway).
+        if(!m.name?.startsWith("hand_")){
+          m.isVisible=false;
+          m.visibility=0;
+          m.isPickable=false;
+        }
+      });
+    }
+  }catch(e){
+    console.warn("Could not hide native controller visuals",e);
+  }
+}
 
 function worldPos(h){
   if(!h?.node)return null;
@@ -386,9 +417,15 @@ async function setupXR(){
         h.lastRaw=null;
         h.grip=false;
         h.gripAnchor=null;
+        hideNativeControllerVisuals(c);
         h.mesh.setEnabled(!!h.node);
       };
-      c.onMotionControllerInitObservable.add(bind);
+      c.onMotionControllerInitObservable.add(mc=>{
+        bind();
+        // Controller model can finish loading a moment later; hide it again.
+        setTimeout(()=>hideNativeControllerVisuals(c),0);
+        setTimeout(()=>hideNativeControllerVisuals(c),250);
+      });
       bind();
     });
 
@@ -442,6 +479,9 @@ setupXR();
 scene.onBeforeRenderObservable.add(()=>{
   const dt=Math.min(.025,engine.getDeltaTime()/1000);
   updateMovement(dt);
+  for(const h of Object.values(hands)){
+    if(h.controller)hideNativeControllerVisuals(h.controller);
+  }
 });
 
 engine.runRenderLoop(()=>scene.render());
