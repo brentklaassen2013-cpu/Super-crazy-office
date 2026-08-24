@@ -1,7 +1,7 @@
 (()=>{
 "use strict";
 
-const BUILD="MOVEMENT ALPHA 0.4.1";
+const BUILD="MOVEMENT ALPHA 0.4.3";
 const canvas=document.getElementById("renderCanvas");
 const statusEl=document.getElementById("status");
 const startBtn=document.getElementById("startBtn");
@@ -127,23 +127,18 @@ function readGripPressed(h){
   const mc=h?.controller?.motionController;
   if(!mc)return false;
 
-  // Standard WebXR squeeze/grip component on Quest controllers.
-  const ids=[
-    "xr-standard-squeeze",
-    "squeeze",
-    "grasp",
-    "grip"
-  ];
-  for(const id of ids){
+  // Strict Quest grip/squeeze only.
+  // Do NOT treat trigger or generic component names as grip.
+  for(const id of ["xr-standard-squeeze","squeeze"]){
     const c=mc.getComponent?.(id);
-    if(c && (c.pressed || (c.value??0)>.55))return true;
+    if(c && (c.pressed || (c.value??0)>.72))return true;
   }
 
-  // Fallback: inspect components and prefer squeeze/grip-like ids.
+  // Strict fallback: component id must explicitly contain "squeeze".
   const comps=mc.components||{};
   for(const [id,c] of Object.entries(comps)){
     const n=id.toLowerCase();
-    if((n.includes("squeeze")||n.includes("grip")) && (c.pressed || (c.value??0)>.55))return true;
+    if(n.includes("squeeze") && (c.pressed || (c.value??0)>.72))return true;
   }
   return false;
 }
@@ -211,6 +206,8 @@ function updateHand(h,dt){
   const raw=worldPos(h);
   if(!raw)return BABYLON.Vector3.Zero();
 
+  // Internal movement can use arm-length limiting,
+  // but visible hand position must NEVER be clamped.
   const desired=clampArm(raw);
   const gripNow=readGripPressed(h);
   h.grip=gripNow;
@@ -237,6 +234,7 @@ function updateHand(h,dt){
       correction.z*=1.18;
       correction.y*=1.18;
 
+      // GRIP MODE ONLY: visually stick the hand to the grabbed point.
       h.mesh.position.copyFrom(h.gripAnchor);
       h.wasTouching=true;
 
@@ -271,7 +269,8 @@ function updateHand(h,dt){
       correction.scaleInPlace(1.62);
     }
 
-    h.mesh.position.copyFrom(hit.point);
+    // NORMAL MODE: raw 1:1 controller visuals. No surface snap, no arm clamp.
+    h.mesh.position.copyFrom(raw);
     h.wasTouching=true;
   }else{
     // On release, keep only horizontal momentum.
@@ -286,7 +285,7 @@ function updateHand(h,dt){
     }
 
     h.wasTouching=false;
-    h.mesh.position.copyFrom(desired);
+    h.mesh.position.copyFrom(raw);
   }
 
   h.mesh.setEnabled(true);
@@ -479,8 +478,19 @@ setupXR();
 scene.onBeforeRenderObservable.add(()=>{
   const dt=Math.min(.025,engine.getDeltaTime()/1000);
   updateMovement(dt);
+
   for(const h of Object.values(hands)){
     if(h.controller)hideNativeControllerVisuals(h.controller);
+
+    // FINAL GUARANTEE:
+    // without active grip, custom hand is exactly at the raw tracked controller.
+    if(h.node && !(h.grip && h.gripAnchor)){
+      const p=worldPos(h);
+      if(p){
+        h.mesh.position.copyFrom(p);
+        h.mesh.setEnabled(true);
+      }
+    }
   }
 });
 
