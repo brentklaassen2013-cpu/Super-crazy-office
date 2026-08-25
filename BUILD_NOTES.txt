@@ -1,0 +1,42 @@
+CRAZY OFFICE v0.61.0 — FINAL GAUNTLET BUILD
+
+BASE
+- Built from v0.60.0 Master Gauntlet.
+- Keeps the full current Crazy Office game: combat, breakable bats, destructible/grabbable office props, NPC prop use, bosses, incidents, progression, cosmetics, crates, modes, multiplayer, adaptive audio and prior polish systems.
+
+FINAL GAUNTLET PASSES
+1. ENCOUNTER FAIRNESS
+- Added a lightweight pressure director based on player HP, active enemies and boss state.
+- When pressure becomes extreme, enemies briefly delay their next attack rather than the game secretly granting health or lowering earned difficulty.
+- Low-health danger receives a restrained spatial cue instead of constant UI spam.
+
+2. THREAT READABILITY
+- Boss telegraphs and active arena warnings temporarily take priority over overlapping attacks.
+- This reduces unfair damage during high-Mayhem moments without making bosses passive.
+
+3. LONG-SESSION STABILITY
+- Added defensive caps for temporary polish VFX and boss hazards.
+- Extreme loose-prop linear/angular velocities are clamped to prevent runaway physics from accumulating during long standalone-headset sessions.
+- Existing normal sleep/disposal systems remain primary; this is only a safety layer.
+
+4. SYSTEM COHESION RETAINED
+- NPC improvised melee and throws remain active.
+- Host-authoritative multiplayer prop synchronization remains active.
+- Run Promotions, Style, Mayhem, Office Incidents, boss phases/hazards, bat durability/break/reissue, object materials and dynamic music remain active.
+
+MOVEMENT LOCK
+- updateHandLocomotion was captured before the v0.61 changes and compared after patching.
+- Byte-for-byte equality: PASS.
+- No locomotion math was modified by this final pass.
+
+STATIC VALIDATION
+- node --check game.js: PASS.
+- Movement before/after equality: PASS.
+- ZIP integrity: verified at packaging.
+
+HONEST REMAINING WORK
+The remaining high-value work cannot be truthfully completed by static code iteration alone:
+- Real-headset tuning of reach, impact feel, hand/object offsets, comfort and movement.
+- Multi-headset latency/packet-loss soak testing.
+- Authored/recorded voice acting and a fully produced soundtrack if desired.
+- Additional bespoke art, animation and level content can always expand the game, but no obvious missing non-movement core-system gap remains in the current static audit.
