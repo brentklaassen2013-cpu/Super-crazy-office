@@ -1,48 +1,16 @@
-# VR Bat Brawl — prototype 0.1
+# Crazy Office: Night Shift — Reborn 1.1
 
-This is a real WebXR VR prototype intended to run in a VR headset browser over HTTPS.
+This is the current clean-slate Crazy Office build. Run the folder from an HTTPS static host, open `index.html` in a compatible WebXR headset browser and press **ENTER VR**.
 
-## Included now
-- 6DoF VR headset tracking
-- Left and right tracked controllers/hands
-- No teleport locomotion
-- No joystick as the main locomotion
-- Gorilla-style hand-push locomotion prototype
-- Hand collision against floor, walls and obstacles
-- Push off the floor and walls
-- Momentum + gravity for hand-powered jumps
-- Impact-sensitive controller haptics
-- Simple climb/movement practice arena
-- Physical right-hand bat
-- Bat swing speed affects damage
-- One reactive NPC with 100 HP
-- Knockback
-- Special finishing hit
-- Multi-piece physics-like ragdoll on final hit
-- Strong final-hit haptics + impact effect/sound
+## Controls
+- Trigger in the elevator: choose Shift / Survival / Riot.
+- Right hand: bat while intact.
+- Grip with the free hand: grab office props.
+- Release grip: throw the held prop.
+- Hold a prop close to your body to block; an active last-second shield motion can Perfect Block.
 
-## Important prototype limits
-This is intentionally version 0.1, not the full game yet.
+## Desktop preview
+Run `python3 -m http.server 3000`, open `http://localhost:3000`, then use 1/2/3 to start modes and R to return to the elevator. Desktop preview is for logic/visual checks, not VR feel.
 
-1. The hand locomotion is a custom WebXR prototype and needs tuning on the actual headset.
-2. The final-hit ragdoll is lightweight custom physics, not a full skeletal ragdoll yet.
-3. The player-body collision is still simplified. Hands collide with the practice arena; later versions should add a robust body capsule/sweep solver.
-4. Multiplayer, voice, accounts, inventory, currencies, shop, trading, progression, maps and AI Director are not included yet.
-5. Haptics depend on what the headset browser/controller exposes through WebXR.
-
-## Phone-first workflow
-Recommended:
-- Manage/edit the project from iPhone in GitHub Codespaces (browser VS Code).
-- Run a small static server in Codespaces.
-- Make the forwarded port public/HTTPS.
-- Open that HTTPS URL in the VR headset browser.
-- Press ENTER VR.
-
-Example terminal command:
-    python3 -m http.server 3000
-
-Then use the Codespaces Ports tab to expose port 3000.
-
-## Files
-- index.html — page, canvas and Babylon.js loader
-- game.js — VR tracking, locomotion, haptics, bat combat, NPC, knockback and ragdoll
+## Current scope
+The single-player/WebXR gameplay core is implemented. A production multiplayer service is intentionally not bundled into this clean-slate release: real co-op needs host-authoritative networking, signaling and multi-headset latency testing rather than an untested fake layer.
